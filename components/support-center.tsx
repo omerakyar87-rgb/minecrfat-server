@@ -189,14 +189,15 @@ function Conversation({detail,actor,busy,post,refresh}:{detail?:ThreadDetail;act
   const thread=detail?.thread
   useEffect(()=>{setText('');setFiles([]);setProgress(0);setLocalError(null)},[thread?.id])
   if(!detail||!thread)return <div className="grid h-full place-items-center text-sm text-muted-foreground">Sohbet yükleniyor...</div>
+  const threadId = thread.id
   async function send(){
     setLocalError(null)
     if(!text.trim()&&!files.length)return
     if(files.length>MAX_ATTACHMENTS){setLocalError(`En fazla ${MAX_ATTACHMENTS} dosya seçebilirsiniz.`);return}
     for(const file of files){if(file.size>MAX_ATTACHMENT_BYTES||!ALLOWED_ATTACHMENT_TYPES.has(file.type)){setLocalError(`${file.name} desteklenmiyor veya 100 MB sınırını aşıyor.`);return}}
     try{
-      const attachments=files.length?await uploadAttachments(thread.id,files,setProgress):[]
-      const result=await post({action:'send-message',threadId:thread.id,message:text.trim(),attachments})
+      const attachments=files.length?await uploadAttachments(threadId,files,setProgress):[]
+      const result=await post({action:'send-message',threadId,message:text.trim(),attachments})
       if(result){setText('');setFiles([]);setProgress(0);await refresh()}
     }catch(e){setLocalError(e instanceof Error?e.message:'Mesaj gönderilemedi')}
   }
