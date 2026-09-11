@@ -34,14 +34,41 @@ export function AuthForm({ mode }: { mode: 'sign-in' | 'sign-up' }) {
             data: { name },
           },
         })
-        if (signUpError) throw new Error(signUpError.message.includes('rate') ? 'Çok fazla deneme yapıldı. Lütfen biraz bekleyin.' : signUpError.message.includes('weak') ? 'Şifre daha güçlü olmalıdır.' : 'Kayıt tamamlanamadı. Bilgilerinizi kontrol edin.')
+        if (signUpError) {
+          const errorText = `${signUpError.code ?? ''} ${signUpError.message}`.toLowerCase()
+          if (errorText.includes('rate') || errorText.includes('too many')) {
+            throw new Error('Çok fazla deneme yapıldı. Lütfen biraz bekleyin.')
+          }
+          if (errorText.includes('weak') || errorText.includes('password')) {
+            throw new Error('Şifre daha güçlü olmalıdır.')
+          }
+          if (errorText.includes('email_address_not_authorized') || errorText.includes('not authorized')) {
+            throw new Error('Bu e-posta adresi kayıt için yetkili değil. Proje yöneticisinin izin verdiği bir e-posta adresi kullanın.')
+          }
+          if (errorText.includes('already registered') || errorText.includes('already been registered') || errorText.includes('user_already_exists')) {
+            throw new Error('Bu e-posta adresi zaten kayıtlı. Giriş yapmayı veya şifrenizi yenilemeyi deneyin.')
+          }
+          if (errorText.includes('failed to fetch') || errorText.includes('network') || errorText.includes('fetch')) {
+            throw new Error('Supabase bağlantısı kurulamadı. Lütfen biraz sonra tekrar deneyin.')
+          }
+          if (errorText.includes('redirect') || errorText.includes('url')) {
+            throw new Error('Doğrulama bağlantısı ayarlanamadı. Lütfen yöneticinizle iletişime geçin.')
+          }
+          throw new Error('Kayıt tamamlanamadı. Bilgilerinizi kontrol edip tekrar deneyin.')
+        }
         if (!data.session) {
           setError('Kayıt başarılı. Devam etmek için e-posta adresinize gönderilen doğrulama bağlantısına tıklayın.')
           return
         }
       } else {
         const { error: signInError } = await supabase.auth.signInWithPassword({ email, password })
-        if (signInError) throw new Error(signInError.message.includes('confirm') ? 'Önce e-posta adresinizi doğrulamanız gerekiyor.' : 'E-posta veya şifre hatalı.')
+        if (signInError) {
+          const errorText = `${signInError.code ?? ''} ${signInError.message}`.toLowerCase()
+          if (errorText.includes('failed to fetch') || errorText.includes('network') || errorText.includes('fetch')) {
+            throw new Error('Supabase bağlantısı kurulamadı. Lütfen biraz sonra tekrar deneyin.')
+          }
+          throw new Error(errorText.includes('confirm') ? 'Önce e-posta adresinizi doğrulamanız gerekiyor.' : 'E-posta veya şifre hatalı.')
+        }
       }
       router.replace('/')
       router.refresh()
