@@ -56,7 +56,6 @@ export function ensurePanelSchema() {
         )
       `)
       await runMigration(`ALTER TABLE "server_permissions" ADD COLUMN IF NOT EXISTS "sections" jsonb NOT NULL DEFAULT '[]'::jsonb`)
-      await runMigration(`ALTER TABLE "account" ADD COLUMN IF NOT EXISTS "issuer" text`)
       await runMigration(`
         CREATE TABLE IF NOT EXISTS "server_sftp" (
           "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
