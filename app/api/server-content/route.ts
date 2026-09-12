@@ -21,7 +21,7 @@ async function currentActor() {
 async function authorizedServer(actor: NonNullable<Awaited<ReturnType<typeof currentActor>>>, serverId: string) {
   const server = (await db.select().from(servers).where(eq(servers.id, serverId)).limit(1))[0]
   if (!server) return null
-  if (actor.role === 'manager') return server
+  if (actor.role === 'manager' || actor.role === 'admin' || server.userId === actor.id) return server
   const permission = (await db.select().from(serverPermissions).where(and(eq(serverPermissions.serverId, serverId), eq(serverPermissions.userId, actor.id))).limit(1))[0]
   return permission?.canFiles ? server : null
 }
