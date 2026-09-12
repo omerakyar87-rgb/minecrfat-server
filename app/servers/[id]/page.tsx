@@ -38,7 +38,7 @@ type WorldRow = { id:string; serverId:string; name:string; isActive:boolean; siz
 type Permission = { userId:string; serverId:string; canStart:boolean; canStop:boolean; canRestart:boolean; canConsole:boolean; canFiles:boolean; canBackup:boolean; canReset:boolean; canViewLostItems:boolean; canManageLostItems:boolean; sections?:string[] }
 type Member = { id:string; name:string; email:string; role:string; approved:boolean }
 type Operation = { id:number; serverId:string; operation:string; status:string; message?:string|null; createdAt:string }
-type Panel = { servers:Server[]; nodes:NodeInfo[]; logs:LogRow[]; worlds:WorldRow[]; users:Member[]; permissions:Permission[]; currentPermission?:Permission|null; allowedSections?:string[]; operations:Operation[]; schedules?:ScheduleRow[]; databases?:ManagedDatabaseRow[]; sftp?:SftpRow|null; actor?:{id:string;name:string;email:string;role:string} }
+type Panel = { servers:Server[]; nodes:NodeInfo[]; logs:LogRow[]; worlds:WorldRow[]; users:Member[]; permissions:Permission[]; currentPermission?:Permission|null; allowedSections?:string[]; serverAccess?:{isOwner:boolean;isManager:boolean;fullAccess:boolean}; operations:Operation[]; schedules?:ScheduleRow[]; databases?:ManagedDatabaseRow[]; sftp?:SftpRow|null; actor?:{id:string;name:string;email:string;role:string} }
 type BackupRow = { id:string; worldId:string; worldName:string; blobPathname:string; sizeMb:number; createdAt:string; status?:'queued'|'running'|'completed'|'failed'; progress?:number }
 type ScheduleRow = { id:string; serverId:string; name:string; taskType:'restart'|'backup'|'log-cleanup'; cadence:'daily'|'weekly'|'interval'; timeOfDay?:string|null; weekday?:number|null; intervalMinutes?:number|null; timezoneOffsetMinutes:number; enabled:boolean; payload?:{retentionDays?:number}; lastRunAt?:string|null; nextRunAt:string; createdAt:string }
 type ManagedDatabaseRow = { id:string; serverId:string; engine:string; databaseName:string; databaseUser:string; host:string; port:number; credentialsPath?:string|null; status:string; lastError?:string|null; createdAt:string }
@@ -77,9 +77,9 @@ export default function ServerPage(){
   const {id}=useParams<{id:string}>(); const router=useRouter(); const searchParams=useSearchParams()
   const {data,error,mutate}=useSWR<Panel>(`/api/panel?serverId=${id}`,fetcher,{refreshInterval:3000})
   const server=data?.servers.find(s=>s.id===id); const node=data?.nodes?.[0]
-  const manager=data?.actor?.role==='manager'; const permission=data?.currentPermission??undefined
-  const allowedSections=useMemo(()=>data?.allowedSections?.length?data.allowedSections:(manager?nav.map(([key])=>key):['overview','logs']),[data?.allowedSections,manager])
-  const visibleNav=useMemo(()=>nav.filter(([key])=>key==='security'?manager:key==='bulk-download'?(manager||allowedSections.includes('files')):allowedSections.includes(key)),[allowedSections,manager])
+  const manager=data?.serverAccess?.isManager===true; const fullAccess=data?.serverAccess?.fullAccess===true; const permission=data?.currentPermission??undefined
+  const allowedSections=useMemo(()=>data?.allowedSections?.length?data.allowedSections:(fullAccess?nav.map(([key])=>key):['overview','logs']),[data?.allowedSections,fullAccess])
+  const visibleNav=useMemo(()=>nav.filter(([key])=>key==='security'?fullAccess||allowedSections.includes('security'):key==='bulk-download'?(fullAccess||allowedSections.includes('files')):allowedSections.includes(key)),[allowedSections,fullAccess])
   const {data:backupData,error:backupError,mutate:mutateBackups}=useSWR<{backups:BackupRow[]}>(allowedSections.includes('backups')?`/api/backups?serverId=${id}`:null,fetcher,{refreshInterval:5000})
   const [section,setSection]=useState<(typeof nav)[number][0]>('overview'); const [open,setOpen]=useState(false); const [busy,setBusy]=useState(false); const [notice,setNotice]=useState('')
   const [settingsTab,setSettingsTab]=useState<'general'|'security'|'performance'|'anticheat'|'backup'>('general'); const [selectedUserId,setSelectedUserId]=useState('')

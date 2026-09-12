@@ -14,11 +14,11 @@ const ALL_SECTIONS = ['overview','settings','console','logs','players','software
 const SAFE_ADMIN_SECTIONS = ['overview','logs','players','worlds','network'] as const
 const GUIDE_SECTIONS = ['overview','logs'] as const
 
-type AppRole = 'manager' | 'admin' | 'guide'
+type AppRole = 'manager' | 'member' | 'admin' | 'guide'
 
 function normalizeRole(role: string): AppRole {
-  if (role === 'manager' || role === 'admin' || role === 'guide') return role
-  return 'guide'
+  if (role === 'manager' || role === 'member' || role === 'admin' || role === 'guide') return role
+  return 'member'
 }
 function isManager(role: string) { return normalizeRole(role) === 'manager' }
 function defaultSections(role: string) {
@@ -86,14 +86,16 @@ const createSchema = z.object({ action:z.literal('create-server'), nodeId:z.stri
 async function access(a: NonNullable<Awaited<ReturnType<typeof actor>>>, serverId:string) {
   const server = (await db.select().from(servers).where(and(eq(servers.id,serverId),ne(servers.status,'deleted'))).limit(1))[0]
   if (!server) return null
-  if (isManager(a.role)) return { server, admin:true, permission:null, sections:[...ALL_SECTIONS] as string[] }
+  const isManagerUser = isManager(a.role)
+  const isOwner = server.userId === a.id
+  if (isManagerUser || isOwner) return { server, isManager: isManagerUser, isOwner, fullAccess: true, permission:null, sections:[...ALL_SECTIONS] as string[] }
   const permission = (await db.select().from(serverPermissions).where(and(eq(serverPermissions.serverId,serverId),eq(serverPermissions.userId,a.id))).limit(1))[0]
   if (!permission) return null
-  return { server, admin:false, permission, sections:sectionList(permission.sections, a.role) }
+  return { server, isManager:false, isOwner:false, fullAccess:false, permission, sections:sectionList(permission.sections, a.role) }
 }
 
 function allowed(type:string, result:NonNullable<Awaited<ReturnType<typeof access>>>) {
-  if(result.admin) return true
+  if(result.fullAccess) return true
   const p=result.permission!
   return type==='start'?p.canStart
     :type==='stop'||type==='kill'?p.canStop
@@ -122,11 +124,11 @@ async function getPanel(request:NextRequest) {
     const compactServer=withConnection({id:result.server.id,nodeId:result.server.nodeId,name:result.server.name,loader:result.server.loader,mcVersion:result.server.mcVersion,loaderVersion:result.server.loaderVersion,status:result.server.status,port:result.server.port,memoryMb:result.server.memoryMb,playerCount:result.server.playerCount,installProgress:result.server.installProgress,installError:result.server.installError?.slice(0,500),worldName:result.server.worldName})
     let directBridge:{online:boolean;error?:string;status?:number}={online:false}
   try{const config=getNodeConfig(result.server.nodeId);const bridge=await fetch(`${config.baseUrl}/health`,{headers:{authorization:`Bearer ${config.token}`,'x-node-id':result.server.nodeId},cache:'no-store',signal:AbortSignal.timeout(8000)});directBridge={online:bridge.ok,status:bridge.status};if(!bridge.ok)directBridge.error=`HTTP ${bridge.status}`}catch(error){directBridge={online:false,error:nodeDiagnosticMessage(error)}}
-  const maySeeWorlds=result.admin||result.sections.includes('worlds')
-    const maySeeLogs=result.admin||result.sections.some(section=>['logs','console','players'].includes(section))
-    const mayManageAccess=result.admin&&result.sections.includes('access')
-    const maySeeSchedules=result.admin||result.sections.includes('schedules')
-    const maySeeDatabases=result.admin||result.sections.includes('databases')
+  const maySeeWorlds=result.fullAccess||result.sections.includes('worlds')
+    const maySeeLogs=result.fullAccess||result.sections.some(section=>['logs','console','players'].includes(section))
+    const mayManageAccess=result.fullAccess&&result.sections.includes('access')
+    const maySeeSchedules=result.fullAccess||result.sections.includes('schedules')
+    const maySeeDatabases=result.fullAccess||result.sections.includes('databases')
     const [nodeRows,worldRows,logRows,operationRows,serverPermissionRows,memberRows,scheduleRows,databaseRows,sftpRows]=await Promise.all([
       db.select({id:nodes.id,name:nodes.name,status:nodes.status,lastHeartbeat:nodes.lastHeartbeat,cpuPercent:nodes.cpuPercent,memoryUsedMb:nodes.memoryUsedMb,memoryTotalMb:nodes.memoryTotalMb,diskUsedGb:nodes.diskUsedGb,diskTotalGb:nodes.diskTotalGb}).from(nodes).where(eq(nodes.id,result.server.nodeId)).limit(1),
       maySeeWorlds?db.select().from(worlds).where(eq(worlds.serverId,requestedServerId)).orderBy(desc(worlds.createdAt)):Promise.resolve([]),
@@ -136,12 +138,12 @@ async function getPanel(request:NextRequest) {
       mayManageAccess?db.select({id:user.id,name:user.name,email:user.email,role:user.role,approved:user.approved}).from(user).where(eq(user.approved,true)).orderBy(desc(user.createdAt)):Promise.resolve([]),
       maySeeSchedules?db.select().from(serverSchedules).where(eq(serverSchedules.serverId,requestedServerId)).orderBy(desc(serverSchedules.createdAt)):Promise.resolve([]),
       maySeeDatabases?db.select().from(managedDatabases).where(eq(managedDatabases.serverId,requestedServerId)).orderBy(desc(managedDatabases.createdAt)):Promise.resolve([]),
-      result.admin?db.select({id:serverSftp.id,serverId:serverSftp.serverId,nodeId:serverSftp.nodeId,username:serverSftp.username,port:serverSftp.port,rootPath:serverSftp.rootPath,status:serverSftp.status,lastError:serverSftp.lastError,lastTestAt:serverSftp.lastTestAt,passwordRotatedAt:serverSftp.passwordRotatedAt,disabledAt:serverSftp.disabledAt,createdAt:serverSftp.createdAt,updatedAt:serverSftp.updatedAt}).from(serverSftp).where(eq(serverSftp.serverId,requestedServerId)).limit(1):Promise.resolve([])
+      result.fullAccess?db.select({id:serverSftp.id,serverId:serverSftp.serverId,nodeId:serverSftp.nodeId,username:serverSftp.username,port:serverSftp.port,rootPath:serverSftp.rootPath,status:serverSftp.status,lastError:serverSftp.lastError,lastTestAt:serverSftp.lastTestAt,passwordRotatedAt:serverSftp.passwordRotatedAt,disabledAt:serverSftp.disabledAt,createdAt:serverSftp.createdAt,updatedAt:serverSftp.updatedAt}).from(serverSftp).where(eq(serverSftp.serverId,requestedServerId)).limit(1):Promise.resolve([])
     ])
     return NextResponse.json({
       nodes:nodeRows,servers:[{...compactServer,directBridge,connectivity:connectivityState(nodeRows[0]??{status:'offline',lastHeartbeat:null},directBridge.online?undefined:directBridge.error)}],worlds:worldRows,mods:[],backups:[],logs:logRows.slice().reverse(),
       users:memberRows.filter(member=>member.id!==a.id),audits:[],lostItems:[],operations:operationRows,
-      permissions:serverPermissionRows,currentPermission:result.permission,allowedSections:result.sections,
+      permissions:serverPermissionRows,currentPermission:result.permission,allowedSections:result.sections,serverAccess:{isOwner:result.isOwner,isManager:result.isManager,fullAccess:result.fullAccess},
       schedules:scheduleRows,databases:databaseRows,sftp:sftpRows[0]??null,
 actor:{id:a.id,name:a.name,email:a.email,role:normalizeRole(a.role)},nodeConnectivity:directBridge
     },{headers:{'Cache-Control':'private, no-store'}})
@@ -149,7 +151,8 @@ actor:{id:a.id,name:a.name,email:a.email,role:normalizeRole(a.role)},nodeConnect
 
   const manager=isManager(a.role)
   const permissionRows=manager?await db.select().from(serverPermissions):await db.select().from(serverPermissions).where(eq(serverPermissions.userId,a.id))
-  const ids=[...new Set(permissionRows.map(p=>p.serverId))]
+  const ownServers=manager?[]:await db.select().from(servers).where(and(eq(servers.userId,a.id),ne(servers.status,'deleted')))
+  const ids=[...new Set([...ownServers.map(s=>s.id),...permissionRows.map(p=>p.serverId)])]
   const serverRows=manager
     ?await db.select().from(servers).where(ne(servers.status,'deleted')).orderBy(desc(servers.createdAt))
     :ids.length?await db.select().from(servers).where(and(inArray(servers.id,ids),ne(servers.status,'deleted'))):[]
@@ -158,7 +161,7 @@ actor:{id:a.id,name:a.name,email:a.email,role:normalizeRole(a.role)},nodeConnect
   const ownerIds=[...new Set(serverRows.map(s=>s.userId))]
 
   const [nodeRows,worldRows,modRows,backupRows,logs,users,audits,lost,ops]=await Promise.all([
-    manager?db.select().from(nodes).orderBy(desc(nodes.createdAt)):Promise.resolve([]),
+    manager?db.select().from(nodes).orderBy(desc(nodes.createdAt)):db.select().from(nodes).where(eq(nodes.userId,a.id)).orderBy(desc(nodes.createdAt)),
     serverIds.length?db.select().from(worlds).where(inArray(worlds.serverId,serverIds)):Promise.resolve([]),
     serverIds.length?db.select().from(mods).where(inArray(mods.serverId,serverIds)):Promise.resolve([]),
     manager&&ownerIds.length?db.select().from(backups).where(inArray(backups.userId,ownerIds)).orderBy(desc(backups.createdAt)):Promise.resolve([]),
@@ -183,7 +186,7 @@ async function postPanel(request:NextRequest) {
   const manager=isManager(a.role)
 
   if(body.action==='create-node'){
-    if(!manager)return NextResponse.json({error:'Yalnız Yönetici node oluşturabilir'},{status:403})
+    if(!['manager','member'].includes(normalizeRole(a.role)))return NextResponse.json({error:'Yalnız Yönetici veya Üye node oluşturabilir'},{status:403})
     const name=z.string().trim().min(2).max(80).parse(body.name)
     const existing=await db.select({id:nodes.id}).from(nodes).where(eq(nodes.name,name)).limit(1)
     if(existing.length)return NextResponse.json({error:'Bu isimde bir node zaten var'},{status:409})
@@ -233,10 +236,11 @@ async function postPanel(request:NextRequest) {
     return NextResponse.json({ok:true})
   }
   if(body.action==='create-server'){
-    if(!manager)return NextResponse.json({error:'Yalnız Yönetici sunucu oluşturabilir'},{status:403})
+    if(!['manager','member'].includes(normalizeRole(a.role)))return NextResponse.json({error:'Yalnız Yönetici veya Üye sunucu oluşturabilir'},{status:403})
     const i=createSchema.parse(body)
     const node=(await db.select().from(nodes).where(eq(nodes.id,i.nodeId)).limit(1))[0]
     if(!node)return NextResponse.json({error:'Node bulunamadı'},{status:404})
+    if(!manager&&node.userId!==a.id)return NextResponse.json({error:'Yalnız kendi node’unuzda sunucu oluşturabilirsiniz'},{status:403})
     if(node.status!=='online')return NextResponse.json({error:'Node çevrimdışı. Önce kurulum komutunu VPS üzerinde çalıştırıp agenti bağlayın.'},{status:409})
     const collision=await db.select({id:servers.id}).from(servers).where(and(eq(servers.nodeId,i.nodeId),eq(servers.port,i.port),ne(servers.status,'deleted'))).limit(1)
     if(collision.length)return NextResponse.json({error:'Bu port aynı node üzerinde kullanımda'},{status:409})
@@ -399,7 +403,7 @@ async function postPanel(request:NextRequest) {
     const item=(await db.select().from(lostItems).where(eq(lostItems.id,id)).limit(1))[0]
     if(!item)return NextResponse.json({error:'Kayıt bulunamadı'},{status:404})
     const result=await access(a,item.serverId)
-    if(!result||(!result.admin&&!result.permission?.canManageLostItems))return NextResponse.json({error:'Bu kaydı silme yetkiniz yok'},{status:403})
+    if(!result||(!result.fullAccess&&!result.permission?.canManageLostItems))return NextResponse.json({error:'Bu kaydı silme yetkiniz yok'},{status:403})
     await db.delete(lostItems).where(and(eq(lostItems.id,id),eq(lostItems.serverId,item.serverId)))
     await db.insert(auditLog).values({userId:a.id,action:'lost-item.deleted',resourceType:'lost-item',resourceId:id,details:{serverId:item.serverId}})
     return NextResponse.json({ok:true})
