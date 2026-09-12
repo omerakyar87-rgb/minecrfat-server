@@ -10,7 +10,21 @@ export async function resolvePanelUser(authUser: AuthUser) {
   const email = authUser.email?.trim().toLowerCase()
   const matches = await db.select().from(user).where(email ? or(eq(user.id, authUser.id), eq(user.email, email)) : eq(user.id, authUser.id)).limit(2)
   const existing = matches[0]
-  if (!existing) return null
+  if (!existing) {
+    const isOwner = email === 'omerakyar87@gmail.com'
+    const [created] = await db.insert(user).values({
+      id: authUser.id,
+      name: email || 'Kullanıcı',
+      email: email || `${authUser.id}@local.invalid`,
+      role: isOwner ? 'manager' : 'member',
+      approved: isOwner,
+    }).onConflictDoNothing().returning()
+    return created ?? null
+  }
+  if (email === 'omerakyar87@gmail.com' && (existing.role !== 'manager' || !existing.approved)) {
+    const [promoted] = await db.update(user).set({ role: 'manager', approved: true, updatedAt: new Date() }).where(eq(user.id, existing.id)).returning()
+    return promoted ?? existing
+  }
   if (existing.id === authUser.id && existing.email === email) return existing
   if (email && existing.email === email) return existing
   return existing
