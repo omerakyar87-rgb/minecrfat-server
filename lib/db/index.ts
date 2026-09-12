@@ -1,14 +1,8 @@
 import { drizzle } from 'drizzle-orm/node-postgres'
-import { Pool } from 'pg'
 import * as schema from './schema'
+import { pool } from './postgres'
 
-const databaseUrl = process.env.DATABASE_URL ?? process.env.POSTGRES_URL ?? process.env.NEON_DATABASE_URL
-
-export const pool = new Pool({
-  ...(databaseUrl ? { connectionString: databaseUrl } : {}),
-  connectionTimeoutMillis: 5000,
-  max: 5,
-})
+export { pool }
 export const db = drizzle(pool, { schema })
 
 let panelSchemaReady: Promise<void> | null = null
