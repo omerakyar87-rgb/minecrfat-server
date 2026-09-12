@@ -24,7 +24,7 @@ async function currentActor() {
 async function authorized(actor: NonNullable<Awaited<ReturnType<typeof currentActor>>>, serverId: string) {
   const server = (await db.select().from(servers).where(eq(servers.id, serverId)).limit(1))[0]
   if (!server || server.status === 'deleted') return false
-  if (actor.role === 'manager') return true
+  if (actor.role === 'manager' || server.userId === actor.id) return true
   const permission = (await db.select().from(serverPermissions).where(and(eq(serverPermissions.serverId, serverId), eq(serverPermissions.userId, actor.id))).limit(1))[0]
   const sections = Array.isArray(permission?.sections) ? permission.sections.map(String) : []
   return !!permission?.canReset && sections.includes('integrations')

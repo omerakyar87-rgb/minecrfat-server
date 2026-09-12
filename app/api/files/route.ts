@@ -23,7 +23,7 @@ function classify(name: string): Category | null {
   return 'other'
 }
 async function currentActor() { const session = await auth.api.getSession({ headers: await headers() }); if(!session?.user)return null; return resolvePanelUser(session.user) }
-async function authorizedServer(actor: NonNullable<Awaited<ReturnType<typeof currentActor>>>, serverId: string) { const server=(await db.select().from(servers).where(eq(servers.id,serverId)).limit(1))[0]; if(!server)return null; if(actor.role==='manager')return server; const permission=(await db.select().from(serverPermissions).where(and(eq(serverPermissions.serverId,serverId),eq(serverPermissions.userId,actor.id))).limit(1))[0]; return permission?.canFiles?server:null }
+async function authorizedServer(actor: NonNullable<Awaited<ReturnType<typeof currentActor>>>, serverId: string) { const server=(await db.select().from(servers).where(eq(servers.id,serverId)).limit(1))[0]; if(!server)return null; if(actor.role==='manager'||server.userId===actor.id)return server; const permission=(await db.select().from(serverPermissions).where(and(eq(serverPermissions.serverId,serverId),eq(serverPermissions.userId,actor.id))).limit(1))[0]; return permission?.canFiles?server:null }
 async function postFiles(request: NextRequest) {
   await ensurePanelSchema(); const actor = await currentActor(); if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 }); if(!actor.approved)return NextResponse.json({error:'Approval required'},{status:403})
   const form = await request.formData(); const serverId = String(form.get('serverId') ?? ''); const server = await authorizedServer(actor, serverId)
