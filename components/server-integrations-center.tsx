@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import useSWR from 'swr'
 import {
   AlertTriangle, Bot, CheckCircle2, Clock3, Copy, FileText, Globe2, KeyRound, MessageCircle,
@@ -151,8 +152,21 @@ export function ServerIntegrationsCenter({serverId,serverName,canManage}:Props){
   const [emptyFallbackDelaySeconds,setEmptyFallbackDelaySeconds]=useState('60')
   const [emptyFallbackLockSeconds,setEmptyFallbackLockSeconds]=useState('300')
   const [returnToPlayersDelaySeconds,setReturnToPlayersDelaySeconds]=useState('30')
+  const searchParams = useSearchParams()
 
   useEffect(()=>{setHydrated(false);setApiKeyOnce('');setStreamPreview(null);setNotice('')},[serverId])
+  useEffect(()=>{
+    const oauth = searchParams.get('oauth')
+    const platform = searchParams.get('streamPlatform')
+    const message = searchParams.get('message')
+    if (!oauth) return
+    if (platform && ['youtube','twitch','kick'].includes(platform)) setStreamPlatform(platform)
+    setSourceMode('account')
+    setSelected('live-stream')
+    setNotice(message || (oauth === 'success' ? 'Yayın hesabı bağlandı. Hesap modunu kaydedip canlı yayını açabilirsiniz.' : 'Yayın hesabı bağlanamadı.'))
+    if (oauth === 'success') void mutate()
+    window.history.replaceState({}, '', window.location.pathname)
+  }, [searchParams, mutate])
   useEffect(()=>{if(typeof window!=='undefined')setPageHost(window.location.hostname)},[])
   useEffect(()=>{
     if(!data||hydrated)return
