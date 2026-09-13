@@ -71,7 +71,7 @@ const WORLD_TYPE_TO_PROPERTY: Record<string, string> = {
 }
 const PROPERTY_TO_WORLD_TYPE = Object.fromEntries(Object.entries(WORLD_TYPE_TO_PROPERTY).map(([key, value]) => [value, key])) as Record<string, string>
 const PROPERTY_TO_SETTING = Object.fromEntries(Object.entries(PROPERTY_KEYS).map(([key, value]) => [value, key])) as Record<string, string>
-const PANEL_ONLY_KEYS = new Set(['serverName', 'maxRam', 'xmx'])
+const PANEL_ONLY_KEYS = new Set(['serverName', 'maxRam', 'xmx', 'coverImageUrl', 'coverVideoUrl', 'coverGifUrl', 'serverSubtitle', 'cardTheme', 'cardTransition'])
 const SPECIAL_AGENT_KEYS = new Set(['serverPort'])
 const WRITABLE_KEYS = new Set([...Object.keys(PROPERTY_KEYS), ...PANEL_ONLY_KEYS, ...SPECIAL_AGENT_KEYS])
 const OFFLINE_REQUIRED_KEYS = new Set([...Object.keys(PROPERTY_KEYS), ...SPECIAL_AGENT_KEYS])
