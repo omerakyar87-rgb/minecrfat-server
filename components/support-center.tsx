@@ -65,6 +65,11 @@ export function SupportCenter(){
   const isStaff=!!data&&['manager','admin','guide'].includes(data.actor.role)
 
   useEffect(()=>{if(open&&data&&data.consent.required&&!data.consent.accepted)setView('info')},[open,data])
+  useEffect(()=>{
+    const openSupport=(event:Event)=>{const detail=(event as CustomEvent<{view?:View}>).detail;setOpen(true);setView(detail?.view==='info'?'info':'home')}
+    window.addEventListener('blockctrl:open-support',openSupport)
+    return ()=>window.removeEventListener('blockctrl:open-support',openSupport)
+  },[])
   useEffect(()=>{if(!open){setSelectedId(null);setView('home');setError(null)}},[open])
 
   async function post(body:Record<string,unknown>){
@@ -137,7 +142,7 @@ function InformationPanel({accepted}:{accepted:boolean}){return <div className="
   <div><h3 className="text-lg font-semibold">Bilgilendirme</h3><p className="mt-1 text-sm text-muted-foreground">Destek sisteminin nasıl çalıştığını ve dosya gönderim kurallarını burada görebilirsiniz.</p></div>
   <InfoCard icon={Headphones} title="Destek talebi"><p>Bir sorun yaşadığınızda konu ve açıklama ile talep oluşturursunuz. Talep önce <b>Onay bekliyor</b> durumuna geçer. Rehber, Admin veya Yönetici talebi kabul ettiğinde sohbet açılır.</p></InfoCard>
   <InfoCard icon={Bug} title="Hata bildirimi"><p>Panel veya sunucuyla ilgili hata bildirimi oluşturabilir; ekran görüntüsü, fotoğraf ve video ekleyebilirsiniz. Hata bildirimi de destek ekibi tarafından incelenir.</p></InfoCard>
-  <InfoCard icon={FileImage} title="Görsel ve video ekleri"><p>JPEG, PNG, WEBP, GIF, AVIF, HEIC/HEIF ile MP4, WEBM, MOV ve M4V dosyaları kabul edilir. Bir mesajda en fazla {MAX_ATTACHMENTS} dosya ve dosya başına en fazla 100 MB gönderilebilir. Dosyalar özel Blob depolamada tutulur ve yalnız yetkili sohbet katılımcıları üzerinden görüntülenir.</p></InfoCard>
+  <InfoCard icon={FileImage} title="Metin, görsel, video ve PDF"><p>Bilgilendirme ve destek içeriklerinde başlık, açıklama, görsel, video bağlantısı veya PDF rehberi kullanılabilir. Destek mesajlarında JPEG, PNG, WEBP, GIF, AVIF, HEIC/HEIF ile MP4, WEBM, MOV ve M4V dosyaları kabul edilir. Bir mesajda en fazla {MAX_ATTACHMENTS} dosya ve dosya başına en fazla 100 MB gönderilebilir. Dosyalar özel Blob depolamada tutulur ve yalnız yetkili sohbet katılımcıları üzerinden görüntülenir.</p></InfoCard>
   <InfoCard icon={LockKeyhole} title="Özel sohbet"><p>Yönetici, Admin veya Rehber bir üyeyi birebir özel görüşmeye davet edebilir. Üye daveti kabul etmeden sohbet açılmaz. Özel sohbet yalnız iki katılımcıya görünür.</p></InfoCard>
   <InfoCard icon={XCircle} title="Sohbeti kapatma"><p>Destek talebini talebi açan üye veya ilgili destek yetkilisi kapatabilir. Özel sohbeti iki taraftan biri kapatabilir. Kapatılan sohbet geçmişi kayıt olarak saklanır.</p></InfoCard>
   {accepted&&<div className="flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3 text-sm text-emerald-300"><CheckCircle2 className="size-4"/>Bu bilgilendirmeyi kabul ettiniz.</div>}
