@@ -43,7 +43,7 @@ async function actor() {
 
 const hash = (value: string) => createHash('sha256').update(value).digest('hex')
 
-function publicHostForNode(nodeId:string){ return nodePublicHost(nodeId) ?? 'Adres yapılandırılmamış' }
+function publicHostForNode(nodeId:string){ return nodePublicHost(nodeId) ?? 'Public IP bekleniyor' }
 async function nodeJson(nodeId:string,path:string,init:RequestInit={}){const response=await nodeFetch(nodeId,path,init);const text=await response.text();let data:Record<string,unknown>={};try{data=text?JSON.parse(text) as Record<string,unknown>:{} }catch{data={error:text.slice(0,500)}}if(!response.ok)throw new Error(String(data.error??`Node SFTP işlemi başarısız (HTTP ${response.status})`));return data}
 function sftpStatus(value:unknown){return value===true?'ready':'failed'}
 function connectivityState(node:{status:string;lastHeartbeat:Date|null}, directError?:string){const heartbeatOnline=node.status==='online'&&!!node.lastHeartbeat&&Date.now()-node.lastHeartbeat.getTime()<60_000;return {heartbeatOnline,directOnline:!directError,directError:directError??null,label:heartbeatOnline&&!directError?'Node online':heartbeatOnline?'Agent online fakat doğrudan node bağlantısı başarısız':'Node offline'}}

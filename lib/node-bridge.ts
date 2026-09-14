@@ -57,7 +57,7 @@ export async function nodeFetch(nodeId: string, path: string, init: RequestInit 
 
 export function nodePublicHost(nodeId: string): string | null {
   const hosts = parseMap('NODE_PUBLIC_HOSTS')
-  const explicit = hosts[nodeId] ?? process.env.NODE_PUBLIC_HOST ?? ''
+  const explicit = hosts[nodeId] ?? process.env.NODE_PUBLIC_HOST ?? process.env.NODE_PUBLIC_IP ?? process.env.HOSTING_PUBLIC_IP ?? process.env.PUBLIC_IP ?? ''
   const configured = parseMap('NODE_AGENT_URLS')[nodeId] ?? process.env.NODE_AGENT_BASE_URL ?? process.env.NODE_UPLOAD_URL ?? process.env.NODE_DOWNLOAD_URL ?? ''
   const value = explicit.trim() || configured.trim()
   if (!value) return null
