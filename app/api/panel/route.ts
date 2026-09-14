@@ -5,7 +5,7 @@ import { and, desc, eq, inArray, lt, ne, or } from 'drizzle-orm'
 import { z } from 'zod'
 import { auth } from '@/lib/auth'
 import { db, ensurePanelSchema } from '@/lib/db'
-import { agentCommands, auditLog, backups, consoleLogs, lostItems, managedDatabases, mods, nodes, operationLogs, serverPermissions, serverSchedules, serverSftp, servers, user, worlds } from '@/lib/db/schema'
+import { agentCommands, auditLog, backups, consoleLogs, lostItems, managedDatabases, mods, nodes, operationLogs, serverPermissions, serverSchedules, serverSftp, serverSettings, servers, user, worlds } from '@/lib/db/schema'
 import { resolvePanelUser } from '@/lib/db/identity'
 import { getNodeConfig, nodeDiagnosticMessage, nodeFetch, nodePublicHost } from '@/lib/node-bridge'
 import { isCompatibleNeoForgeVersion } from '@/lib/neoforge-version'
@@ -121,7 +121,9 @@ async function getPanel(request:NextRequest) {
   if(requestedServerId){
     const result=await access(a,requestedServerId)
     if(!result)return NextResponse.json({error:'Sunucu bulunamadı veya erişiminiz yok'},{status:404})
-    const compactServer=withConnection({id:result.server.id,nodeId:result.server.nodeId,name:result.server.name,loader:result.server.loader,mcVersion:result.server.mcVersion,loaderVersion:result.server.loaderVersion,status:result.server.status,port:result.server.port,memoryMb:result.server.memoryMb,playerCount:result.server.playerCount,installProgress:result.server.installProgress,installError:result.server.installError?.slice(0,500),worldName:result.server.worldName})
+    const [appearance] = await db.select().from(serverSettings).where(eq(serverSettings.serverId, requestedServerId)).limit(1)
+    const visualSettings = appearance?.settings ?? {}
+    const compactServer=withConnection({...result.server, ...visualSettings, installError:result.server.installError?.slice(0,500)})
     let directBridge:{online:boolean;error?:string;status?:number}={online:false}
   try{const config=getNodeConfig(result.server.nodeId);const bridge=await fetch(`${config.baseUrl}/health`,{headers:{authorization:`Bearer ${config.token}`,'x-node-id':result.server.nodeId},cache:'no-store',signal:AbortSignal.timeout(8000)});directBridge={online:bridge.ok,status:bridge.status};if(!bridge.ok)directBridge.error=`HTTP ${bridge.status}`}catch(error){directBridge={online:false,error:nodeDiagnosticMessage(error)}}
   const maySeeWorlds=result.fullAccess||result.sections.includes('worlds')
@@ -160,7 +162,7 @@ actor:{id:a.id,name:a.name,email:a.email,role:normalizeRole(a.role)},nodeConnect
   const lostItemServerIds=manager?serverIds:permissionRows.filter(p=>p.canViewLostItems||p.canManageLostItems).map(p=>p.serverId)
   const ownerIds=[...new Set(serverRows.map(s=>s.userId))]
 
-  const [nodeRows,worldRows,modRows,backupRows,logs,users,audits,lost,ops]=await Promise.all([
+  const [nodeRows,worldRows,modRows,backupRows,logs,users,audits,lost,ops,appearanceRows]=await Promise.all([
     manager?db.select().from(nodes).orderBy(desc(nodes.createdAt)):db.select().from(nodes).where(eq(nodes.userId,a.id)).orderBy(desc(nodes.createdAt)),
     serverIds.length?db.select().from(worlds).where(inArray(worlds.serverId,serverIds)):Promise.resolve([]),
     serverIds.length?db.select().from(mods).where(inArray(mods.serverId,serverIds)):Promise.resolve([]),
@@ -169,10 +171,12 @@ actor:{id:a.id,name:a.name,email:a.email,role:normalizeRole(a.role)},nodeConnect
     manager?db.select({id:user.id,name:user.name,email:user.email,role:user.role,approved:user.approved,createdAt:user.createdAt}).from(user).orderBy(desc(user.createdAt)):Promise.resolve([]),
     manager?db.select().from(auditLog).orderBy(desc(auditLog.createdAt)).limit(200):Promise.resolve([]),
     lostItemServerIds.length?db.select().from(lostItems).where(inArray(lostItems.serverId,lostItemServerIds)).orderBy(desc(lostItems.occurredAt)).limit(1000):Promise.resolve([]),
-    serverIds.length?db.select().from(operationLogs).where(inArray(operationLogs.serverId,serverIds)).orderBy(desc(operationLogs.createdAt)).limit(200):Promise.resolve([])
+    serverIds.length?db.select().from(operationLogs).where(inArray(operationLogs.serverId,serverIds)).orderBy(desc(operationLogs.createdAt)).limit(200):Promise.resolve([]),
+    serverIds.length?db.select().from(serverSettings).where(inArray(serverSettings.serverId,serverIds)):Promise.resolve([])
   ])
   const recoveryServers=serverRows.filter(server=>['queued','failed'].includes(server.status)).map(server=>({id:server.id,name:server.name,status:server.status,installError:server.installError,hasInstallCommand:true}))
-  return NextResponse.json({nodes:nodeRows,servers:serverRows.map(withConnection),worlds:worldRows,mods:modRows,backups:backupRows,logs,users,audits,lostItems:lost,operations:ops,recoveryServers,permissions:permissionRows,actor:{id:a.id,name:a.name,email:a.email,role:normalizeRole(a.role)}})
+  const appearanceByServer = new Map(appearanceRows.map((row) => [row.serverId, row.settings]))
+  return NextResponse.json({nodes:nodeRows,servers:serverRows.map((server) => withConnection({...server, ...(appearanceByServer.get(server.id) ?? {})})),worlds:worldRows,mods:modRows,backups:backupRows,logs,users,audits,lostItems:lost,operations:ops,recoveryServers,permissions:permissionRows,actor:{id:a.id,name:a.name,email:a.email,role:normalizeRole(a.role)}})
 }
 
 export async function GET(request:NextRequest){const requestId=request.headers.get('x-request-id')??crypto.randomUUID();try{return await getPanel(request)}catch(error){const e=error as {code?:string;table?:string;column?:string;message?:string};console.error('[panel-api:GET]',{requestId,code:e.code??'UNKNOWN',table:e.table??null,column:e.column??null,message:e.message??'database error'});return NextResponse.json({error:'Canlı panel verileri alınamadı',code:'PANEL_DATA_ERROR',requestId},{status:500})}}

@@ -10,14 +10,16 @@ function isPrivateOrMetadataHost(hostname: string) {
 type NodeConfig = { baseUrl: string; token: string }
 
 function parseMap(name: string): Record<string, string> {
-  const raw = process.env[name]
+  const raw = process.env[name]?.trim()
   if (!raw) return {}
   try {
     const value = JSON.parse(raw) as Record<string, unknown>
-    return Object.fromEntries(Object.entries(value).filter(([, item]) => typeof item === 'string' && item.trim())) as Record<string, string>
+    if (value && typeof value === 'object' && !Array.isArray(value)) return Object.fromEntries(Object.entries(value).filter(([, item]) => typeof item === 'string' && item.trim())) as Record<string, string>
   } catch {
-    throw new Error(`${name} geçerli JSON olmalı`)
+    const entries = raw.split(/\\r?\\n|,/).map((entry) => entry.trim()).filter(Boolean).map((entry) => entry.split(/\\s*=\\s*|\\s*:\\s*/, 2)).filter(([key, value]) => key && value)
+    if (entries.length) return Object.fromEntries(entries)
   }
+  throw new Error(`${name} JSON veya nodeId=değer biçiminde olmalı`)
 }
 
 export function getNodeConfig(nodeId: string): NodeConfig {
