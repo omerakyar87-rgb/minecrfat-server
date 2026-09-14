@@ -233,7 +233,7 @@ export function ServerIntegrationsCenter({serverId,serverName,canManage}:Props){
   if(error)return <div className="rounded-xl border border-red-500/30 bg-red-950/20 p-4 text-sm text-red-300">Entegrasyonlar yüklenemedi: {error.message}</div>
 
   return <div className="space-y-4">
-    <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-[22px] font-bold tracking-tight text-white">Entegrasyonlar</h3><p className="mt-0.5 text-[12px] text-slate-400">{serverName} sunucusunu Discord, bot, web sitesi ve canlı oyuncu yayın altyapısıyla bağlayın.</p></div><Button size="sm" variant="outline" onClick={()=>mutate()}><RefreshCw className="mr-2 size-4"/>Yenile</Button></div>
+    <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-[22px] font-bold tracking-tight text-white">Entegrasyonlar</h3><p className="mt-0.5 text-[12px] text-slate-400">{serverName} sunucusunu Discord, bot, web sitesi ve canlı oyuncu yayın altyapısıyla bağlayın. Erişim sekmesinden YouTube, Twitch veya Kick hesabınızı bağlayabilirsiniz.</p></div><Button size="sm" variant="outline" onClick={()=>mutate()}><RefreshCw className="mr-2 size-4"/>Yenile</Button></div>
 
     {!data?.encryptionReady&&<div className="rounded-xl border border-amber-500/30 bg-amber-950/20 p-3 text-xs text-amber-200"><AlertTriangle className="mr-2 inline size-4"/><b>Gizli anahtar gerekli:</b> Discord webhook ve bot token kaydetmek için Vercel ortamına <code>INTEGRATION_ENCRYPTION_KEY</code> eklenmelidir. Tokenlar düz metin saklanmaz.</div>}
     {notice&&<div className="rounded-xl border border-blue-500/25 bg-blue-950/20 px-4 py-3 text-xs text-blue-200">{notice}</div>}
