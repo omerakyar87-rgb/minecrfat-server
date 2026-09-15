@@ -33,57 +33,9 @@ export type IntegrationRow = {
   updatedAt: Date
 }
 
-let schemaReady: Promise<void> | null = null
-
-export function ensureIntegrationSchema() {
-  if (!schemaReady) {
-    schemaReady = (async () => {
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS server_integrations (
-          id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-          "serverId" uuid NOT NULL,
-          kind text NOT NULL,
-          enabled boolean NOT NULL DEFAULT false,
-          status text NOT NULL DEFAULT 'not_configured',
-          config jsonb NOT NULL DEFAULT '{}'::jsonb,
-          "secretCiphertext" text,
-          "secretIv" text,
-          "secretTag" text,
-          "updatedBy" text NOT NULL,
-          "lastTestAt" timestamp,
-          "lastError" text,
-          "createdAt" timestamp NOT NULL DEFAULT now(),
-          "updatedAt" timestamp NOT NULL DEFAULT now(),
-          CONSTRAINT server_integrations_server_kind_unique UNIQUE ("serverId", kind)
-        )
-      `)
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS integration_logs (
-          id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-          "serverId" uuid NOT NULL,
-          integration text NOT NULL,
-          level text NOT NULL DEFAULT 'info',
-          event text NOT NULL,
-          details jsonb NOT NULL DEFAULT '{}'::jsonb,
-          "createdAt" timestamp NOT NULL DEFAULT now()
-        )
-      `)
-      await pool.query('CREATE INDEX IF NOT EXISTS integration_logs_server_created_idx ON integration_logs ("serverId", "createdAt" DESC)')
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS integration_oauth_states (
-          state text PRIMARY KEY,
-          "serverId" uuid NOT NULL,
-          "userId" text NOT NULL,
-          platform text NOT NULL,
-          "codeVerifier" text,
-          "createdAt" timestamp NOT NULL DEFAULT now(),
-          "expiresAt" timestamp NOT NULL
-        )
-      `)
-      await pool.query('CREATE INDEX IF NOT EXISTS integration_oauth_states_expiry_idx ON integration_oauth_states ("expiresAt")')
-    })()
-  }
-  return schemaReady
+/** Schema is provisioned before deployment; request handlers only run DML. */
+export async function ensureIntegrationSchema() {
+  return undefined
 }
 
 function encryptionKey() {
