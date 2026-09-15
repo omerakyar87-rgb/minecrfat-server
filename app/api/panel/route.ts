@@ -159,6 +159,7 @@ actor:{id:a.id,name:a.name,email:a.email,role:normalizeRole(a.role)},nodeConnect
     ?await db.select().from(servers).where(ne(servers.status,'deleted')).orderBy(desc(servers.createdAt))
     :ids.length?await db.select().from(servers).where(and(inArray(servers.id,ids),ne(servers.status,'deleted'))):[]
   const serverIds=serverRows.map(s=>s.id)
+  const nodeConfigErrors=Object.fromEntries(serverRows.map((server)=>{try{getNodeConfig(server.nodeId);return [server.nodeId,null]}catch(error){return [server.nodeId,nodeDiagnosticMessage(error)]}}))
   const lostItemServerIds=manager?serverIds:permissionRows.filter(p=>p.canViewLostItems||p.canManageLostItems).map(p=>p.serverId)
   const ownerIds=[...new Set(serverRows.map(s=>s.userId))]
 
@@ -176,7 +177,7 @@ actor:{id:a.id,name:a.name,email:a.email,role:normalizeRole(a.role)},nodeConnect
   ])
   const recoveryServers=serverRows.filter(server=>['queued','failed'].includes(server.status)).map(server=>({id:server.id,name:server.name,status:server.status,installError:server.installError,hasInstallCommand:true}))
   const appearanceByServer = new Map(appearanceRows.map((row) => [row.serverId, row.settings]))
-  return NextResponse.json({nodes:nodeRows,servers:serverRows.map((server) => withConnection({...server, ...(appearanceByServer.get(server.id) ?? {})})),worlds:worldRows,mods:modRows,backups:backupRows,logs,users,audits,lostItems:lost,operations:ops,recoveryServers,permissions:permissionRows,actor:{id:a.id,name:a.name,email:a.email,role:normalizeRole(a.role)}})
+  return NextResponse.json({nodes:nodeRows,servers:serverRows.map((server) => withConnection({...server, ...(appearanceByServer.get(server.id) ?? {})})),worlds:worldRows,mods:modRows,backups:backupRows,logs,users,audits,lostItems:lost,operations:ops,recoveryServers,permissions:permissionRows,nodeConfigErrors,actor:{id:a.id,name:a.name,email:a.email,role:normalizeRole(a.role)}})
 }
 
 export async function GET(request:NextRequest){const requestId=request.headers.get('x-request-id')??crypto.randomUUID();try{return await getPanel(request)}catch(error){const e=error as {code?:string;table?:string;column?:string;message?:string};console.error('[panel-api:GET]',{requestId,code:e.code??'UNKNOWN',table:e.table??null,column:e.column??null,message:e.message??'database error'});return NextResponse.json({error:'Canlı panel verileri alınamadı',code:'PANEL_DATA_ERROR',requestId},{status:500})}}

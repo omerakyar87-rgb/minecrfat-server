@@ -16,7 +16,7 @@ function parseMap(name: string): Record<string, string> {
     const value = JSON.parse(raw) as Record<string, unknown>
     if (value && typeof value === 'object' && !Array.isArray(value)) return Object.fromEntries(Object.entries(value).filter(([, item]) => typeof item === 'string' && item.trim())) as Record<string, string>
   } catch {
-    const entries = raw.split(/\\r?\\n|,/).map((entry) => entry.trim()).filter(Boolean).map((entry) => entry.split(/\\s*=\\s*|\\s*:\\s*/, 2)).filter(([key, value]) => key && value)
+    const entries = raw.split(/\r?\n|,/).map((entry) => entry.trim()).filter(Boolean).map((entry) => { const separator = entry.indexOf('=') >= 0 ? entry.indexOf('=') : entry.indexOf(':'); return separator > 0 ? [entry.slice(0, separator).trim(), entry.slice(separator + 1).trim()] : ['', ''] }).filter(([key, value]) => key && value)
     if (entries.length) return Object.fromEntries(entries)
   }
   throw new Error(`${name} JSON veya nodeId=değer biçiminde olmalı`)
