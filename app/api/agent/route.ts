@@ -134,8 +134,18 @@ export async function POST(request:NextRequest){
     }else if(body.type==='result'){
       const command=(await db.select().from(agentCommands).where(and(eq(agentCommands.id,body.commandId),eq(agentCommands.userId,node.userId))).limit(1))[0]
       if(command){
-        await db.update(agentCommands).set({status:body.ok?'completed':'failed',result:body.result??{},completedAt:new Date()}).where(eq(agentCommands.id,command.id))
-        if(command.serverId)await db.insert(operationLogs).values({userId:node.userId,serverId:command.serverId,operation:command.type,status:body.ok?'completed':'failed',message:body.result?.error??null})
+        await db.update(agentCommands).set({status:body.ok?'completed':'failed',result:body.result??{},completedAt:new Date()}).where(and(eq(agentCommands.id,command.id),eq(agentCommands.nodeId,node.id)))
+        if(command.serverId){
+          const nextStatus = body.ok
+            ? command.type === 'start' ? 'running'
+            : command.type === 'stop' ? 'stopped'
+            : command.type === 'restart' ? 'running'
+            : command.type === 'install' ? 'stopped'
+            : null
+            : command.type === 'start' || command.type === 'restart' ? 'crashed' : command.type === 'stop' ? 'stopped' : null
+          if(nextStatus) await db.update(servers).set({status: nextStatus, installError: body.ok ? null : String(body.result?.error ?? 'Agent işlemi başarısız').slice(0, 500), updatedAt: new Date()}).where(and(eq(servers.id,command.serverId),eq(servers.nodeId,node.id)))
+          await db.insert(operationLogs).values({userId:node.userId,serverId:command.serverId,operation:command.type,status:body.ok?'completed':'failed',message:body.result?.error??null})
+        }
 
         if(body.ok&&command.serverId&&command.type==='restart'){
           await emitDiscordEvent(command.serverId,'server_restart',{detail:'Panel üzerinden yeniden başlatma komutu tamamlandı.'})
