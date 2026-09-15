@@ -14,17 +14,20 @@ const ALL_SECTIONS = ['overview','settings','console','logs','players','software
 const SAFE_ADMIN_SECTIONS = ['overview','logs','players','worlds','network'] as const
 const GUIDE_SECTIONS = ['overview','logs'] as const
 
-type AppRole = 'manager' | 'member' | 'admin' | 'guide'
+type AppRole = 'owner' | 'admin' | 'manager' | 'member' | 'viewer' | 'support'
 
 function normalizeRole(role: string): AppRole {
-  if (role === 'manager' || role === 'member' || role === 'admin' || role === 'guide') return role
+  const normalized = role.toLowerCase()
+  if (normalized === 'owner' || normalized === 'admin' || normalized === 'manager' || normalized === 'member' || normalized === 'viewer' || normalized === 'support') return normalized
+  if (normalized === 'guide') return 'viewer'
   return 'member'
 }
-function isManager(role: string) { return normalizeRole(role) === 'manager' }
+function isManager(role: string) { return ['owner', 'manager'].includes(normalizeRole(role)) }
 function defaultSections(role: string) {
   const normalized = normalizeRole(role)
-  if (normalized === 'manager') return [...ALL_SECTIONS]
+  if (normalized === 'owner' || normalized === 'manager') return [...ALL_SECTIONS]
   if (normalized === 'admin') return [...SAFE_ADMIN_SECTIONS]
+  if (normalized === 'support') return ['overview','logs','console','players']
   return [...GUIDE_SECTIONS]
 }
 function sectionList(value: unknown, role: string) {
@@ -406,7 +409,7 @@ async function postPanel(request:NextRequest) {
   if(body.action==='delete-lost-item'){
     const id=z.string().uuid().parse(body.id)
     const item=(await db.select().from(lostItems).where(eq(lostItems.id,id)).limit(1))[0]
-    if(!item)return NextResponse.json({error:'Kayıt bulunamadı'},{status:404})
+    if(!item)return NextResponse.json({error:'Kayıt bulunamad��'},{status:404})
     const result=await access(a,item.serverId)
     if(!result||(!result.fullAccess&&!result.permission?.canManageLostItems))return NextResponse.json({error:'Bu kaydı silme yetkiniz yok'},{status:403})
     await db.delete(lostItems).where(and(eq(lostItems.id,id),eq(lostItems.serverId,item.serverId)))
