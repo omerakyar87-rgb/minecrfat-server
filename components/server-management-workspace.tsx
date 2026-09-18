@@ -22,6 +22,8 @@ type ServerInfo = {
   serverSubtitle?: string | null
 }
 
+type WorkspaceSectionKey = 'overview' | 'connection' | 'worlds' | 'information' | 'support'
+
 type Props = {
   server: ServerInfo[]
   selectedId: string
@@ -42,7 +44,7 @@ type WorldData = {
 
 export function ServerManagementWorkspace({ server, selectedId, onSelect, onClose, onRefresh, initialSection = 'overview' }: Props) {
   const current = server.find(item => item.id === selectedId) ?? server[0]
-  const [section, setSection] = useState(initialSection)
+  const [section, setSection] = useState<WorkspaceSectionKey>(initialSection)
   const [worlds, setWorlds] = useState<WorldData>({})
   const [worldName, setWorldName] = useState('')
   const [selectedWorld, setSelectedWorld] = useState('')
@@ -225,7 +227,7 @@ export function ServerManagementWorkspace({ server, selectedId, onSelect, onClos
           <div className="space-y-1">{server.map(item => <button key={item.id} onClick={() => onSelect(item.id)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition ${item.id === current.id ? 'bg-emerald-400/15 text-emerald-200' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}><Server className="size-4" /><span className="min-w-0 flex-1 truncate text-sm font-medium">{item.name}</span><ChevronRight className="size-3" /></button>)}</div>
           <div className="my-4 border-t border-white/10" />
           <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[.18em] text-slate-500">Yönetim</p>
-          <div className="space-y-1">{[['overview', 'Sunucu görünümü', Palette], ['connection', 'IP & Domain', Network], ['worlds', 'Dünya & İçerik', Layers3], ['information', 'Bilgilendirme', BookOpen], ['support', 'Destekler', LifeBuoy]].map(([key, label, Icon]) => <button key={String(key)} onClick={() => setSection(String(key))} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm transition ${section === key ? 'bg-white/10 text-white' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}><Icon className="size-4" />{String(label)}</button>)}</div>
+          <div className="space-y-1">{[['overview', 'Sunucu görünümü', Palette], ['connection', 'IP & Domain', Network], ['worlds', 'Dünya & İçerik', Layers3], ['information', 'Bilgilendirme', BookOpen], ['support', 'Destekler', LifeBuoy]].map(([key, label, Icon]) => <button key={String(key)} onClick={() => setSection(String(key) as WorkspaceSectionKey)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm transition ${section === key ? 'bg-white/10 text-white' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}><Icon className="size-4" />{String(label)}</button>)}</div>
         </aside>
         <main className="min-w-0 overflow-y-auto p-4 sm:p-7">
           <div className="mb-6 flex flex-wrap items-end justify-between gap-3"><div><p className="text-xs uppercase tracking-[.18em] text-emerald-300">Seçili sunucu</p><h1 className="mt-1 text-2xl font-bold tracking-tight">{current.name}</h1><p className="mt-1 text-sm text-slate-500">{current.connectionAddress ?? `${current.publicHost ?? 'IP bekleniyor'}:${current.port}`} · {current.status}</p></div><div className="flex items-center gap-2"><div className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs text-emerald-200">{current.playerCount} oyuncu</div><Button variant="outline" size="sm" onClick={() => openServerPanel()}><ExternalLink className="mr-2 size-4" />Tam panel</Button></div></div>
