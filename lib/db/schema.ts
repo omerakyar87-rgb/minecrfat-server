@@ -6,10 +6,100 @@ export const account = pgTable('account', { id: text('id').primaryKey(), account
 export const verification = pgTable('verification', { id: text('id').primaryKey(), identifier: text('identifier').notNull(), value: text('value').notNull(), expiresAt: timestamp('expiresAt').notNull(), createdAt: timestamp('createdAt').notNull().defaultNow(), updatedAt: timestamp('updatedAt').notNull().defaultNow() })
 export const nodes = pgTable('nodes', { id: uuid('id').primaryKey().defaultRandom(), userId: text('userId').notNull(), name: text('name').notNull(), agentTokenHash: text('agentTokenHash').notNull().unique(), status: text('status').notNull().default('offline'), lastHeartbeat: timestamp('lastHeartbeat'), cpuPercent: real('cpuPercent').notNull().default(0), memoryUsedMb: integer('memoryUsedMb').notNull().default(0), memoryTotalMb: integer('memoryTotalMb').notNull().default(0), diskUsedGb: real('diskUsedGb').notNull().default(0), diskTotalGb: real('diskTotalGb').notNull().default(0), createdAt: timestamp('createdAt').notNull().defaultNow(), updatedAt: timestamp('updatedAt').notNull().defaultNow() })
 export const servers = pgTable('servers', { id: uuid('id').primaryKey().defaultRandom(), userId: text('userId').notNull(), nodeId: uuid('nodeId').notNull(), name: text('name').notNull(), loader: text('loader').notNull(), mcVersion: text('mcVersion').notNull(), loaderVersion: text('loaderVersion'), memoryMb: integer('memoryMb').notNull().default(4096), port: integer('port').notNull().default(25565), status: text('status').notNull().default('stopped'), installProgress: integer('installProgress').notNull().default(0), installError: text('installError'), playerCount: integer('playerCount').notNull().default(0), pid: integer('pid'), worldName: text('worldName').notNull().default('world'), itemTrackingEnabled: boolean('itemTrackingEnabled').notNull().default(false), javaArgs: text('javaArgs').notNull().default(''), createdAt: timestamp('createdAt').notNull().defaultNow(), updatedAt: timestamp('updatedAt').notNull().defaultNow() })
+
+export const websites = pgTable('websites', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: text('userId').notNull(),
+  name: text('name').notNull(),
+  slug: text('slug').notNull().unique(),
+  projectName: text('projectName').notNull().unique(),
+  template: text('template').notNull().default('blank'),
+  description: text('description'),
+  vercelProjectId: text('vercelProjectId'),
+  deploymentId: text('deploymentId'),
+  deploymentUrl: text('deploymentUrl'),
+  productionUrl: text('productionUrl'),
+  status: text('status').notNull().default('queued'),
+  lastError: text('lastError'),
+  builderData: jsonb('builderData').$type<Record<string, unknown> | null>(),
+  publishedAt: timestamp('publishedAt'),
+  createdAt: timestamp('createdAt').notNull().defaultNow(),
+  updatedAt: timestamp('updatedAt').notNull().defaultNow(),
+})
+
+export const websiteAuthSettings = pgTable('website_auth_settings', {
+  websiteId: uuid('websiteId').primaryKey().references(() => websites.id, { onDelete: 'cascade' }),
+  registrationMode: text('registrationMode').notNull().default('website'),
+  loginMode: text('loginMode').notNull().default('email'),
+  serverId: uuid('serverId'),
+  sessionDays: integer('sessionDays').notNull().default(30),
+  defaultRole: text('defaultRole').notNull().default('member'),
+  serverBridgeEnabled: boolean('serverBridgeEnabled').notNull().default(false),
+  updatedAt: timestamp('updatedAt').notNull().defaultNow(),
+})
+
+export const websiteMembers = pgTable('website_members', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  websiteId: uuid('websiteId').notNull().references(() => websites.id, { onDelete: 'cascade' }),
+  email: text('email'),
+  name: text('name').notNull(),
+  passwordHash: text('passwordHash').notNull(),
+  minecraftUsername: text('minecraftUsername'),
+  playerUuid: text('playerUuid'),
+  serverId: uuid('serverId'),
+  authSource: text('authSource').notNull().default('email'),
+  role: text('role').notNull().default('member'),
+  allowedPages: jsonb('allowedPages').$type<string[]>().notNull().default([]),
+  metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull().default({}),
+  status: text('status').notNull().default('active'),
+  lastLoginAt: timestamp('lastLoginAt'),
+  createdAt: timestamp('createdAt').notNull().defaultNow(),
+  updatedAt: timestamp('updatedAt').notNull().defaultNow(),
+})
+
+export const websiteMemberSessions = pgTable('website_member_sessions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  websiteId: uuid('websiteId').notNull().references(() => websites.id, { onDelete: 'cascade' }),
+  memberId: uuid('memberId').notNull().references(() => websiteMembers.id, { onDelete: 'cascade' }),
+  tokenHash: text('tokenHash').notNull().unique(),
+  ipAddress: text('ipAddress'),
+  userAgent: text('userAgent'),
+  lastSeenAt: timestamp('lastSeenAt').notNull().defaultNow(),
+  expiresAt: timestamp('expiresAt').notNull(),
+  createdAt: timestamp('createdAt').notNull().defaultNow(),
+})
+
+export const websiteFormSubmissions = pgTable('website_form_submissions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  websiteId: uuid('websiteId').notNull().references(() => websites.id, { onDelete: 'cascade' }),
+  memberId: uuid('memberId').references(() => websiteMembers.id, { onDelete: 'set null' }),
+  formType: text('formType').notNull().default('contact'),
+  pageSlug: text('pageSlug').notNull().default(''),
+  senderName: text('senderName'),
+  senderEmail: text('senderEmail'),
+  subject: text('subject'),
+  message: text('message').notNull().default(''),
+  payload: jsonb('payload').$type<Record<string, unknown>>().notNull().default({}),
+  status: text('status').notNull().default('new'),
+  createdAt: timestamp('createdAt').notNull().defaultNow(),
+})
+
+
+export const websiteAuthRateLimits = pgTable('website_auth_rate_limits', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  websiteId: uuid('websiteId').notNull().references(() => websites.id, { onDelete: 'cascade' }),
+  bucket: text('bucket').notNull(),
+  keyHash: text('keyHash').notNull(),
+  count: integer('count').notNull().default(0),
+  windowStart: timestamp('windowStart').notNull().defaultNow(),
+  expiresAt: timestamp('expiresAt').notNull(),
+  updatedAt: timestamp('updatedAt').notNull().defaultNow(),
+}, (t) => [unique().on(t.websiteId, t.bucket, t.keyHash)])
+
 export const worlds = pgTable('worlds', { id: uuid('id').primaryKey().defaultRandom(), userId: text('userId').notNull(), serverId: uuid('serverId').notNull(), name: text('name').notNull(), seed: text('seed'), isActive: boolean('isActive').notNull().default(false), sizeMb: real('sizeMb').notNull().default(0), lastBackupAt: timestamp('lastBackupAt'), createdAt: timestamp('createdAt').notNull().defaultNow() })
 export const mods = pgTable('mods', { id: uuid('id').primaryKey().defaultRandom(), userId: text('userId').notNull(), serverId: uuid('serverId').notNull(), filename: text('filename').notNull(), blobPathname: text('blobPathname').notNull(), sha256: text('sha256').notNull(), enabled: boolean('enabled').notNull().default(true), uploadedBy: text('uploadedBy').notNull(), createdAt: timestamp('createdAt').notNull().defaultNow() })
 export const backups = pgTable('backups', { id: uuid('id').primaryKey().defaultRandom(), userId: text('userId').notNull(), worldId: uuid('worldId').notNull(), blobPathname: text('blobPathname').notNull(), sizeMb: real('sizeMb').notNull().default(0), sizeBytes: bigint('sizeBytes', { mode: 'number' }).notNull().default(0), createdBy: text('createdBy').notNull(), createdAt: timestamp('createdAt').notNull().defaultNow() })
-export const serverPermissions = pgTable('server_permissions', { id: uuid('id').primaryKey().defaultRandom(), userId: text('userId').notNull(), ownerUserId: text('ownerUserId').notNull(), serverId: uuid('serverId').notNull(), canStart: boolean('canStart').notNull().default(false), canStop: boolean('canStop').notNull().default(false), canRestart: boolean('canRestart').notNull().default(false), canConsole: boolean('canConsole').notNull().default(false), canFiles: boolean('canFiles').notNull().default(false), canBackup: boolean('canBackup').notNull().default(false), canReset: boolean('canReset').notNull().default(false), canViewLostItems: boolean('canViewLostItems').notNull().default(false), canManageLostItems: boolean('canManageLostItems').notNull().default(false), sections: jsonb('sections').$type<string[]>().notNull().default([]), createdAt: timestamp('createdAt').notNull().defaultNow() }, (t) => [unique().on(t.userId, t.serverId)])
+export const serverPermissions = pgTable('server_permissions', { id: uuid('id').primaryKey().defaultRandom(), userId: text('userId').notNull(), ownerUserId: text('ownerUserId').notNull(), serverId: uuid('serverId').notNull(), canStart: boolean('canStart').notNull().default(false), canStop: boolean('canStop').notNull().default(false), canRestart: boolean('canRestart').notNull().default(false), canConsole: boolean('canConsole').notNull().default(false), canFiles: boolean('canFiles').notNull().default(false), canBackup: boolean('canBackup').notNull().default(false), canReset: boolean('canReset').notNull().default(false), canViewLostItems: boolean('canViewLostItems').notNull().default(false), canManageLostItems: boolean('canManageLostItems').notNull().default(false), canWebsiteData: boolean('canWebsiteData').notNull().default(false), sections: jsonb('sections').$type<string[]>().notNull().default([]), createdAt: timestamp('createdAt').notNull().defaultNow() }, (t) => [unique().on(t.userId, t.serverId)])
 
 export const serverSftp = pgTable('server_sftp', { id: uuid('id').primaryKey().defaultRandom(), serverId: uuid('serverId').notNull().unique(), nodeId: uuid('nodeId').notNull(), username: text('username').notNull(), passwordHash: text('passwordHash').notNull(), port: integer('port').notNull().default(22), rootPath: text('rootPath').notNull(), status: text('status').notNull().default('queued'), lastError: text('lastError'), lastTestAt: timestamp('lastTestAt'), passwordRotatedAt: timestamp('passwordRotatedAt'), disabledAt: timestamp('disabledAt'), createdAt: timestamp('createdAt').notNull().defaultNow(), updatedAt: timestamp('updatedAt').notNull().defaultNow() })
 
@@ -47,6 +137,8 @@ export const managedDatabases = pgTable('managed_databases', {
   credentialsPath: text('credentialsPath'),
   status: text('status').notNull().default('queued'),
   lastError: text('lastError'),
+  builderData: jsonb('builderData').$type<Record<string, unknown> | null>(),
+  publishedAt: timestamp('publishedAt'),
   createdAt: timestamp('createdAt').notNull().defaultNow(),
   updatedAt: timestamp('updatedAt').notNull().defaultNow(),
 }, (t) => [
@@ -69,12 +161,22 @@ export const serverSettings = pgTable('server_settings', {
 export const auditLog = pgTable('audit_log', { id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(), userId: text('userId').notNull(), action: text('action').notNull(), resourceType: text('resourceType').notNull(), resourceId: text('resourceId'), details: jsonb('details').notNull().default({}), createdAt: timestamp('createdAt').notNull().defaultNow() })
 export const agentCommands = pgTable('agent_commands', { id: uuid('id').primaryKey().defaultRandom(), userId: text('userId').notNull(), nodeId: uuid('nodeId').notNull(), serverId: uuid('serverId'), type: text('type').notNull(), payload: jsonb('payload').notNull().default({}), status: text('status').notNull().default('queued'), result: jsonb('result'), createdAt: timestamp('createdAt').notNull().defaultNow(), completedAt: timestamp('completedAt') })
 export const consoleLogs = pgTable('console_logs', { id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(), userId: text('userId').notNull(), serverId: uuid('serverId').notNull(), stream: text('stream').notNull().default('stdout'), line: text('line').notNull(), createdAt: timestamp('createdAt').notNull().defaultNow() })
+export const playerModerationNotes = pgTable('player_moderation_notes', { id: uuid('id').primaryKey().defaultRandom(), serverId: uuid('serverId').notNull().references(() => servers.id, { onDelete: 'cascade' }), playerName: text('playerName').notNull(), note: text('note').notNull(), authorUserId: text('authorUserId').notNull(), authorName: text('authorName').notNull(), createdAt: timestamp('createdAt').notNull().defaultNow(), updatedAt: timestamp('updatedAt').notNull().defaultNow() })
 
 
 export const supportConsents = pgTable('support_consents', {
   userId: text('userId').primaryKey(),
   version: text('version').notNull(),
   acceptedAt: timestamp('acceptedAt').notNull().defaultNow(),
+})
+
+export const informationPages = pgTable('information_pages', {
+  id: text('id').primaryKey(),
+  title: text('title').notNull().default('Bilgilendirme'),
+  description: text('description').notNull().default(''),
+  blocks: jsonb('blocks').$type<Array<Record<string, unknown>>>().notNull().default([]),
+  updatedBy: text('updatedBy'),
+  updatedAt: timestamp('updatedAt').notNull().defaultNow(),
 })
 
 export const supportThreads = pgTable('support_threads', {
@@ -117,6 +219,7 @@ export const supportAttachments = pgTable('support_attachments', {
 })
 
 export const serverMetrics = pgTable('server_metrics', { id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(), userId: text('userId').notNull(), serverId: uuid('serverId').notNull(), cpuPercent: real('cpuPercent').notNull().default(0), memoryUsedMb: integer('memoryUsedMb').notNull().default(0), memoryTotalMb: integer('memoryTotalMb').notNull().default(0), diskUsedGb: real('diskUsedGb').notNull().default(0), diskTotalGb: real('diskTotalGb').notNull().default(0), tps: real('tps'), mspt: real('mspt'), players: integer('players').notNull().default(0), uptimeSeconds: integer('uptimeSeconds').notNull().default(0), createdAt: timestamp('createdAt').notNull().defaultNow() })
+export const serverWebsiteData = pgTable('server_website_data', { id: uuid('id').primaryKey().defaultRandom(), userId: text('userId').notNull(), serverId: uuid('serverId').notNull().references(() => servers.id, { onDelete: 'cascade' }), source: text('source').notNull(), data: jsonb('data').$type<{items:Array<{title:string;description:string;value:string;image?:string|null}>}>().notNull().default({items:[]}), updatedAt: timestamp('updatedAt').notNull().defaultNow() }, (t) => [unique().on(t.serverId, t.source)])
 export const alertRules = pgTable('alert_rules', { id: uuid('id').primaryKey().defaultRandom(), userId: text('userId').notNull(), serverId: uuid('serverId').notNull(), metric: text('metric').notNull(), operator: text('operator').notNull(), threshold: real('threshold').notNull(), enabled: boolean('enabled').notNull().default(true), createdAt: timestamp('createdAt').notNull().defaultNow(), updatedAt: timestamp('updatedAt').notNull().defaultNow() })
 export const notifications = pgTable('notifications', { id: uuid('id').primaryKey().defaultRandom(), userId: text('userId').notNull(), serverId: uuid('serverId'), type: text('type').notNull(), title: text('title').notNull(), body: text('body').notNull(), readAt: timestamp('readAt'), createdAt: timestamp('createdAt').notNull().defaultNow() })
 
