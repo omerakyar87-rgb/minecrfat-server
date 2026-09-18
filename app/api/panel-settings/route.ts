@@ -7,7 +7,7 @@ import { agentCommands, auditLog, nodes, serverPermissions, serverSettings, serv
 import { resolvePanelUser } from '@/lib/db/identity'
 import { nodeDiagnosticMessage, nodeFetch } from '@/lib/node-bridge'
 
-const LIVE_CAPABILITIES = ['properties', 'port', 'panel-metadata', 'runtime-memory']
+const LIVE_CAPABILITIES = ['properties', 'port', 'panel-metadata', 'runtime-memory', 'logs', 'console-diagnostics', 'file-browser', 'bulk-download', 'firewall']
 
 const PROPERTY_KEYS: Record<string, string> = {
   motd: 'motd',
@@ -71,7 +71,7 @@ const WORLD_TYPE_TO_PROPERTY: Record<string, string> = {
 }
 const PROPERTY_TO_WORLD_TYPE = Object.fromEntries(Object.entries(WORLD_TYPE_TO_PROPERTY).map(([key, value]) => [value, key])) as Record<string, string>
 const PROPERTY_TO_SETTING = Object.fromEntries(Object.entries(PROPERTY_KEYS).map(([key, value]) => [value, key])) as Record<string, string>
-const PANEL_ONLY_KEYS = new Set(['serverName', 'maxRam', 'xmx', 'coverImageUrl', 'coverVideoUrl', 'coverGifUrl', 'serverSubtitle', 'cardTheme', 'cardTransition'])
+const PANEL_ONLY_KEYS = new Set(['serverName', 'maxRam', 'xmx', 'coverImageUrl', 'coverVideoUrl', 'coverGifUrl', 'serverSubtitle', 'cardTheme', 'cardTransition', 'hostname', 'srvRecord'])
 const SPECIAL_AGENT_KEYS = new Set(['serverPort'])
 const WRITABLE_KEYS = new Set([...Object.keys(PROPERTY_KEYS), ...PANEL_ONLY_KEYS, ...SPECIAL_AGENT_KEYS])
 const OFFLINE_REQUIRED_KEYS = new Set([...Object.keys(PROPERTY_KEYS), ...SPECIAL_AGENT_KEYS])
@@ -94,7 +94,7 @@ function normalizeRole(role: unknown) {
   if (value === 'manager' || value === 'admin' || value === 'guide' || value === 'member') return value
   return 'member'
 }
-function isPrivileged(role: unknown) { const r = normalizeRole(role); return r === 'manager' || r === 'admin' }
+function isManager(role: unknown) { return normalizeRole(role) === 'manager' }
 function scalar(v: unknown): v is string | number | boolean { return typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean' }
 function parsePropertyValue(key: string, value: unknown): string | number | boolean {
   const raw = String(value ?? '')
@@ -111,6 +111,25 @@ function propertyValueForAgent(key: string, value: string | number | boolean) {
   return value
 }
 function validServerName(value: string) { return value.length >= 2 && value.length <= 80 && !value.includes('..') && !/[\\/\0\x00-\x1F\x7F]/.test(value) }
+function validHostname(value: string) {
+  if (!value) return true
+  if (value.length > 253 || value.startsWith('.') || value.endsWith('.')) return false
+  return value.split('.').every(label => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(label))
+}
+
+function validPanelMediaUrl(value: string) {
+  if (!value) return true
+  if (value.startsWith('/')) return true
+  try {
+    const url = new URL(value)
+    if (url.protocol === 'https:') return true
+    return process.env.NODE_ENV !== 'production' && url.protocol === 'http:'
+  } catch {
+    return false
+  }
+}
+const CARD_TRANSITIONS = new Set(['fade', 'slide', 'zoom', 'none'])
+
 function nodeIsFresh(lastHeartbeat: Date | null | undefined, status: string | null | undefined) {
   return status === 'online' && !!lastHeartbeat && Date.now() - new Date(lastHeartbeat).getTime() < 60_000
 }
@@ -125,16 +144,18 @@ async function actor() {
 async function access(serverId: string, a: NonNullable<Awaited<ReturnType<typeof actor>>>) {
   const server = (await db.select().from(servers).where(eq(servers.id, serverId)).limit(1))[0]
   if (!server || server.status === 'deleted') return null
-  if (isPrivileged(a.role)) return { server, full: true, owner: server.userId === a.id, permission: null }
-  if (server.userId === a.id) return { server, full: true, owner: true, permission: null }
-  const permission = (await db.select().from(serverPermissions).where(and(eq(serverPermissions.serverId, serverId), eq(serverPermissions.userId, a.id))).limit(1))[0]
-  return permission ? { server, full: false, owner: false, permission } : null
+  const role=normalizeRole(a.role)
+  const owner=server.userId===a.id
+  if (isManager(role)) return { server, full:true, owner, permission:null, canView:true }
+  const permission=(await db.select().from(serverPermissions).where(and(eq(serverPermissions.serverId,serverId),eq(serverPermissions.userId,a.id))).limit(1))[0]
+  if(permission){const sections=Array.isArray(permission.sections)?permission.sections.map(String):[];return {server,full:false,owner,permission,canView:sections.includes('overview')||sections.includes('settings')}}
+  if(role==='member'&&owner)return {server,full:false,owner:true,permission:null,canView:true}
+  return null
 }
 
 function canEdit(x: NonNullable<Awaited<ReturnType<typeof access>>>) {
-  if (x.full || x.owner) return true
-  const sections = Array.isArray(x.permission?.sections) ? x.permission.sections.map(String) : []
-  return !!x.permission?.canReset || sections.includes('settings')
+  if (x.full) return true
+  return !!x.permission?.canReset
 }
 
 async function liveSettings(nodeId: string, serverId: string) {
@@ -157,7 +178,7 @@ export async function GET(request: NextRequest) {
   if (!a.approved) return NextResponse.json({ error: 'Approval required' }, { status: 403 })
   const serverId = request.nextUrl.searchParams.get('serverId') || ''
   const x = await access(serverId, a)
-  if (!x) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!x || !x.canView) return NextResponse.json({ error: 'Ayar görünümüne erişiminiz yok' }, { status: 403 })
 
   const [row, node, recent] = await Promise.all([
     db.select().from(serverSettings).where(eq(serverSettings.serverId, serverId)).limit(1).then(rows => rows[0]),
@@ -198,13 +219,15 @@ export async function GET(request: NextRequest) {
   const lastFailure = latestSettingsCommand?.status === 'failed' ? latestSettingsCommand : null
   const canEditSettings = canEdit(x)
   const agentSettingsWritable = nodeOnline && SETTINGS_OFFLINE_STATUSES.has(x.server.status)
+  const supportedKeys = [...WRITABLE_KEYS]
   const writableKeys = canEditSettings
-    ? [...WRITABLE_KEYS].filter(key => !OFFLINE_REQUIRED_KEYS.has(key) || agentSettingsWritable)
+    ? supportedKeys.filter(key => !OFFLINE_REQUIRED_KEYS.has(key) || agentSettingsWritable)
     : []
 
   return NextResponse.json({
     settings: effective,
     capabilities: LIVE_CAPABILITIES,
+    supportedKeys,
     writableKeys,
     offlineRequiredKeys: [...OFFLINE_REQUIRED_KEYS],
     canEdit: canEditSettings,
@@ -214,6 +237,13 @@ export async function GET(request: NextRequest) {
     liveSync,
     liveSyncError,
     pendingApply,
+    nodeLastHeartbeat: node?.lastHeartbeat?.toISOString?.() ?? null,
+    lastApply: latestSettingsCommand ? {
+      status: latestSettingsCommand.status,
+      type: latestSettingsCommand.type,
+      createdAt: latestSettingsCommand.createdAt?.toISOString?.() ?? null,
+      error: latestSettingsCommand.status === 'failed' ? String((latestSettingsCommand.result as Record<string, unknown> | null)?.error ?? 'Agent ayarı uygulayamadı') : null,
+    } : null,
     lastApplyError: lastFailure ? String((lastFailure.result as Record<string, unknown> | null)?.error ?? 'Agent ayarı uygulayamadı') : null,
   }, { headers: { 'Cache-Control': 'private, no-store' } })
 }
@@ -278,8 +308,44 @@ export async function PATCH(request: NextRequest) {
     clean.serverPort = port
   }
 
+  if ('hostname' in clean) {
+    const hostname = String(clean.hostname).trim().toLowerCase()
+    if (!validHostname(hostname)) return NextResponse.json({ error: 'Domain/hostname geçersiz. Örnek: play.example.com' }, { status: 400 })
+    clean.hostname = hostname
+  }
+  if ('srvRecord' in clean) {
+    const srvRecord = String(clean.srvRecord).trim()
+    if (srvRecord.length > 255) return NextResponse.json({ error: 'SRV kaydı en fazla 255 karakter olabilir.' }, { status: 400 })
+    clean.srvRecord = srvRecord
+  }
+
+  for (const key of ['coverImageUrl', 'coverVideoUrl', 'coverGifUrl'] as const) {
+    if (!(key in clean)) continue
+    const value = String(clean[key]).trim()
+    if (!validPanelMediaUrl(value)) return NextResponse.json({ error: `${key} için güvenli bir HTTPS URL veya uygulama içi yol kullanın.` }, { status: 400 })
+    clean[key] = value
+  }
+  if ('serverSubtitle' in clean) {
+    const value = String(clean.serverSubtitle).trim()
+    if (value.length > 180) return NextResponse.json({ error: 'Sunucu açıklaması en fazla 180 karakter olabilir.' }, { status: 400 })
+    clean.serverSubtitle = value
+  }
+  if ('cardTheme' in clean) {
+    const value = String(clean.cardTheme).trim()
+    if (value.length > 40) return NextResponse.json({ error: 'Kart teması en fazla 40 karakter olabilir.' }, { status: 400 })
+    clean.cardTheme = value
+  }
+  if ('cardTransition' in clean) {
+    const value = String(clean.cardTransition).trim().toLowerCase()
+    if (!CARD_TRANSITIONS.has(value)) return NextResponse.json({ error: 'Kart geçişi fade, slide, zoom veya none olmalı.' }, { status: 400 })
+    clean.cardTransition = value
+  }
+
   const old = (await db.select().from(serverSettings).where(eq(serverSettings.serverId, serverId)).limit(1))[0]
   const panelApplied: Record<string, string | number | boolean> = {}
+  for (const [key, value] of Object.entries(clean)) {
+    if (PANEL_ONLY_KEYS.has(key)) panelApplied[key] = value
+  }
   if ('serverName' in clean) panelApplied.serverName = String(clean.serverName)
   if (memoryMb !== null) { panelApplied.maxRam = memoryMb; panelApplied.xmx = memoryMb }
   const merged: Record<string, string | number | boolean> = { ...(old?.settings ?? {}), ...panelApplied }
