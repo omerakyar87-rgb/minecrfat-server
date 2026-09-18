@@ -10,30 +10,32 @@ import { resolvePanelUser } from '@/lib/db/identity'
 import { getNodeConfig, nodeDiagnosticMessage, nodeFetch, nodePublicHost } from '@/lib/node-bridge'
 import { isCompatibleNeoForgeVersion } from '@/lib/neoforge-version'
 
-const ALL_SECTIONS = ['overview','settings','console','logs','players','software','files','worlds','backups','network','integrations','schedules','databases','access'] as const
+const ALL_SECTIONS = ['overview','settings','console','logs','players','software','files','worlds','backups','network','integrations','security','schedules','databases','access'] as const
 const SAFE_ADMIN_SECTIONS = ['overview','logs','players','worlds','network'] as const
 const GUIDE_SECTIONS = ['overview','logs'] as const
 
-type AppRole = 'owner' | 'admin' | 'manager' | 'member' | 'viewer' | 'support'
+type AppRole = 'manager' | 'admin' | 'guide' | 'member'
+const MEMBER_SHARED_DEFAULT_SECTIONS = ['overview'] as const
+const MEMBER_OWNER_SECTIONS = ['overview','settings','console','logs','players','software','files','worlds','backups','network','integrations','security'] as const
 
 function normalizeRole(role: string): AppRole {
-  const normalized = role.toLowerCase()
-  if (normalized === 'owner' || normalized === 'admin' || normalized === 'manager' || normalized === 'member' || normalized === 'viewer' || normalized === 'support') return normalized
-  if (normalized === 'guide') return 'viewer'
+  const normalized = String(role ?? '').toLowerCase()
+  if (normalized === 'manager' || normalized === 'owner') return 'manager'
+  if (normalized === 'admin') return 'admin'
+  if (normalized === 'guide' || normalized === 'viewer' || normalized === 'support') return 'guide'
   return 'member'
 }
-function isManager(role: string) { return ['owner', 'manager'].includes(normalizeRole(role)) }
+function isManager(role: string) { return normalizeRole(role) === 'manager' }
 function defaultSections(role: string) {
   const normalized = normalizeRole(role)
-  if (normalized === 'owner' || normalized === 'manager') return [...ALL_SECTIONS]
+  if (normalized === 'manager') return [...ALL_SECTIONS]
   if (normalized === 'admin') return [...SAFE_ADMIN_SECTIONS]
-  if (normalized === 'support') return ['overview','logs','console','players']
-  return [...GUIDE_SECTIONS]
+  if (normalized === 'guide') return [...GUIDE_SECTIONS]
+  return [...MEMBER_SHARED_DEFAULT_SECTIONS]
 }
 function sectionList(value: unknown, role: string) {
   if (Array.isArray(value)) {
-    const safe = [...new Set(value.map(String).filter(v => (ALL_SECTIONS as readonly string[]).includes(v)))]
-    if (safe.length) return safe
+    return [...new Set(value.map(String).filter(v => (ALL_SECTIONS as readonly string[]).includes(v)))]
   }
   return defaultSections(role)
 }
@@ -89,17 +91,23 @@ const createSchema = z.object({ action:z.literal('create-server'), nodeId:z.stri
 async function access(a: NonNullable<Awaited<ReturnType<typeof actor>>>, serverId:string) {
   const server = (await db.select().from(servers).where(and(eq(servers.id,serverId),ne(servers.status,'deleted'))).limit(1))[0]
   if (!server) return null
-  const isManagerUser = isManager(a.role)
+  const role = normalizeRole(a.role)
+  const isManagerUser = role === 'manager'
   const isOwner = server.userId === a.id
-  if (isManagerUser || isOwner) return { server, isManager: isManagerUser, isOwner, fullAccess: true, permission:null, sections:[...ALL_SECTIONS] as string[] }
+  if (isManagerUser) return { server, isManager:true, isOwner, fullAccess:true, permission:null, sections:[...ALL_SECTIONS] as string[] }
+  if (role === 'member' && isOwner) {
+    const ownerPermission = (await db.select().from(serverPermissions).where(and(eq(serverPermissions.serverId,serverId),eq(serverPermissions.userId,a.id))).limit(1))[0]
+    return { server, isManager:false, isOwner:true, fullAccess:false, permission:ownerPermission??null, sections:ownerPermission?sectionList(ownerPermission.sections, role):[...MEMBER_OWNER_SECTIONS] as string[] }
+  }
   const permission = (await db.select().from(serverPermissions).where(and(eq(serverPermissions.serverId,serverId),eq(serverPermissions.userId,a.id))).limit(1))[0]
-  if (!permission) return null
-  return { server, isManager:false, isOwner:false, fullAccess:false, permission, sections:sectionList(permission.sections, a.role) }
+  if (permission) return { server, isManager:false, isOwner, fullAccess:false, permission, sections:sectionList(permission.sections, role) }
+  return null
 }
 
 function allowed(type:string, result:NonNullable<Awaited<ReturnType<typeof access>>>) {
-  if(result.fullAccess) return true
-  const p=result.permission!
+  if(result.fullAccess||result.isOwner) return true
+  const p=result.permission
+  if(!p) return false
   return type==='start'?p.canStart
     :type==='stop'||type==='kill'?p.canStop
     :type==='restart'?p.canRestart
@@ -132,55 +140,74 @@ async function getPanel(request:NextRequest) {
   const maySeeWorlds=result.fullAccess||result.sections.includes('worlds')
     const maySeeLogs=result.fullAccess||result.sections.some(section=>['logs','console','players'].includes(section))
     const mayManageAccess=result.fullAccess&&result.sections.includes('access')
+    const maySeeOperations=result.fullAccess||result.isOwner||result.sections.some(section=>['overview','logs'].includes(section))
+    const maySeeLostItems=result.fullAccess||result.isOwner||!!result.permission?.canViewLostItems||!!result.permission?.canManageLostItems
     const maySeeSchedules=result.fullAccess||result.sections.includes('schedules')
     const maySeeDatabases=result.fullAccess||result.sections.includes('databases')
-    const [nodeRows,worldRows,logRows,operationRows,serverPermissionRows,memberRows,scheduleRows,databaseRows,sftpRows]=await Promise.all([
+    const [nodeRows,worldRows,logRows,operationRows,lostItemRows,serverPermissionRows,memberRows,scheduleRows,databaseRows,sftpRows]=await Promise.all([
       db.select({id:nodes.id,name:nodes.name,status:nodes.status,lastHeartbeat:nodes.lastHeartbeat,cpuPercent:nodes.cpuPercent,memoryUsedMb:nodes.memoryUsedMb,memoryTotalMb:nodes.memoryTotalMb,diskUsedGb:nodes.diskUsedGb,diskTotalGb:nodes.diskTotalGb}).from(nodes).where(eq(nodes.id,result.server.nodeId)).limit(1),
       maySeeWorlds?db.select().from(worlds).where(eq(worlds.serverId,requestedServerId)).orderBy(desc(worlds.createdAt)):Promise.resolve([]),
       maySeeLogs?db.select({id:consoleLogs.id,serverId:consoleLogs.serverId,line:consoleLogs.line,createdAt:consoleLogs.createdAt}).from(consoleLogs).where(eq(consoleLogs.serverId,requestedServerId)).orderBy(desc(consoleLogs.createdAt)).limit(200):Promise.resolve([]),
-      db.select().from(operationLogs).where(eq(operationLogs.serverId,requestedServerId)).orderBy(desc(operationLogs.createdAt)).limit(50),
+      maySeeOperations?db.select().from(operationLogs).where(eq(operationLogs.serverId,requestedServerId)).orderBy(desc(operationLogs.createdAt)).limit(50):Promise.resolve([]),
+      maySeeLostItems?db.select().from(lostItems).where(eq(lostItems.serverId,requestedServerId)).orderBy(desc(lostItems.occurredAt)).limit(500):Promise.resolve([]),
       mayManageAccess?db.select().from(serverPermissions).where(eq(serverPermissions.serverId,requestedServerId)):Promise.resolve([]),
       mayManageAccess?db.select({id:user.id,name:user.name,email:user.email,role:user.role,approved:user.approved}).from(user).where(eq(user.approved,true)).orderBy(desc(user.createdAt)):Promise.resolve([]),
       maySeeSchedules?db.select().from(serverSchedules).where(eq(serverSchedules.serverId,requestedServerId)).orderBy(desc(serverSchedules.createdAt)):Promise.resolve([]),
       maySeeDatabases?db.select().from(managedDatabases).where(eq(managedDatabases.serverId,requestedServerId)).orderBy(desc(managedDatabases.createdAt)):Promise.resolve([]),
       result.fullAccess?db.select({id:serverSftp.id,serverId:serverSftp.serverId,nodeId:serverSftp.nodeId,username:serverSftp.username,port:serverSftp.port,rootPath:serverSftp.rootPath,status:serverSftp.status,lastError:serverSftp.lastError,lastTestAt:serverSftp.lastTestAt,passwordRotatedAt:serverSftp.passwordRotatedAt,disabledAt:serverSftp.disabledAt,createdAt:serverSftp.createdAt,updatedAt:serverSftp.updatedAt}).from(serverSftp).where(eq(serverSftp.serverId,requestedServerId)).limit(1):Promise.resolve([])
     ])
+    const restoreActorIds=[...new Set(lostItemRows.map(row=>row.restoredByUserId).filter((value): value is string=>typeof value==='string'&&value.length>0))]
+    const restoreActors=restoreActorIds.length?await db.select({id:user.id,name:user.name}).from(user).where(inArray(user.id,restoreActorIds)):[]
+    const restoreNameById=new Map(restoreActors.map(member=>[member.id,member.name]))
+    const lostItemsWithRestoreActor=lostItemRows.map(row=>({...row,restoredByName:row.restoredByUserId?restoreNameById.get(row.restoredByUserId)??null:null}))
     return NextResponse.json({
       nodes:nodeRows,servers:[{...compactServer,directBridge,connectivity:connectivityState(nodeRows[0]??{status:'offline',lastHeartbeat:null},directBridge.online?undefined:directBridge.error)}],worlds:worldRows,mods:[],backups:[],logs:logRows.slice().reverse(),
-      users:memberRows.filter(member=>member.id!==a.id),audits:[],lostItems:[],operations:operationRows,
+      users:memberRows.filter(member=>member.id!==a.id),audits:[],lostItems:lostItemsWithRestoreActor,operations:operationRows,
       permissions:serverPermissionRows,currentPermission:result.permission,allowedSections:result.sections,serverAccess:{isOwner:result.isOwner,isManager:result.isManager,fullAccess:result.fullAccess},
       schedules:scheduleRows,databases:databaseRows,sftp:sftpRows[0]??null,
 actor:{id:a.id,name:a.name,email:a.email,role:normalizeRole(a.role)},nodeConnectivity:directBridge
     },{headers:{'Cache-Control':'private, no-store'}})
   }
 
-  const manager=isManager(a.role)
+  const role=normalizeRole(a.role)
+  const manager=role==='manager'
   const permissionRows=manager?await db.select().from(serverPermissions):await db.select().from(serverPermissions).where(eq(serverPermissions.userId,a.id))
-  const ownServers=manager?[]:await db.select().from(servers).where(and(eq(servers.userId,a.id),ne(servers.status,'deleted')))
+  const ownServers=role==='member'?await db.select().from(servers).where(and(eq(servers.userId,a.id),ne(servers.status,'deleted'))):[]
   const ids=[...new Set([...ownServers.map(s=>s.id),...permissionRows.map(p=>p.serverId)])]
   const serverRows=manager
     ?await db.select().from(servers).where(ne(servers.status,'deleted')).orderBy(desc(servers.createdAt))
     :ids.length?await db.select().from(servers).where(and(inArray(servers.id,ids),ne(servers.status,'deleted'))):[]
   const serverIds=serverRows.map(s=>s.id)
-  const nodeConfigErrors=Object.fromEntries(serverRows.map((server)=>{try{getNodeConfig(server.nodeId);return [server.nodeId,null]}catch(error){return [server.nodeId,nodeDiagnosticMessage(error)]}}))
-  const lostItemServerIds=manager?serverIds:permissionRows.filter(p=>p.canViewLostItems||p.canManageLostItems).map(p=>p.serverId)
+  const ownedServerIds=new Set(ownServers.map(s=>s.id))
+  const permissionByServer=new Map(permissionRows.map(p=>[p.serverId,p]))
+  const sectionsFor=(serverId:string)=>{const p=permissionByServer.get(serverId);return p?sectionList(p.sections,role):(role==='member'&&ownedServerIds.has(serverId)?[...MEMBER_OWNER_SECTIONS]:[])}
+  const worldServerIds=manager?serverIds:serverIds.filter(id=>sectionsFor(id).includes('worlds'))
+  const modServerIds=manager?serverIds:serverIds.filter(id=>{const sections=sectionsFor(id);return sections.includes('software')||sections.includes('files')})
+  const logServerIds=manager?serverIds:serverIds.filter(id=>{const sections=sectionsFor(id);return sections.some(section=>['logs','console','players'].includes(section))})
+  const operationServerIds=manager?serverIds:serverIds.filter(id=>ownedServerIds.has(id)||sectionsFor(id).some(section=>['overview','logs'].includes(section)))
+  const lostItemServerIds=manager?serverIds:[...new Set([...ownServers.map(s=>s.id),...permissionRows.filter(p=>p.canViewLostItems||p.canManageLostItems).map(p=>p.serverId)])]
   const ownerIds=[...new Set(serverRows.map(s=>s.userId))]
+  const nodeConfigErrors=Object.fromEntries(serverRows.map((server)=>{try{getNodeConfig(server.nodeId);return [server.nodeId,null]}catch(error){return [server.nodeId,nodeDiagnosticMessage(error)]}}))
 
   const [nodeRows,worldRows,modRows,backupRows,logs,users,audits,lost,ops,appearanceRows]=await Promise.all([
     manager?db.select().from(nodes).orderBy(desc(nodes.createdAt)):db.select().from(nodes).where(eq(nodes.userId,a.id)).orderBy(desc(nodes.createdAt)),
-    serverIds.length?db.select().from(worlds).where(inArray(worlds.serverId,serverIds)):Promise.resolve([]),
-    serverIds.length?db.select().from(mods).where(inArray(mods.serverId,serverIds)):Promise.resolve([]),
+    worldServerIds.length?db.select().from(worlds).where(inArray(worlds.serverId,worldServerIds)):Promise.resolve([]),
+    modServerIds.length?db.select().from(mods).where(inArray(mods.serverId,modServerIds)):Promise.resolve([]),
     manager&&ownerIds.length?db.select().from(backups).where(inArray(backups.userId,ownerIds)).orderBy(desc(backups.createdAt)):Promise.resolve([]),
-    serverIds.length?db.select({id:consoleLogs.id,serverId:consoleLogs.serverId,line:consoleLogs.line,createdAt:consoleLogs.createdAt}).from(consoleLogs).where(inArray(consoleLogs.serverId,serverIds)).orderBy(desc(consoleLogs.createdAt)).limit(50):Promise.resolve([]),
+    logServerIds.length?db.select({id:consoleLogs.id,serverId:consoleLogs.serverId,line:consoleLogs.line,createdAt:consoleLogs.createdAt}).from(consoleLogs).where(inArray(consoleLogs.serverId,logServerIds)).orderBy(desc(consoleLogs.createdAt)).limit(50):Promise.resolve([]),
     manager?db.select({id:user.id,name:user.name,email:user.email,role:user.role,approved:user.approved,createdAt:user.createdAt}).from(user).orderBy(desc(user.createdAt)):Promise.resolve([]),
     manager?db.select().from(auditLog).orderBy(desc(auditLog.createdAt)).limit(200):Promise.resolve([]),
     lostItemServerIds.length?db.select().from(lostItems).where(inArray(lostItems.serverId,lostItemServerIds)).orderBy(desc(lostItems.occurredAt)).limit(1000):Promise.resolve([]),
-    serverIds.length?db.select().from(operationLogs).where(inArray(operationLogs.serverId,serverIds)).orderBy(desc(operationLogs.createdAt)).limit(200):Promise.resolve([]),
+    operationServerIds.length?db.select().from(operationLogs).where(inArray(operationLogs.serverId,operationServerIds)).orderBy(desc(operationLogs.createdAt)).limit(200):Promise.resolve([]),
     serverIds.length?db.select().from(serverSettings).where(inArray(serverSettings.serverId,serverIds)):Promise.resolve([])
   ])
   const recoveryServers=serverRows.filter(server=>['queued','failed'].includes(server.status)).map(server=>({id:server.id,name:server.name,status:server.status,installError:server.installError,hasInstallCommand:true}))
   const appearanceByServer = new Map(appearanceRows.map((row) => [row.serverId, row.settings]))
-  return NextResponse.json({nodes:nodeRows,servers:serverRows.map((server) => withConnection({...server, ...(appearanceByServer.get(server.id) ?? {})})),worlds:worldRows,mods:modRows,backups:backupRows,logs,users,audits,lostItems:lost,operations:ops,recoveryServers,permissions:permissionRows,nodeConfigErrors,actor:{id:a.id,name:a.name,email:a.email,role:normalizeRole(a.role)}})
+  const globalRestoreActorIds=[...new Set(lost.map(row=>row.restoredByUserId).filter((value): value is string=>typeof value==='string'&&value.length>0))]
+  const globalRestoreActors=globalRestoreActorIds.length?await db.select({id:user.id,name:user.name}).from(user).where(inArray(user.id,globalRestoreActorIds)):[]
+  const globalRestoreNameById=new Map(globalRestoreActors.map(member=>[member.id,member.name]))
+  const lostWithRestoreActor=lost.map(row=>({...row,restoredByName:row.restoredByUserId?globalRestoreNameById.get(row.restoredByUserId)??null:null}))
+  return NextResponse.json({nodes:nodeRows,servers:serverRows.map((server) => withConnection({...server, ...(appearanceByServer.get(server.id) ?? {})})),worlds:worldRows,mods:modRows,backups:backupRows,logs,users,audits,lostItems:lostWithRestoreActor,operations:ops,recoveryServers,permissions:permissionRows,nodeConfigErrors,actor:{id:a.id,name:a.name,email:a.email,role:normalizeRole(a.role)}})
 }
 
 export async function GET(request:NextRequest){const requestId=request.headers.get('x-request-id')??crypto.randomUUID();try{return await getPanel(request)}catch(error){const e=error as {code?:string;table?:string;column?:string;message?:string};console.error('[panel-api:GET]',{requestId,code:e.code??'UNKNOWN',table:e.table??null,column:e.column??null,message:e.message??'database error'});return NextResponse.json({error:'Canlı panel verileri alınamadı',code:'PANEL_DATA_ERROR',requestId},{status:500})}}
@@ -191,7 +218,9 @@ async function postPanel(request:NextRequest) {
   if(!a)return NextResponse.json({error:'Unauthorized'},{status:401})
   if(!a.approved)return NextResponse.json({error:'Approval required'},{status:403})
   const body=await request.json()
-  const manager=isManager(a.role)
+  const role=normalizeRole(a.role)
+  const manager=role==='manager'
+  const mayManageNode=(node:{userId:string})=>manager||(role==='member'&&node.userId===a.id)
 
   if(body.action==='create-node'){
     if(!['manager','member'].includes(normalizeRole(a.role)))return NextResponse.json({error:'Yalnız Yönetici veya Üye node oluşturabilir'},{status:403})
@@ -206,18 +235,18 @@ async function postPanel(request:NextRequest) {
     return NextResponse.json({node,token,install:`export PANEL_URL=${panelUrl} NODE_ID=${node.id} NODE_TOKEN=${token} DATA_DIR=/srv/blockctrl && pnpm install --frozen-lockfile && pnpm build && pnpm start`},{status:201})
   }
   if(body.action==='node-install-info'){
-    if(!manager)return NextResponse.json({error:'Forbidden'},{status:403})
     const nodeId=z.string().uuid().parse(body.nodeId)
     const node=(await db.select().from(nodes).where(eq(nodes.id,nodeId)).limit(1))[0]
     if(!node)return NextResponse.json({error:'Node bulunamadı'},{status:404})
+    if(!mayManageNode(node))return NextResponse.json({error:'Bu node üzerinde işlem yetkiniz yok'},{status:403})
     const panelUrl=panelBaseUrl(request)
     return NextResponse.json({nodeId,token:null,install:`export PANEL_URL=${panelUrl} NODE_ID=${node.id} NODE_TOKEN=MEVCUT_TOKENI_KULLANIN DATA_DIR=/srv/blockctrl && pnpm install --frozen-lockfile && pnpm build && pnpm start`})
   }
   if(body.action==='regenerate-node-token'){
-    if(!manager)return NextResponse.json({error:'Forbidden'},{status:403})
     const nodeId=z.string().uuid().parse(body.nodeId)
     const node=(await db.select().from(nodes).where(eq(nodes.id,nodeId)).limit(1))[0]
     if(!node)return NextResponse.json({error:'Node bulunamadı'},{status:404})
+    if(!mayManageNode(node))return NextResponse.json({error:'Bu node üzerinde işlem yetkiniz yok'},{status:403})
     const token=randomBytes(32).toString('base64url')
     await db.update(nodes).set({agentTokenHash:hash(token),status:'offline',updatedAt:new Date()}).where(eq(nodes.id,nodeId))
     const panelUrl=panelBaseUrl(request)
@@ -225,19 +254,19 @@ async function postPanel(request:NextRequest) {
     return NextResponse.json({nodeId,token,install:`export PANEL_URL=${panelUrl} NODE_ID=${nodeId} NODE_TOKEN=${token} DATA_DIR=/srv/blockctrl && pnpm install --frozen-lockfile && pnpm build && pnpm start`},{status:200})
   }
   if(body.action==='update-node'){
-    if(!manager)return NextResponse.json({error:'Forbidden'},{status:403})
     const nodeId=z.string().uuid().parse(body.nodeId)
     const name=serverNameSchema.parse(body.name)
     const node=(await db.select().from(nodes).where(eq(nodes.id,nodeId)).limit(1))[0]
     if(!node)return NextResponse.json({error:'Node bulunamadı'},{status:404})
+    if(!mayManageNode(node))return NextResponse.json({error:'Bu node üzerinde işlem yetkiniz yok'},{status:403})
     await db.update(nodes).set({name,updatedAt:new Date()}).where(eq(nodes.id,nodeId))
     return NextResponse.json({ok:true})
   }
   if(body.action==='delete-node'){
-    if(!manager)return NextResponse.json({error:'Forbidden'},{status:403})
     const nodeId=z.string().uuid().parse(body.nodeId)
     const node=(await db.select().from(nodes).where(eq(nodes.id,nodeId)).limit(1))[0]
     if(!node)return NextResponse.json({error:'Node bulunamadı'},{status:404})
+    if(!mayManageNode(node))return NextResponse.json({error:'Bu node üzerinde işlem yetkiniz yok'},{status:403})
     const attached=await db.select({id:servers.id}).from(servers).where(and(eq(servers.nodeId,nodeId),ne(servers.status,'deleted'))).limit(1)
     if(attached.length)return NextResponse.json({error:'Bu node üzerinde sunucular var; önce sunucuları kaldırın'},{status:409})
     await db.delete(nodes).where(eq(nodes.id,nodeId))
@@ -252,9 +281,8 @@ async function postPanel(request:NextRequest) {
     if(node.status!=='online')return NextResponse.json({error:'Node çevrimdışı. Önce kurulum komutunu VPS üzerinde çalıştırıp agenti bağlayın.'},{status:409})
     const collision=await db.select({id:servers.id}).from(servers).where(and(eq(servers.nodeId,i.nodeId),eq(servers.port,i.port),ne(servers.status,'deleted'))).limit(1)
     if(collision.length)return NextResponse.json({error:'Bu port aynı node üzerinde kullanımda'},{status:409})
-    if(i.itemTrackingEnabled&&!['paper','neoforge'].includes(i.loader))return NextResponse.json({error:'Tam kayıp eşya takibi Paper ve NeoForge sunucularında destekleniyor'},{status:400})
     if(i.loader==='neoforge'&&(!i.loaderVersion||!isCompatibleNeoForgeVersion(i.mcVersion,i.loaderVersion)))return NextResponse.json({error:'NeoForge sürümü Minecraft sürümüyle uyumsuz',code:'INCOMPATIBLE_LOADER_VERSION'},{status:400})
-    const server=await db.transaction(async tx=>{const [created]=await tx.insert(servers).values({userId:a.id,nodeId:i.nodeId,name:i.name,loader:i.loader,mcVersion:i.mcVersion,loaderVersion:i.loaderVersion,memoryMb:i.memoryMb,port:i.port,status:'queued',worldName:i.worldName,itemTrackingEnabled:i.itemTrackingEnabled}).returning();if(!created)throw new Error('SERVER_INSERT_FAILED');await tx.insert(worlds).values({userId:a.id,serverId:created.id,name:i.worldName,seed:i.seed,isActive:true});await tx.insert(agentCommands).values({userId:a.id,nodeId:i.nodeId,serverId:created.id,type:'install',payload:i});await tx.insert(operationLogs).values({userId:a.id,serverId:created.id,operation:'install',status:'queued'});return created})
+    const server=await db.transaction(async tx=>{const [created]=await tx.insert(servers).values({userId:a.id,nodeId:i.nodeId,name:i.name,loader:i.loader,mcVersion:i.mcVersion,loaderVersion:i.loaderVersion,memoryMb:i.memoryMb,port:i.port,status:'queued',worldName:i.worldName,itemTrackingEnabled:i.itemTrackingEnabled}).returning();if(!created)throw new Error('SERVER_INSERT_FAILED');await tx.insert(worlds).values({userId:a.id,serverId:created.id,name:i.worldName,seed:i.seed,isActive:true});if(role==='member')await tx.insert(serverPermissions).values({userId:a.id,ownerUserId:a.id,serverId:created.id,canStart:true,canStop:true,canRestart:true,canConsole:true,canFiles:true,canBackup:true,canReset:true,canViewLostItems:true,canManageLostItems:true,canWebsiteData:true,sections:[...MEMBER_OWNER_SECTIONS]});await tx.insert(agentCommands).values({userId:a.id,nodeId:i.nodeId,serverId:created.id,type:'install',payload:i});await tx.insert(operationLogs).values({userId:a.id,serverId:created.id,operation:'install',status:'queued'});return created})
     return NextResponse.json({server},{status:201})
   }
   if(body.action==='update-server'){
@@ -336,7 +364,7 @@ async function postPanel(request:NextRequest) {
     return NextResponse.json({ok:true},{status:202})
   }
 
-  if(['provision-sftp','rotate-sftp-password','test-sftp','disable-sftp','enable-sftp','list-sftp-sessions','terminate-sftp-session'].includes(String(body.action))){
+  if(['provision-sftp','rotate-sftp-password','test-sftp','disable-sftp','enable-sftp','list-sftp-sessions','terminate-sftp-session','delete-sftp'].includes(String(body.action))){
     if(!manager)return NextResponse.json({error:'SFTP yönetimi için Yönetici yetkisi gerekir'},{status:403})
     const serverId=z.string().uuid().parse(body.serverId); const result=await access(a,serverId)
     if(!result)return NextResponse.json({error:'Sunucu bulunamadı'},{status:404})
@@ -349,14 +377,14 @@ async function postPanel(request:NextRequest) {
         const values={nodeId,username,passwordHash:hash(password),port:Number.isInteger(port)?port:22,rootPath:'/files',status:'ready',lastError:null,lastTestAt:now,passwordRotatedAt:now,disabledAt:null,updatedAt:now}
         if(existing)await db.update(serverSftp).set(values).where(eq(serverSftp.serverId,serverId));else await db.insert(serverSftp).values({serverId,...values})
         await db.insert(auditLog).values({userId:a.id,action:'server.sftp.provision',resourceType:'server',resourceId:serverId,details:{username,port:values.port}})
-        return NextResponse.json({ok:true,sftp:{username,port:values.port,rootPath:'/files',status:'ready'},credentials:{host:publicHostForNode(nodeId),port:values.port,username,password,rootPath:'/files'},oneTimePassword:true},{status:201,headers:{'Cache-Control':'private, no-store'}})
+        return NextResponse.json({ok:true,sftp:{username,port:values.port,rootPath:'/files',status:'ready'},credentials:{host:publicHostForNode(nodeId),port:values.port,username,password,rootPath:'/files'},checks:data,oneTimePassword:true},{status:201,headers:{'Cache-Control':'private, no-store'}})
       }
       if(!existing)return NextResponse.json({error:'Önce bu sunucu için SFTP hesabı oluşturun'},{status:404})
       if(action==='rotate-sftp-password'){
         const data=await call('/internal/sftp/rotate-password','POST',{serverId});const password=String(data.password??'');if(password.length<20)throw new Error('Node tek kullanımlık SFTP parolası döndürmedi');const port=Number(data.port??existing.port??22);await db.update(serverSftp).set({passwordHash:hash(password),port:Number.isInteger(port)?port:22,rootPath:'/files',status:'ready',lastError:null,passwordRotatedAt:now,disabledAt:null,updatedAt:now}).where(eq(serverSftp.serverId,serverId));await db.insert(auditLog).values({userId:a.id,action:'server.sftp.password.rotate',resourceType:'server',resourceId:serverId,details:{username:existing.username}});return NextResponse.json({ok:true,credentials:{host:publicHostForNode(nodeId),port:Number.isInteger(port)?port:22,username:existing.username,password,rootPath:'/files'},oneTimePassword:true},{headers:{'Cache-Control':'private, no-store'}})
       }
       if(action==='test-sftp'){
-        const data=await call(`/internal/sftp/status?serverId=${encodeURIComponent(serverId)}`,'GET');const ready=data.ready===true;const port=Number(data.port??existing.port??22);const error=ready?null:'SFTP sunucu tarafı doğrulaması başarısız';await db.update(serverSftp).set({status:sftpStatus(ready),port:Number.isInteger(port)?port:22,rootPath:'/files',lastError:error,lastTestAt:now,updatedAt:now}).where(eq(serverSftp.serverId,serverId));await db.insert(auditLog).values({userId:a.id,action:'server.sftp.test',resourceType:'server',resourceId:serverId,details:{ready,checks:{mounted:data.mounted,sshdValid:data.sshdValid,serviceActive:data.serviceActive,secureChroot:data.secureChroot}}});return NextResponse.json({ok:ready,status:data},{status:ready?200:409,headers:{'Cache-Control':'private, no-store'}})
+        const data=await call(`/internal/sftp/status?serverId=${encodeURIComponent(serverId)}`,'GET');const ready=data.ready===true;const port=Number(data.port??existing.port??22);const error=ready?null:'SFTP sunucu tarafı doğrulaması başarısız';await db.update(serverSftp).set({status:sftpStatus(ready),port:Number.isInteger(port)?port:22,rootPath:'/files',lastError:error,lastTestAt:now,updatedAt:now}).where(eq(serverSftp.serverId,serverId));await db.insert(auditLog).values({userId:a.id,action:'server.sftp.test',resourceType:'server',resourceId:serverId,details:{ready,checks:{userExists:data.userExists,rootExists:data.rootExists,mounted:data.mounted,sshdValid:data.sshdValid,serviceActive:data.serviceActive,secureChroot:data.secureChroot,homeOk:data.homeOk,shellOk:data.shellOk,port:data.port}}});return NextResponse.json({ok:ready,status:data},{status:ready?200:409,headers:{'Cache-Control':'private, no-store'}})
       }
       if(action==='disable-sftp'){
         await call('/internal/sftp/disable','POST',{serverId});await db.update(serverSftp).set({status:'disabled',lastError:null,disabledAt:now,updatedAt:now}).where(eq(serverSftp.serverId,serverId));await db.insert(auditLog).values({userId:a.id,action:'server.sftp.disable',resourceType:'server',resourceId:serverId,details:{username:existing.username}});return NextResponse.json({ok:true,status:'disabled'})
@@ -366,6 +394,12 @@ async function postPanel(request:NextRequest) {
       }
       if(action==='list-sftp-sessions'){
         const data=await call(`/internal/sftp/sessions?serverId=${encodeURIComponent(serverId)}`,'GET');return NextResponse.json({ok:true,sessions:Array.isArray(data.sessions)?data.sessions:[]},{headers:{'Cache-Control':'private, no-store'}})
+      }
+      if(action==='delete-sftp'){
+        await call('/internal/sftp/delete','POST',{serverId})
+        await db.delete(serverSftp).where(eq(serverSftp.serverId,serverId))
+        await db.insert(auditLog).values({userId:a.id,action:'server.sftp.delete',resourceType:'server',resourceId:serverId,details:{username:existing.username}})
+        return NextResponse.json({ok:true,deleted:true},{headers:{'Cache-Control':'private, no-store'}})
       }
       const pid=z.coerce.number().int().positive().parse(body.pid);const data=await call('/internal/sftp/sessions/terminate','POST',{serverId,pid});await db.insert(auditLog).values({userId:a.id,action:'server.sftp.session.terminate',resourceType:'server',resourceId:serverId,details:{pid}});return NextResponse.json({ok:true,result:data})
     }catch(error){const message=nodeDiagnosticMessage(error).slice(0,500);if(existing)await db.update(serverSftp).set({lastError:message,status:action==='test-sftp'?'failed':existing.status,updatedAt:new Date()}).where(eq(serverSftp.serverId,serverId));await db.insert(auditLog).values({userId:a.id,action:`server.sftp.${action}.failed`,resourceType:'server',resourceId:serverId,details:{error:message}});return NextResponse.json({error:message},{status:502,headers:{'Cache-Control':'private, no-store'}})}
@@ -401,25 +435,57 @@ async function postPanel(request:NextRequest) {
     if(['delete-server','create-world','reset-world','RESET_WORLD','DELETE_WORLD','CHANGE_WORLD','UPLOAD_WORLD','reset-config','install-addon','clear-addons','reinstall','change-software','change-port','factory-reset'].includes(type)&&!['stopped','crashed','ready','failed'].includes(result.server.status))return NextResponse.json({error:'Bu işlem için sunucu kapalı olmalıdır'},{status:409})
     const destructive=['delete-server','create-world','reset-world','RESET_WORLD','DELETE_WORLD','CHANGE_WORLD','UPLOAD_WORLD','reset-config','install-addon','clear-addons','reinstall','change-software','factory-reset'].includes(type)
     if(destructive&&body.confirm!==result.server.name)return NextResponse.json({error:'Onay için sunucu adını yazın'},{status:400})
-    const [command]=await db.insert(agentCommands).values({userId:result.server.userId,nodeId:result.server.nodeId,serverId,type,payload:{memoryMb:result.server.memoryMb,loader:result.server.loader,mcVersion:result.server.mcVersion,loaderVersion:result.server.loaderVersion,port:result.server.port,worldName:result.server.worldName,...(body.payload??{}),backupFirst:destructive}}).returning()
+    const [command]=await db.insert(agentCommands).values({userId:result.server.userId,nodeId:result.server.nodeId,serverId,type,payload:{memoryMb:result.server.memoryMb,loader:result.server.loader,mcVersion:result.server.mcVersion,loaderVersion:result.server.loaderVersion,port:result.server.port,worldName:result.server.worldName,itemTrackingEnabled:result.server.itemTrackingEnabled,...(body.payload??{}),backupFirst:destructive}}).returning()
     await db.insert(operationLogs).values({userId:result.server.userId,serverId,operation:type,status:'queued'})
     await db.insert(auditLog).values({userId:a.id,action:`server.${type}`,resourceType:'server',resourceId:serverId,details:{serverOwner:result.server.userId}})
     return NextResponse.json({command},{status:202})
   }
+  if(body.action==='restore-lost-item'){
+    const id=z.string().uuid().parse(body.id)
+    const item=(await db.select().from(lostItems).where(eq(lostItems.id,id)).limit(1))[0]
+    if(!item)return NextResponse.json({error:'Kayıt bulunamadı'},{status:404})
+    const result=await access(a,item.serverId)
+    if(!result||(!result.fullAccess&&!result.permission?.canManageLostItems))return NextResponse.json({error:'Bu eşyayı geri verme yetkiniz yok'},{status:403})
+    if(item.status==='restored')return NextResponse.json({error:'Bu eşya zaten geri verilmiş'},{status:409})
+    if(item.status==='restore_queued'||item.status==='restore_sent')return NextResponse.json({error:'Bu eşya için zaten bir geri verme işlemi var'},{status:409})
+    if(result.server.status!=='running')return NextResponse.json({error:'Eşyayı geri vermek için Minecraft sunucusu çalışıyor olmalıdır'},{status:409})
+    const playerName=String(item.playerName??'').trim()
+    if(!/^[A-Za-z0-9_]{1,16}$/.test(playerName))return NextResponse.json({error:'Kayıtta geçerli bir Minecraft oyuncu adı yok'},{status:409})
+    if(!/^[a-z0-9_.-]+:[a-z0-9_./-]+$/i.test(item.itemId))return NextResponse.json({error:'Kayıttaki Minecraft eşya kimliği geri verme için uygun değil'},{status:409})
+    const command=await db.transaction(async tx=>{
+      const [created]=await tx.insert(agentCommands).values({
+        userId:result.server.userId,
+        nodeId:result.server.nodeId,
+        serverId:item.serverId,
+        type:'lost-item-restore',
+        payload:{lostItemId:item.id,playerName,itemId:item.itemId,amount:item.amount},
+        status:'queued',
+      }).returning()
+      if(!created)throw new Error('LOST_ITEM_RESTORE_COMMAND_CREATE_FAILED')
+      await tx.update(lostItems).set({status:'restore_queued',restoreCommandId:created.id,restoreRequestedAt:new Date(),restoredAt:null,restoredByUserId:a.id,restoreError:null}).where(and(eq(lostItems.id,item.id),eq(lostItems.serverId,item.serverId)))
+      await tx.insert(operationLogs).values({userId:result.server.userId,serverId:item.serverId,operation:'lost-item-restore',status:'queued',message:`${playerName} · ${item.amount}x ${item.itemId}`})
+      return created
+    })
+    await db.insert(auditLog).values({userId:a.id,action:'lost-item.restore.queued',resourceType:'lost-item',resourceId:item.id,details:{serverId:item.serverId,commandId:command.id,playerName,itemId:item.itemId,amount:item.amount}})
+    return NextResponse.json({ok:true,command},{status:202})
+  }
   if(body.action==='delete-lost-item'){
     const id=z.string().uuid().parse(body.id)
     const item=(await db.select().from(lostItems).where(eq(lostItems.id,id)).limit(1))[0]
-    if(!item)return NextResponse.json({error:'Kayıt bulunamad��'},{status:404})
+    if(!item)return NextResponse.json({error:'Kayıt bulunamadı'},{status:404})
     const result=await access(a,item.serverId)
     if(!result||(!result.fullAccess&&!result.permission?.canManageLostItems))return NextResponse.json({error:'Bu kaydı silme yetkiniz yok'},{status:403})
+    if(item.status==='restore_queued')return NextResponse.json({error:'Geri verme işlemi kuyruktayken kayıt silinemez'},{status:409})
     await db.delete(lostItems).where(and(eq(lostItems.id,id),eq(lostItems.serverId,item.serverId)))
-    await db.insert(auditLog).values({userId:a.id,action:'lost-item.deleted',resourceType:'lost-item',resourceId:id,details:{serverId:item.serverId}})
+    await db.insert(auditLog).values({userId:a.id,action:'lost-item.deleted',resourceType:'lost-item',resourceId:id,details:{serverId:item.serverId,status:item.status}})
     return NextResponse.json({ok:true})
   }
   if(body.action==='remove-permission'){
     if(!manager)return NextResponse.json({error:'Yalnız Yönetici sunucu erişimi kaldırabilir'},{status:403})
     const serverId=z.string().uuid().parse(body.serverId)
     const userId=z.string().min(1).parse(body.userId)
+    const [server,target]=await Promise.all([(await db.select().from(servers).where(eq(servers.id,serverId)).limit(1))[0],(await db.select().from(user).where(eq(user.id,userId)).limit(1))[0]])
+    if(server?.userId===userId&&normalizeRole(target?.role??'member')==='member')return NextResponse.json({error:'Üyenin kendi oluşturduğu sunucu erişimi kaldırılamaz'},{status:409})
     await db.delete(serverPermissions).where(and(eq(serverPermissions.serverId,serverId),eq(serverPermissions.userId,userId)))
     await db.insert(auditLog).values({userId:a.id,action:'permission.removed',resourceType:'server',resourceId:serverId,details:{targetUserId:userId}})
     return NextResponse.json({ok:true})
@@ -433,8 +499,9 @@ async function postPanel(request:NextRequest) {
     const target=(await db.select().from(user).where(eq(user.id,userId)).limit(1))[0]
     if(!target)return NextResponse.json({error:'Kullanıcı bulunamadı'},{status:404})
     if(isManager(target.role))return NextResponse.json({error:'Yönetici rolü zaten tüm sunuculara tam erişir'},{status:400})
+    if(server.userId===userId&&normalizeRole(target.role)==='member')return NextResponse.json({error:'Üyenin kendi oluşturduğu sunucu erişimi sahiplikten gelir ve kısıtlanamaz'},{status:409})
     const sections=sectionList(body.sections,target.role)
-    const values={userId,ownerUserId:server.userId,serverId,canStart:!!body.canStart,canStop:!!body.canStop,canRestart:!!body.canRestart,canConsole:!!body.canConsole,canFiles:!!body.canFiles,canBackup:!!body.canBackup,canReset:!!body.canReset,canViewLostItems:!!body.canViewLostItems,canManageLostItems:!!body.canManageLostItems,sections}
+    const values={userId,ownerUserId:server.userId,serverId,canStart:!!body.canStart,canStop:!!body.canStop,canRestart:!!body.canRestart,canConsole:!!body.canConsole,canFiles:!!body.canFiles,canBackup:!!body.canBackup,canReset:!!body.canReset,canViewLostItems:!!body.canViewLostItems,canManageLostItems:!!body.canManageLostItems,canWebsiteData:!!body.canWebsiteData,sections}
     await db.insert(serverPermissions).values(values).onConflictDoUpdate({target:[serverPermissions.userId,serverPermissions.serverId],set:values})
     await db.insert(auditLog).values({userId:a.id,action:'permission.updated',resourceType:'server',resourceId:serverId,details:{targetUserId:userId,sections}})
     return NextResponse.json({ok:true})
@@ -444,7 +511,7 @@ async function postPanel(request:NextRequest) {
     const userId=z.string().min(1).parse(body.userId)
     if(userId===a.id)return NextResponse.json({error:'Kendi rolünüzü veya onayınızı bu ekrandan değiştiremezsiniz'},{status:400})
     const approved=z.boolean().parse(body.approved)
-    const role=z.enum(['manager','admin','guide']).parse(body.role??'guide')
+    const role=z.enum(['manager','admin','guide','member']).parse(body.role??'member')
     const target=(await db.select().from(user).where(eq(user.id,userId)).limit(1))[0]
     if(!target)return NextResponse.json({error:'Kullanıcı bulunamadı'},{status:404})
     if(isManager(target.role)&&(!approved||role!=='manager')){
@@ -452,6 +519,13 @@ async function postPanel(request:NextRequest) {
       if(otherManagers.length<=1)return NextResponse.json({error:'Sistemde en az bir Yönetici kalmalıdır'},{status:409})
     }
     await db.update(user).set({approved,role,updatedAt:new Date()}).where(eq(user.id,userId))
+    if(role==='member'){
+      const owned=await db.select({id:servers.id,userId:servers.userId}).from(servers).where(and(eq(servers.userId,userId),ne(servers.status,'deleted')))
+      for(const ownedServer of owned){
+        const values={userId,ownerUserId:userId,serverId:ownedServer.id,canStart:true,canStop:true,canRestart:true,canConsole:true,canFiles:true,canBackup:true,canReset:true,canViewLostItems:true,canManageLostItems:true,canWebsiteData:true,sections:[...MEMBER_OWNER_SECTIONS]}
+        await db.insert(serverPermissions).values(values).onConflictDoUpdate({target:[serverPermissions.userId,serverPermissions.serverId],set:values})
+      }
+    }
     await db.insert(auditLog).values({userId:a.id,action:'user.updated',resourceType:'user',resourceId:userId,details:{approved,role}})
     return NextResponse.json({ok:true})
   }
