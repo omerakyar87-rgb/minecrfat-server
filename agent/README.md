@@ -44,7 +44,7 @@ Bulunmayan veya protokol doğrulaması geçmeyen adapter sessizce yüklenmez. Ag
 
 ## Website `/register` köprüsü
 
-Paper, Fabric, Forge ve NeoForge adapterleri artık yalnız kayıp eşya takibi için değil, website üyeliği için de kullanılır. Sunucuda item tracking kapalı olsa bile adapter mevcutsa `/register <şifre> [email]` komutu çalışır. Agent process başlatırken `BLOCKCTRL_TRACKING_ENABLED=0` gönderir; bu durumda adapter item-loss event üretmez fakat localhost `POST /website-register` köprüsü aktif kalır.
+Paper, Fabric, Forge ve NeoForge adapterleri artık yalnız kayıp eşya takibi için değil, website üyeliği için de kullanılır. Sunucuda item tracking kapalı olsa bile adapter mevcutsa `/register <şifre> [email]` komutu çalışır. Agent process başlatırken `BLOCKCTRL_ITEM_TRACKING_ENABLED=false` gönderir; website kayıt köprüsü aktif kalır. Item tracking kapalıyken agent `/item-loss` kayıtlarını 204 ile yok sayar, böylece kayıp eşya veritabanına yazılmaz.
 
 Vanilla sunucuda mod/plugin katmanı olmadığı için oyun içi `/register` komutu otomatik sağlanamaz; website tarafındaki normal kayıt yöntemi kullanılmalıdır.
 
