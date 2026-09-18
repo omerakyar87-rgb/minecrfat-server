@@ -493,6 +493,37 @@ async function exportServerLogs(serverId:string){
   const info=await stat(target)
   return {path:name,sizeBytes:info.size,items:candidates,createdAt:new Date().toISOString()}
 }
+type JavaRuntimeInfo={binary:string;version:string|null;vendor:string|null;home:string|null;runtimeName:string|null;error:string|null}
+const javaRuntimeCache=new Map<string,{at:number,value:JavaRuntimeInfo}>()
+async function captureCommand(program:string,args:string[],cwd:string,timeoutMs=5000){
+  return await new Promise<{code:number|null;output:string}>((resolvePromise,rejectPromise)=>{
+    const child=spawn(program,args,{cwd,stdio:['ignore','pipe','pipe']});let output='';let settled=false
+    const finish=(value:{code:number|null;output:string})=>{if(settled)return;settled=true;clearTimeout(timer);resolvePromise(value)}
+    child.stdout.on('data',d=>{if(output.length<64_000)output+=d.toString()})
+    child.stderr.on('data',d=>{if(output.length<64_000)output+=d.toString()})
+    child.once('error',error=>{if(settled)return;settled=true;clearTimeout(timer);rejectPromise(error)})
+    child.once('exit',code=>finish({code,output}))
+    const timer=setTimeout(()=>{try{child.kill('SIGKILL')}catch{};finish({code:null,output:`${output}\ncommand timed out`})},timeoutMs)
+  })
+}
+async function detectJavaRuntime(serverId:string,pid:number|null):Promise<JavaRuntimeInfo>{
+  const cacheKey=`${serverId}:${pid??0}`;const cached=javaRuntimeCache.get(cacheKey);if(cached&&Date.now()-cached.at<300_000)return cached.value
+  let binary='java'
+  try{
+    if(pid){const active=await realpath(`/proc/${pid}/exe`).catch(()=> '');if(active&&/java(?:$|\b)/i.test(basename(active)))binary=active}
+    if(binary==='java'&&process.env.JAVA_HOME){const fromHome=join(process.env.JAVA_HOME,'bin','java');if(existsSync(fromHome))binary=fromHome}
+    const result=await captureCommand(binary,['-XshowSettings:properties','-version'],serverDir(serverId),5000)
+    if(result.code!==0)throw new Error(`java -version exited ${result.code??'timeout'}`)
+    const get=(key:string)=>result.output.match(new RegExp(`^\\s*${key.replace(/[.*+?^${}()|[\\]\\\\]/g,'\\\\$&')}\\s*=\\s*(.+)$`,'m'))?.[1]?.trim()??null
+    const fallbackVersion=result.output.match(/version\s+"([^"]+)"/i)?.[1]??null
+    const value:JavaRuntimeInfo={binary,version:get('java.version')??fallbackVersion,vendor:get('java.vendor'),home:get('java.home'),runtimeName:get('java.runtime.name'),error:null}
+    javaRuntimeCache.set(cacheKey,{at:Date.now(),value});return value
+  }catch(error){
+    const value:JavaRuntimeInfo={binary,version:null,vendor:null,home:null,runtimeName:null,error:error instanceof Error?error.message:'Java runtime doğrulanamadı'}
+    javaRuntimeCache.set(cacheKey,{at:Date.now(),value});return value
+  }
+}
+
 async function consoleDiagnostics(serverId:string){
   if(!validServerId(serverId))throw new Error('Geçersiz serverId')
   const root=serverDir(serverId);const info=await stat(root).catch(()=>null);if(!info?.isDirectory())throw new Error('Sunucu klasörü bulunamadı')
@@ -508,6 +539,7 @@ async function consoleDiagnostics(serverId:string){
   if(fs){const total=Number(fs.blocks)*Number(fs.bsize);const free=Number(fs.bavail)*Number(fs.bsize);diskTotalGb=Number((total/1073741824).toFixed(2));diskUsedGb=Number(((total-free)/1073741824).toFixed(2))}
   const runtime=await validatedRuntimeTracking(serverId,await readServerMeta(serverId))
   const meta=runtime.meta
+  const javaRuntime=await detectJavaRuntime(serverId,pid??null)
   const memoryUsedMb=Math.round((totalmem()-freemem())/1048576),memoryTotalMb=Math.round(totalmem()/1048576)
   const controlChannelReady=running&&existsSync(join(root,'.blockctrl-stdin'))
   const pstatus=procStatus?parseProcStatus(procStatus):null
@@ -526,7 +558,7 @@ async function consoleDiagnostics(serverId:string){
       stdoutBytes:(await stat(join(root,'.blockctrl-stdout.log')).catch(()=>null))?.size??0,
       stderrBytes:(await stat(join(root,'.blockctrl-stderr.log')).catch(()=>null))?.size??0,
       loader:String(meta.loader??runtime.loader??''),version:String(meta.version??''),memoryMb:Number(meta.memoryMb)||null,
-      trackingMode:runtime.mode,
+      trackingMode:runtime.mode,javaRuntime,
     },
   }
 }
