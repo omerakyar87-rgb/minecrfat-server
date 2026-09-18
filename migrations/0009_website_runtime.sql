@@ -9,7 +9,9 @@ CREATE TABLE IF NOT EXISTS "website_members" (
   "createdAt" timestamp NOT NULL DEFAULT now(),
   "updatedAt" timestamp NOT NULL DEFAULT now()
 );
-CREATE UNIQUE INDEX IF NOT EXISTS "website_members_site_email_idx" ON "website_members" ("websiteId",lower("email"));
+-- Legacy installations can contain duplicate identities. Keep lookup indexes non-unique here;
+-- 0012 normalizes identities, performs explicit duplicate checks and then enforces uniqueness.
+CREATE INDEX IF NOT EXISTS "website_members_site_email_idx" ON "website_members" ("websiteId",lower("email"));
 
 CREATE TABLE IF NOT EXISTS "website_member_sessions" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
