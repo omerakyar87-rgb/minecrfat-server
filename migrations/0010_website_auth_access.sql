@@ -10,9 +10,14 @@ ALTER TABLE "website_members" ADD COLUMN IF NOT EXISTS "allowedPages" jsonb NOT 
 ALTER TABLE "website_members" ADD COLUMN IF NOT EXISTS "metadata" jsonb NOT NULL DEFAULT '{}'::jsonb;
 ALTER TABLE "website_members" ADD COLUMN IF NOT EXISTS "lastLoginAt" timestamp;
 
+-- Normalize empty identities before indexing. Case-insensitive uniqueness is enforced in 0012
+-- after an explicit duplicate check so legacy installations fail with a clear message.
+UPDATE "website_members" SET "email"=NULL WHERE "email" IS NOT NULL AND btrim("email")='';
+UPDATE "website_members" SET "minecraftUsername"=NULL WHERE "minecraftUsername" IS NOT NULL AND btrim("minecraftUsername")='';
 DROP INDEX IF EXISTS "website_members_site_email_idx";
-CREATE UNIQUE INDEX IF NOT EXISTS "website_members_site_email_idx" ON "website_members" ("websiteId",lower("email")) WHERE "email" IS NOT NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS "website_members_site_mc_idx" ON "website_members" ("websiteId",lower("minecraftUsername")) WHERE "minecraftUsername" IS NOT NULL;
+DROP INDEX IF EXISTS "website_members_site_mc_idx";
+CREATE INDEX IF NOT EXISTS "website_members_site_email_idx" ON "website_members" ("websiteId",lower("email")) WHERE "email" IS NOT NULL;
+CREATE INDEX IF NOT EXISTS "website_members_site_mc_idx" ON "website_members" ("websiteId",lower("minecraftUsername")) WHERE "minecraftUsername" IS NOT NULL;
 CREATE INDEX IF NOT EXISTS "website_members_site_status_idx" ON "website_members" ("websiteId","status","authSource");
 
 CREATE TABLE IF NOT EXISTS "website_auth_settings" (
