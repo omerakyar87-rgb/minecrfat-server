@@ -1,12 +1,26 @@
 import { createHash, timingSafeEqual } from 'node:crypto'
 import { NextRequest, NextResponse } from 'next/server'
-import { and, asc, eq, inArray, lt, lte, notInArray } from 'drizzle-orm'
+import { and, asc, desc, eq, gte, inArray, lt, lte, notInArray } from 'drizzle-orm'
 import { z } from 'zod'
 import { db, ensurePanelSchema, pool } from '@/lib/db'
 import { emitDiscordEvent, integrationEventFromCommand, integrationEventFromConsoleLine } from '@/lib/integrations'
-import { agentCommands, backups, consoleLogs, lostItems, managedDatabases, nodes, operationLogs, serverSchedules, serverSettings, serverSftp, servers, worlds } from '@/lib/db/schema'
+import { agentCommands, alertRules, backups, consoleLogs, lostItems, managedDatabases, nodes, notifications, operationLogs, serverMetrics, serverWebsiteData, serverSchedules, serverSettings, serverSftp, servers, worlds } from '@/lib/db/schema'
 
 const hash=(v:string)=>createHash('sha256').update(v).digest('hex')
+const serverMetricSchema=z.object({serverId:z.string().uuid(),cpuPercent:z.number().min(0).max(100).default(0),memoryUsedMb:z.number().int().min(0).default(0),memoryTotalMb:z.number().int().min(0).default(0),diskUsedGb:z.number().min(0).default(0),diskTotalGb:z.number().min(0).default(0),tps:z.number().min(0).max(100).nullable().optional(),mspt:z.number().min(0).nullable().optional(),players:z.number().int().min(0).default(0),uptimeSeconds:z.number().int().min(0).default(0)})
+const publicWebsiteItemSchema=z.object({title:z.string().max(80),description:z.string().max(500),value:z.string().max(120),image:z.string().url().nullable().optional()})
+const serverPublicSnapshotSchema=z.object({serverId:z.string().uuid(),source:z.enum(['bans','leaderboard-kills']),data:z.object({items:z.array(publicWebsiteItemSchema).max(25)})})
+const alertMetricKeys=new Set(['cpuPercent','memoryUsedMb','memoryTotalMb','diskUsedGb','diskTotalGb','tps','mspt','players','uptimeSeconds'])
+function alertMatches(operator:string,value:number,threshold:number){switch(operator.toLowerCase()){case '>':case 'gt':return value>threshold;case '>=':case 'gte':return value>=threshold;case '<':case 'lt':return value<threshold;case '<=':case 'lte':return value<=threshold;case '=':case '==':case 'eq':return value===threshold;case '!=':case 'ne':return value!==threshold;default:return false}}
+async function evaluateMetricAlerts(metric:Record<string,unknown>,server:{id:string;userId:string}){
+  const rules=await db.select().from(alertRules).where(and(eq(alertRules.serverId,server.id),eq(alertRules.enabled,true)))
+  for(const rule of rules){
+    const key=String(rule.metric);if(!alertMetricKeys.has(key))continue;const raw=metric[key];if(raw==null)continue;const value=Number(raw);if(!Number.isFinite(value)||!alertMatches(String(rule.operator),value,Number(rule.threshold)))continue
+    const type=`metric-alert:${rule.id}`;const cutoff=new Date(Date.now()-10*60_000);const recent=(await db.select({id:notifications.id}).from(notifications).where(and(eq(notifications.userId,rule.userId),eq(notifications.serverId,server.id),eq(notifications.type,type),gte(notifications.createdAt,cutoff))).orderBy(desc(notifications.createdAt)).limit(1))[0]
+    if(recent)continue
+    await db.insert(notifications).values({userId:rule.userId,serverId:server.id,type,title:`Sunucu metriği uyarısı: ${key}`,body:`${key} ${value} ${rule.operator} ${rule.threshold} eşiğini tetikledi.`})
+  }
+}
 
 const APPLIED_PROPERTY_TO_SETTING:Record<string,string>={
   motd:'motd','max-players':'maxPlayers',gamemode:'gamemode',difficulty:'difficulty',hardcore:'hardcore',pvp:'pvp','allow-flight':'allowFlight','white-list':'whitelist','online-mode':'onlineMode','force-gamemode':'forceGamemode','spawn-protection':'spawnProtection','enable-command-block':'commandBlocks','allow-nether':'allowNether','spawn-animals':'spawnAnimals','spawn-monsters':'spawnMonsters','spawn-npcs':'spawnNpc','generate-structures':'generateStructures','view-distance':'viewDistance','simulation-distance':'simulationDistance','player-idle-timeout':'playerIdleTimeout','max-world-size':'maxWorldSize','entity-broadcast-range-percentage':'entityBroadcastRange','function-permission-level':'functionPermissionLevel','op-permission-level':'operatorPermissionLevel','hide-online-players':'hideOnlinePlayers','enforce-whitelist':'enforceWhitelist','enforce-secure-profile':'enforceSecureProfile','accepts-transfers':'acceptTransfers','enable-status':'enableStatus','resource-pack':'resourcePackUrl','resource-pack-sha1':'resourcePackSha1','require-resource-pack':'resourcePackRequired','resource-pack-prompt':'resourcePackPrompt','server-ip':'serverIp','query.port':'queryPort','enable-query':'enableQuery','enable-rcon':'enableRcon','rcon.port':'rconPort','broadcast-rcon-to-ops':'broadcastRcon','network-compression-threshold':'networkCompressionThreshold','rate-limit':'rateLimit','level-name':'worldName','level-seed':'seed','level-type':'worldType','spawn-radius':'spawnRadius','max-tick-time':'maxTickTime'
@@ -131,6 +145,26 @@ export async function POST(request:NextRequest){
 
     if(body.type==='heartbeat'){
       await db.update(nodes).set({status:'online',lastHeartbeat:new Date(),cpuPercent:body.cpuPercent??0,memoryUsedMb:body.memoryUsedMb??0,memoryTotalMb:body.memoryTotalMb??0,diskUsedGb:body.diskUsedGb??0,diskTotalGb:body.diskTotalGb??0,updatedAt:new Date()}).where(and(eq(nodes.id,node.id),eq(nodes.userId,node.userId)))
+    }else if(body.type==='server-metrics'){
+      const metrics=z.array(serverMetricSchema).max(100).parse(body.metrics??[])
+      if(metrics.length){
+        const serverRows=await db.select({id:servers.id,userId:servers.userId}).from(servers).where(and(eq(servers.nodeId,node.id),inArray(servers.id,metrics.map(item=>item.serverId))))
+        const byId=new Map(serverRows.map(server=>[server.id,server]))
+        for(const metric of metrics){
+          const server=byId.get(metric.serverId);if(!server)continue
+          const values={...metric,userId:server.userId,tps:metric.tps??null,mspt:metric.mspt??null}
+          await db.insert(serverMetrics).values(values)
+          await db.update(servers).set({playerCount:metric.players,updatedAt:new Date()}).where(and(eq(servers.id,server.id),eq(servers.nodeId,node.id)))
+          await evaluateMetricAlerts(values as Record<string,unknown>,server)
+        }
+      }
+    }else if(body.type==='server-public-data'){
+      const snapshots=z.array(serverPublicSnapshotSchema).max(100).parse(body.snapshots??[])
+      if(snapshots.length){
+        const serverRows=await db.select({id:servers.id,userId:servers.userId}).from(servers).where(and(eq(servers.nodeId,node.id),inArray(servers.id,[...new Set(snapshots.map(item=>item.serverId))])))
+        const byId=new Map(serverRows.map(server=>[server.id,server]))
+        for(const snapshot of snapshots){const server=byId.get(snapshot.serverId);if(!server)continue;await db.insert(serverWebsiteData).values({userId:server.userId,serverId:server.id,source:snapshot.source,data:snapshot.data,updatedAt:new Date()}).onConflictDoUpdate({target:[serverWebsiteData.serverId,serverWebsiteData.source],set:{userId:server.userId,data:snapshot.data,updatedAt:new Date()}})}
+      }
     }else if(body.type==='result'){
       const command=(await db.select().from(agentCommands).where(and(eq(agentCommands.id,body.commandId),eq(agentCommands.userId,node.userId))).limit(1))[0]
       if(command){
@@ -158,6 +192,9 @@ export async function POST(request:NextRequest){
 
         if(command.serverId&&body.ok&&['security-scan','file-integrity','port-scan'].includes(command.type)){
           await persistScheduledSecurityResult(node.userId,command.serverId,command.type,(body.result??{}) as Record<string,unknown>)
+        }
+        if(command.serverId&&!body.ok&&['security-scan','file-integrity','port-scan'].includes(command.type)){
+          await pool.query(`INSERT INTO server_security ("serverId","userId",config,"lastScanAt","lastScanStatus") VALUES ($1,$2,'{}'::jsonb,now(),'failed') ON CONFLICT ("serverId") DO UPDATE SET "lastScanAt"=now(),"lastScanStatus"='failed',"updatedAt"=now()`,[command.serverId,node.userId])
         }
 
         if(body.ok&&command.serverId&&['backup','CREATE_BACKUP','CREATE_WORLD_BACKUP'].includes(command.type)&&body.result?.path){
