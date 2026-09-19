@@ -1,10 +1,12 @@
 import { readdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
-import { pool } from '../lib/db/postgres'
+import { createPostgresPool } from '../lib/db/postgres'
 
 const migrationsDir=path.join(process.cwd(),'migrations')
 const auto=process.argv.includes('--auto')
-const connectionConfigured=Boolean(process.env.DATABASE_URL||process.env.POSTGRES_URL||process.env.NEON_DATABASE_URL)
+const migrationDatabaseUrl=process.env.MIGRATION_DATABASE_URL||process.env.DATABASE_URL_UNPOOLED||process.env.DATABASE_URL||process.env.POSTGRES_URL||process.env.NEON_DATABASE_URL
+const connectionConfigured=Boolean(migrationDatabaseUrl)
+const pool=createPostgresPool(migrationDatabaseUrl?{connectionString:migrationDatabaseUrl}:{})
 
 type DbClient={query:(sql:string,params?:unknown[])=>Promise<{rows:any[]}>}
 
@@ -97,13 +99,13 @@ function statements(sql:string){
 }
 
 async function main(){
-  if(auto&&!process.env.VERCEL&&String(process.env.BLOCKCTRL_AUTO_MIGRATE||'').toLowerCase()!=='true'){
-    console.log('BlockCtrl migration auto-run skipped outside Vercel.')
+  if(auto&&String(process.env.BLOCKCTRL_AUTO_MIGRATE||'').toLowerCase()!=='true'){
+    console.log('BlockCtrl migration auto-run skipped: BLOCKCTRL_AUTO_MIGRATE is not enabled.')
     return
   }
   if(!connectionConfigured){
     if(auto){console.log('BlockCtrl migration auto-run skipped: database connection is not configured.');return}
-    throw new Error('DATABASE_URL, POSTGRES_URL or NEON_DATABASE_URL is required.')
+    throw new Error('MIGRATION_DATABASE_URL, DATABASE_URL_UNPOOLED, DATABASE_URL, POSTGRES_URL or NEON_DATABASE_URL is required.')
   }
 
   const guard=await pool.connect()
