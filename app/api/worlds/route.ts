@@ -1,10 +1,8 @@
-import { headers } from 'next/headers'
 import { NextRequest, NextResponse } from 'next/server'
+import { getPanelActor } from '@/lib/api-auth'
 import { and, eq } from 'drizzle-orm'
-import { auth } from '@/lib/auth'
 import { db, ensurePanelSchema } from '@/lib/db'
 import { agentCommands, auditLog, nodes, serverPermissions, servers, worlds } from '@/lib/db/schema'
-import { resolvePanelUser } from '@/lib/db/identity'
 import { nodeDiagnosticMessage, nodeFetch } from '@/lib/node-bridge'
 import { WORLD_TEMPLATE_MAP, WORLD_TEMPLATES, WORLD_TEMPLATE_CATEGORIES } from '@/lib/world-templates'
 
