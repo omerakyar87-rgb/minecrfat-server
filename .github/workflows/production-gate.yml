@@ -45,7 +45,7 @@ jobs:
             if [ -z "${!name:-}" ]; then echo "::error::Missing required secret: $name"; exit 1; fi
           done
       - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --frozen-lockfile
       - name: Apply database migrations
         run: pnpm db:migrate
         env:
@@ -75,7 +75,15 @@ jobs:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
       - name: Deploy prebuilt production artifact
-        run: pnpm dlx vercel@latest deploy --prebuilt --prod --token="${{ secrets.VERCEL_TOKEN }}"
+        shell: bash
+        run: |
+          set -euo pipefail
+          url=$(pnpm dlx vercel@latest deploy --prebuilt --prod --yes --token="${{ secrets.VERCEL_TOKEN }}" | tail -n 1)
+          echo "DEPLOYMENT_URL=${url}" >> "${GITHUB_ENV}"
         env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      - name: Production smoke test
+        run: pnpm test:e2e
+        env:
+          E2E_BASE_URL: ${{ env.DEPLOYMENT_URL }}
