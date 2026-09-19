@@ -24,7 +24,8 @@ export async function GET() {
     responseTimeMs:0,
     database:{status:'unknown' as CheckStatus,latencyMs:null as number|null,error:null as string|null,pool:{total:0,idle:0,waiting:0,max:Number(process.env.PG_POOL_MAX||10)}},
     migration:{status:'unknown' as CheckStatus,expected:EXPECTED_MIGRATION,latest:null as string|null,error:null as string|null},
-    agent:{status:'unknown' as CheckStatus,totalNodes:0,onlineNodes:0,latestHeartbeat:null as string|null,error:null as string|null},
+    agent:{status:'unknown' as CheckStatus,totalNodes:0,onlineNodes:0,latestHeartbeat:null as string|null,heartbeatAgeSeconds:null as number|null,error:null as string|null},
+    observability:{status:'unknown' as CheckStatus,failedCommands24h:0,staleQueuedCommands:0,failedOperations24h:0,alertWebhookConfigured:Boolean(process.env.BLOCKCTRL_ALERT_WEBHOOK_URL),error:null as string|null},
     vercelWebsite:{status:'unknown' as CheckStatus,latencyMs:null as number|null,teamConfigured:false,error:null as string|null},
     blobStorage:{status:'unknown' as CheckStatus,latencyMs:null as number|null,error:null as string|null},
     websiteRuntime:{status:'unknown' as CheckStatus,publicUrlConfigured:false,serverBridgeConfigured:false,error:null as string|null},
@@ -35,7 +36,7 @@ export async function GET() {
   try{
     const dbStarted=Date.now()
     await pool.query('SELECT 1')
-    health.database.status='ok';health.database.latencyMs=Date.now()-dbStarted;health.database.error=null;health.database.pool={total:pool.totalCount,idle:pool.idleCount,waiting:pool.waitingCount,max:Number(process.env.PG_POOL_MAX||10)}
+    health.database.status='ok';health.database.latencyMs=Date.now()-dbStarted;if(health.database.latencyMs>1000)markDegraded(health);health.database.error=null;health.database.pool={total:pool.totalCount,idle:pool.idleCount,waiting:pool.waitingCount,max:Number(process.env.PG_POOL_MAX||10)}
   }catch(error){
     health.database.status='error';health.database.latencyMs=null;health.database.error=errorMessage(error,'Database connection failed');health.database.pool={total:pool.totalCount,idle:pool.idleCount,waiting:pool.waitingCount,max:Number(process.env.PG_POOL_MAX||10)}
     health.status='error'
@@ -62,11 +63,30 @@ export async function GET() {
       health.agent.totalNodes=Number(row?.total||0)
       health.agent.onlineNodes=Number(row?.online||0)
       health.agent.latestHeartbeat=row?.latest?new Date(row.latest).toISOString():null
+      health.agent.heartbeatAgeSeconds=row?.latest?Math.max(0,Math.floor((Date.now()-new Date(row.latest).getTime())/1000)):null
       health.agent.status=health.agent.totalNodes===0?'not-configured':health.agent.onlineNodes>0?'ok':'offline'
       if(health.agent.status==='offline')markDegraded(health)
     }catch(error){
       health.agent.status='error'
       health.agent.error=errorMessage(error,'Agent status unavailable')
+      markDegraded(health)
+    }
+
+    try{
+      const operational=await pool.query<{failed_commands:string;stale_queued:string;failed_operations:string}>(`SELECT
+        (SELECT count(*)::text FROM agent_commands WHERE status='failed' AND "createdAt">=now()-interval '24 hours') AS failed_commands,
+        (SELECT count(*)::text FROM agent_commands WHERE status='queued' AND "createdAt"<now()-interval '10 minutes') AS stale_queued,
+        (SELECT count(*)::text FROM operation_logs WHERE status='failed' AND "createdAt">=now()-interval '24 hours') AS failed_operations`)
+      const row=operational.rows[0]
+      health.observability.failedCommands24h=Number(row?.failed_commands||0)
+      health.observability.staleQueuedCommands=Number(row?.stale_queued||0)
+      health.observability.failedOperations24h=Number(row?.failed_operations||0)
+      const noisy=health.observability.staleQueuedCommands>0||health.observability.failedCommands24h>=5||health.observability.failedOperations24h>=5
+      health.observability.status=noisy?'error':'ok'
+      if(noisy)markDegraded(health)
+    }catch(error){
+      health.observability.status='error'
+      health.observability.error=errorMessage(error,'Operational telemetry unavailable')
       markDegraded(health)
     }
   }
