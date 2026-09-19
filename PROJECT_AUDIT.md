@@ -163,3 +163,13 @@ Bu geçişte TS/TSX dosyaları TypeScript parse taramasından geçirildi; yeni s
 107. Ortak actor resolver `getPanelActor()` server-actions, security, panel-settings, worlds, server-content, files ve backups route'larına yayıldı; route'ların mevcut RBAC/permission mantığı değiştirilmedi.
 108. Ortak actor geçişinde üç sıkıştırılmış route gövdesinde eski auth çağrısının kaldığı ara durum tespit edilip aynı branch üzerinde düzeltildi; contract testi artık bu yedi route'ta eski actor auth kalıbının geri gelmesini engelliyor.
 109. Security Center ayrıştırması sırasında bulunan JSX grid/fragment hatası production'a taşınmadan branch üzerinde tespit edilip düzeltildi; ana branch bu çalışmalar boyunca değiştirilmedi.
+
+
+## Temel altyapı / Sistem Hazırlığı Merkezi — 19 Eylül 2026
+
+128. `/api/health` genişletildi: veritabanı ve migration kontrollerine ek olarak Supabase Auth yapılandırması, agent/node heartbeat, Vercel website yayınlama, Vercel Blob, website runtime bridge, CSP modu, operasyon alarm kanalları ve secret kullanan entegrasyonların temel hazırlık durumu raporlanıyor.
+129. Health cevabına `readiness` özeti eklendi. Production yayınını gerçekten engelleyen maddeler `blockers`, çalışmayı tamamen durdurmayan eksikler `warnings` olarak ayrılıyor; panel bu ayrımı sahte başarı etiketi üretmeden gösteriyor.
+130. `components/system-readiness-center.tsx` eklendi. Ana paneldeki `Sistem Durumu` sekmesi artık DB, migration, auth, agent, Vercel, Blob, website runtime, güvenlik/CSP ve operasyon alarm durumlarını tek ekranda gösteriyor; yöneticiye güvenli kurulum sırası sunuyor ve secret değerlerini göstermiyor.
+131. `InfrastructureManager` içindeki yıkıcı sunucu işlemi, node token yenileme ve node silme akışlarındaki native `window.prompt/window.confirm` kaldırıldı. Ortak `useActionConfirm` diyaloğu ve gerekli yerlerde yazılı isim doğrulaması kullanılıyor.
+132. `scripts/check-contracts.mjs` readiness merkezi, health auth/alerting/CSP sözleşmesi ve Infrastructure Manager içinde native popup bulunmaması için regresyon kontrolleriyle genişletildi.
+133. GitHub CI doğrulamasında contract tests, unit tests, ESLint, TypeScript typecheck, Next.js panel build ve agent build adımlarının tamamı başarıyla geçti.
