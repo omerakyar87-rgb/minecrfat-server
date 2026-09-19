@@ -82,6 +82,12 @@ async function migrationFingerprint(db:DbClient,version:string){
         hasIndex(db,'websites_server_id_idx'),
         hasIndex(db,'website_form_submissions_server_id_idx'),
       ])
+    case '0017_panel_media_fallback':
+      return all([
+        hasTable(db,'panel_media_objects'),
+        hasIndex(db,'panel_media_objects_scope_idx'),
+        hasIndex(db,'panel_media_objects_owner_idx'),
+      ])
     default: return false
   }
 }
