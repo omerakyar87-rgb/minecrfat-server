@@ -26,7 +26,8 @@ function integerEnv(name: string, fallback: number, min: number, max: number) {
 }
 
 export function createPostgresPool(overrides: PoolConfig = {}) {
-  const connectionString = normalizeConnectionString(databaseUrl)
+  const { connectionString: overrideConnectionString, ...poolOverrides } = overrides
+  const connectionString = normalizeConnectionString(overrideConnectionString ?? databaseUrl)
 
   return new Pool({
     ...(connectionString ? { connectionString } : {}),
@@ -34,7 +35,7 @@ export function createPostgresPool(overrides: PoolConfig = {}) {
     idleTimeoutMillis: integerEnv('PG_POOL_IDLE_TIMEOUT_MS', 10_000, 1_000, 300_000),
     connectionTimeoutMillis: integerEnv('PG_POOL_CONNECTION_TIMEOUT_MS', 5_000, 500, 60_000),
     maxLifetimeSeconds: integerEnv('PG_POOL_MAX_LIFETIME_SECONDS', 300, 0, 3_600),
-    ...overrides,
+    ...poolOverrides,
   })
 }
 
