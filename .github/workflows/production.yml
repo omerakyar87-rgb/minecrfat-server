@@ -1,0 +1,31 @@
+name: Production migration gate
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  migrate-and-validate:
+    environment: production
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.9.2
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: test -n "$DATABASE_URL" || (echo 'DATABASE_URL production secret missing' && exit 1)
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - run: pnpm db:migrate
+      - run: pnpm build
+      - run: pnpm agent:build
