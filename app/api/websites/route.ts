@@ -100,6 +100,9 @@ async function resolveVercelAlias(projectId:string,projectName:string){
   }catch{return null}
 }
 function esc(value:string){return value.replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]||ch))}
+function normalizedBasePath(value:string){const raw=String(value||'').trim();if(!raw)return '';const parts=raw.split('/').filter(Boolean).map(part=>encodeURIComponent(decodeURIComponent(part)));return parts.length?'/'+parts.join('/'):''}
+function sitePagePath(slug:string,basePath=''){const base=normalizedBasePath(basePath);return slug?`${base}/${encodeURIComponent(slug)}/`:`${base}/`}
+function siteHref(value:string,basePath=''){const href=String(value||'').trim();if(!href)return '#';if(href==='#'||href.startsWith('#')||href.startsWith('mailto:')||href.startsWith('tel:')||/^https:\/\//i.test(href))return href;if(href.startsWith('/'))return normalizedBasePath(basePath)+href;return href}
 function starterHtml(name:string,description:string,template:string){
   const safeName=esc(name)
   const safeDesc=esc(description||'BlockCtrl ile yayınlanan yeni website.')
@@ -262,7 +265,7 @@ function renderItems(section:BuilderSection){
   if(section.type==='team'||section.type==='testimonials')return `<div class="grid cards">${section.items.map(item=>`<article><div class="avatar"></div><b>${esc(item.title)}</b><span>${esc(item.description)}</span></article>`).join('')}</div>`
   return ''
 }
-function renderSection(section:BuilderSection,pages:BuilderPage[],theme:BuilderData['theme'],authConfig:BuilderAuth){
+function renderSection(section:BuilderSection,pages:BuilderPage[],theme:BuilderData['theme'],authConfig:BuilderAuth,basePath=''){
   if(!section.settings.visible)return ''
   const placement=section.settings.placement==='sticky-top'?'sticky':section.settings.placement==='fixed-top'?'fixed top':section.settings.placement==='fixed-bottom'?'fixed bottom':''
   const width=section.settings.width==='boxed'?'boxed':section.settings.width==='full'?'full':'wide'
