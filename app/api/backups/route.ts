@@ -1,10 +1,8 @@
-import { headers } from 'next/headers'
 import { NextRequest, NextResponse } from 'next/server'
+import { getPanelActor } from '@/lib/api-auth'
 import { and, desc, eq } from 'drizzle-orm'
-import { auth } from '@/lib/auth'
 import { db, ensurePanelSchema } from '@/lib/db'
 import { agentCommands, backups, serverPermissions, servers, worlds } from '@/lib/db/schema'
-import { resolvePanelUser } from '@/lib/db/identity'
 
 async function actor(){const session=await auth.api.getSession({headers:await headers()});if(!session?.user)return null;return resolvePanelUser(session.user)}
 async function access(serverId:string,a:NonNullable<Awaited<ReturnType<typeof actor>>>){const server=(await db.select().from(servers).where(eq(servers.id,serverId)).limit(1))[0];if(!server)return null;if(a.role==='manager'||server.userId===a.id)return {server,permission:null,manager:true};const permission=(await db.select().from(serverPermissions).where(and(eq(serverPermissions.serverId,serverId),eq(serverPermissions.userId,a.id))).limit(1))[0];return permission?{server,permission,manager:false}:null}
