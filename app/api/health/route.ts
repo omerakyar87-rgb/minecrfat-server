@@ -141,17 +141,18 @@ export async function GET() {
   }
 
 
-  const publicUrl=String(process.env.BLOCKCTRL_PUBLIC_URL||process.env.NEXT_PUBLIC_APP_URL||'').trim()
+  const vercelRuntimeHost=String(process.env.VERCEL_PROJECT_PRODUCTION_URL||process.env.VERCEL_URL||'').trim()
+  const publicUrl=String(process.env.BLOCKCTRL_PUBLIC_URL||process.env.NEXT_PUBLIC_APP_URL||(vercelRuntimeHost?'https://'+vercelRuntimeHost:'')).trim()
   const serverBridgeKey=String(process.env.BLOCKCTRL_SITE_SERVER_BRIDGE_KEY||'').trim()
   health.websiteRuntime.publicUrlConfigured=/^https:\/\//i.test(publicUrl)
-  health.websiteRuntime.serverBridgeConfigured=serverBridgeKey.length>=24
+  health.websiteRuntime.serverBridgeConfigured=health.agent.totalNodes>0||serverBridgeKey.length>=24
   if(health.websiteRuntime.publicUrlConfigured&&health.websiteRuntime.serverBridgeConfigured){
     health.websiteRuntime.status='ok'
   }else{
     health.websiteRuntime.status='not-configured'
     const missing=[] as string[]
-    if(!health.websiteRuntime.publicUrlConfigured)missing.push('BLOCKCTRL_PUBLIC_URL (HTTPS)')
-    if(!health.websiteRuntime.serverBridgeConfigured)missing.push('BLOCKCTRL_SITE_SERVER_BRIDGE_KEY')
+    if(!health.websiteRuntime.publicUrlConfigured)missing.push('Vercel runtime URL')
+    if(!health.websiteRuntime.serverBridgeConfigured)missing.push('kayıtlı node veya legacy bridge key')
     health.websiteRuntime.error=`Eksik website runtime ayarı: ${missing.join(', ')}`
     markDegraded(health)
   }
