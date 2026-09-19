@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { and, desc, eq } from 'drizzle-orm'
 import { db, ensurePanelSchema } from '@/lib/db'
-import { lostItems, serverMetrics, serverPermissions, serverSettings, servers, websites } from '@/lib/db/schema'
+import { lostItems, serverMetrics, serverPermissions, serverSettings, serverWebsiteData, servers, websites } from '@/lib/db/schema'
 
 const ALLOWED=new Set(['server-status','players','metrics','lost-items','leaderboard-kills','leaderboard-money','leaderboard-health','bans'])
 const cors={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'GET,OPTIONS','Access-Control-Allow-Headers':'Content-Type,Authorization','Cache-Control':'public, max-age=5, stale-while-revalidate=15'}
@@ -45,5 +45,14 @@ export async function GET(request:NextRequest){
     const rows=await db.select().from(lostItems).where(eq(lostItems.serverId,server.id)).orderBy(desc(lostItems.occurredAt)).limit(12)
     return response({available:true,source,updatedAt:new Date().toISOString(),summary,items:rows.map(row=>({title:row.playerName||'Oyuncu',description:`${row.itemName} x${row.amount} · ${row.reason}`,value:row.status,image:null}))})
   }
-  return response({available:false,source,reason:'Bu veri türü için henüz canlı plugin/veri sağlayıcısı bağlı değil.',summary,items:[]})
+  if(source==='bans'||source==='leaderboard-kills'){
+    const snapshot=(await db.select().from(serverWebsiteData).where(and(eq(serverWebsiteData.serverId,server.id),eq(serverWebsiteData.source,source))).limit(1))[0]
+    if(!snapshot)return response({available:false,source,reason:'Agent henüz bu veri kaynağı için snapshot göndermedi.',summary,items:[]})
+    const updatedAt=new Date(snapshot.updatedAt)
+    const fresh=Number.isFinite(updatedAt.getTime())&&Date.now()-updatedAt.getTime()<=5*60_000
+    const items=Array.isArray(snapshot.data?.items)?snapshot.data.items.slice(0,25):[]
+    if(!fresh)return response({available:false,source,reason:'Agent public website snapshot verisi güncel değil.',updatedAt:updatedAt.toISOString(),summary,items:[]})
+    return response({available:true,source,updatedAt:updatedAt.toISOString(),summary,items})
+  }
+  return response({available:false,source,reason:source==='leaderboard-money'||source==='leaderboard-health'?'Bu sıralama için gerçek ekonomi/oyuncu sağlık veri sağlayıcısı bağlı değil.':'Bu veri türü için henüz canlı plugin/veri sağlayıcısı bağlı değil.',summary,items:[]})
 }
