@@ -6,7 +6,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import {
   Activity, AlertTriangle, ArrowLeft, Ban, Box, CheckCircle2, Clock3, Copy, Cpu,
   Database, Download, FileText, Folder, Globe2, HardDrive, Info, KeyRound,
-  LifeBuoy, Network, Package, Play, Plus, RefreshCw, RotateCcw, Search, Send,
+  LifeBuoy, MoreHorizontal, Network, Package, Pencil, Play, Plus, RefreshCw, RotateCcw, Search, Send,
   Server as ServerIcon, Settings2, Shield, ShieldCheck, Signal, Square, Terminal, Trash2, Users, Wifi, X
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
