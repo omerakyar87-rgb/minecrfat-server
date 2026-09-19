@@ -480,14 +480,40 @@ async function managedDatabaseStatus(serverId:string,p:Record<string,unknown>){c
 
 
 function safeJsonArray(value:unknown){return Array.isArray(value)?value:[]}
+type PublicWebsiteSnapshotSource='bans'|'leaderboard-kills'|'leaderboard-money'|'leaderboard-health'|'leaderboard-playtime'|'support'|'store'|'wiki'
+type PublicWebsiteSnapshotItem={title:string;description:string;value:string;image?:string|null;href?:string|null}
+type PublicWebsiteSnapshot={serverId:string;source:PublicWebsiteSnapshotSource;data:{items:PublicWebsiteSnapshotItem[]}}
+function publicHttpsUrl(value:unknown){const raw=String(value??'').trim().slice(0,2000);if(!raw)return null;try{const url=new URL(raw);return url.protocol==='https:'?url.toString():null}catch{return null}}
+function normalizePublicAdapterItems(value:unknown){
+  const root=value&&typeof value==='object'&&!Array.isArray(value)?value as Record<string,unknown>:{}
+  const rows=Array.isArray(root.items)?root.items:Array.isArray(value)?value:[]
+  const items:PublicWebsiteSnapshotItem[]=[]
+  for(const raw of rows.slice(0,25)){
+    if(!raw||typeof raw!=='object')continue
+    const row=raw as Record<string,unknown>
+    const title=String(row.title??'').trim().slice(0,80)
+    if(!title)continue
+    items.push({title,description:String(row.description??'').trim().slice(0,500),value:String(row.value??'').trim().slice(0,120),image:publicHttpsUrl(row.image),href:publicHttpsUrl(row.href)})
+  }
+  return items
+}
+async function readPublicAdapter(root:string,source:Exclude<PublicWebsiteSnapshotSource,'bans'|'leaderboard-kills'|'leaderboard-playtime'>){
+  const candidates=[join(root,'blockctrl','website',`${source}.json`),join(root,'plugins','BlockCtrlWebsite',`${source}.json`)]
+  for(const path of candidates){
+    const raw=await readFile(path,'utf8').catch(()=>'')
+    if(!raw)continue
+    try{return normalizePublicAdapterItems(JSON.parse(raw))}catch(error){agentEvent('warn',null,`Website veri adaptörü okunamadı: ${source}`,error)}
+  }
+  return null
+}
 async function collectPublicSnapshotForServer(id:string){
   const root=serverDir(id)
-  const snapshots:Array<{serverId:string;source:'bans'|'leaderboard-kills';data:{items:Array<{title:string;description:string;value:string;image?:string|null}>}}>=[]
+  const snapshots:PublicWebsiteSnapshot[]=[]
   const bansRaw=await readFile(join(root,'banned-players.json'),'utf8').catch(()=> '')
   if(bansRaw){
     try{
       const rows=safeJsonArray(JSON.parse(bansRaw)).slice(0,25) as Array<Record<string,unknown>>
-      const items=rows.map(row=>({title:String(row.name??row.uuid??'Oyuncu').slice(0,80),description:[row.reason?String(row.reason):'',row.source?`Kaynak: ${String(row.source)}`:''].filter(Boolean).join(' · ').slice(0,500),value:row.expires&&String(row.expires)!=='forever'?`Bitiş: ${String(row.expires).slice(0,80)}`:'Kalıcı',image:null}))
+      const items=rows.map(row=>({title:String(row.name??row.uuid??'Oyuncu').slice(0,80),description:[row.reason?String(row.reason):'',row.source?`Kaynak: ${String(row.source)}`:''].filter(Boolean).join(' · ').slice(0,500),value:row.expires&&String(row.expires)!=='forever'?`Bitiş: ${String(row.expires).slice(0,80)}`:'Kalıcı',image:null,href:null}))
       snapshots.push({serverId:id,source:'bans',data:{items}})
     }catch{}
   }else snapshots.push({serverId:id,source:'bans',data:{items:[]}})
@@ -497,32 +523,40 @@ async function collectPublicSnapshotForServer(id:string){
   const props=parsePropertiesText(await readFile(join(root,'server.properties'),'utf8').catch(()=>''))
   const level=String(props['level-name']||'world').replace(/[^A-Za-z0-9_-]/g,'_')
   const statsDir=join(root,level,'stats')
-  const scores:Array<{name:string;kills:number}>=[]
+  const scores:Array<{name:string;kills:number;playTicks:number}>=[]
   for(const entry of await readdir(statsDir,{withFileTypes:true,encoding:'utf8'}).catch(()=>[] as any[])){
     if(!entry.isFile?.()||!entry.name.endsWith('.json'))continue
     try{
       const raw=JSON.parse(await readFile(join(statsDir,entry.name),'utf8')) as Record<string,unknown>
       const stats=raw.stats&&typeof raw.stats==='object'?raw.stats as Record<string,unknown>:{}
       const custom=stats['minecraft:custom']&&typeof stats['minecraft:custom']==='object'?stats['minecraft:custom'] as Record<string,unknown>:{}
-      const kills=Number(custom['minecraft:player_kills']??0)
-      if(!Number.isFinite(kills)||kills<0)continue
+      const killsRaw=Number(custom['minecraft:player_kills']??0)
+      const playTicksRaw=Number(custom['minecraft:play_time']??0)
+      const kills=Number.isFinite(killsRaw)&&killsRaw>=0?Math.trunc(killsRaw):0
+      const playTicks=Number.isFinite(playTicksRaw)&&playTicksRaw>=0?Math.trunc(playTicksRaw):0
       const uuid=entry.name.replace(/\.json$/,'').replaceAll('-','').toLowerCase()
-      scores.push({name:users.get(uuid)||entry.name.replace(/\.json$/,''),kills:Math.trunc(kills)})
+      scores.push({name:users.get(uuid)||entry.name.replace(/\.json$/,''),kills,playTicks})
     }catch{}
   }
   scores.sort((a,b)=>b.kills-a.kills||a.name.localeCompare(b.name,'tr'))
-  snapshots.push({serverId:id,source:'leaderboard-kills',data:{items:scores.slice(0,25).map((row,index)=>({title:row.name.slice(0,80),description:`#${index+1} · Oyuncu öldürme sıralaması`,value:String(row.kills),image:null}))}})
+  snapshots.push({serverId:id,source:'leaderboard-kills',data:{items:scores.filter(row=>row.kills>0).slice(0,25).map((row,index)=>({title:row.name.slice(0,80),description:`#${index+1} · Oyuncu öldürme sıralaması`,value:String(row.kills),image:null,href:null}))}})
+  const playtime=[...scores].filter(row=>row.playTicks>0).sort((a,b)=>b.playTicks-a.playTicks||a.name.localeCompare(b.name,'tr'))
+  snapshots.push({serverId:id,source:'leaderboard-playtime',data:{items:playtime.slice(0,25).map((row,index)=>{const seconds=Math.floor(row.playTicks/20);const hours=Math.floor(seconds/3600);const minutes=Math.floor((seconds%3600)/60);return {title:row.name.slice(0,80),description:`#${index+1} · Toplam oynama süresi`,value:hours>0?`${hours} sa ${minutes} dk`:`${minutes} dk`,image:null,href:null}})}})
+
+  for(const source of ['leaderboard-money','leaderboard-health','support','store','wiki'] as const){
+    const items=await readPublicAdapter(root,source)
+    if(items)snapshots.push({serverId:id,source,data:{items}})
+  }
   return snapshots
 }
 async function collectServerPublicSnapshots(){
-  const root=resolve(DATA_DIR,'servers');const snapshots:Array<{serverId:string;source:'bans'|'leaderboard-kills';data:{items:Array<{title:string;description:string;value:string;image?:string|null}>}}>=[]
+  const root=resolve(DATA_DIR,'servers');const snapshots:PublicWebsiteSnapshot[]=[]
   for(const entry of await readdir(root,{withFileTypes:true,encoding:'utf8'}).catch(()=>[] as any[])){
     if(!entry.isDirectory?.()||!validServerId(entry.name))continue
     try{snapshots.push(...await collectPublicSnapshotForServer(entry.name))}catch(error){agentEvent('warn',entry.name,'Website public snapshot üretilemedi',error)}
   }
-  return snapshots.slice(0,100)
+  return snapshots.slice(0,250)
 }
-
 
 
 function fileKind(path:string){const lower=path.toLowerCase();if(lower.startsWith('mods/'))return'Mods';if(lower.startsWith('plugins/'))return'Plugins';if(lower.startsWith('config/')||/\.(yml|yaml|json|properties|toml|ini|cfg|conf|txt)$/i.test(lower))return'Config';if(lower.startsWith('world'))return'Worlds';if(lower.startsWith('logs/')||lower.includes('crash-reports'))return'Logs';if(lower.includes('backup'))return'Backups';return'Server files'}
