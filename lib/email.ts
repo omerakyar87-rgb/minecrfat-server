@@ -1,5 +1,3 @@
-import { operationalEvent } from '@/lib/observability'
-
 type MailInput={to:string|string[];subject:string;text:string;html?:string;tag?:string}
 
 function addresses(value:string|string[]){return (Array.isArray(value)?value:[value]).map(x=>String(x).trim()).filter(x=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(x)).slice(0,20)}
@@ -20,7 +18,7 @@ export async function sendEmail(input:MailInput){
     cache:'no-store',
   })
   const body=await response.text();let data:any={};try{data=body?JSON.parse(body):{}}catch{}
-  if(!response.ok){operationalEvent({level:'error',event:'email.delivery.failed',message:`Resend HTTP ${response.status}`,details:{status:response.status,tag:input.tag}});throw new Error(String(data?.message||`E-posta gönderilemedi (HTTP ${response.status})`))}
-  operationalEvent({level:'info',event:'email.delivery.sent',message:'E-posta gönderildi',details:{id:data?.id??null,recipientCount:to.length,tag:input.tag}})
+  if(!response.ok){console.error(JSON.stringify({source:'blockctrl',at:new Date().toISOString(),level:'error',event:'email.delivery.failed',status:response.status,tag:input.tag??null}));throw new Error(String(data?.message||`E-posta gönderilemedi (HTTP ${response.status})`))}
+  console.info(JSON.stringify({source:'blockctrl',at:new Date().toISOString(),level:'info',event:'email.delivery.sent',id:data?.id??null,recipientCount:to.length,tag:input.tag??null}))
   return {sent:true,id:String(data?.id||'')}
 }
