@@ -28,10 +28,10 @@ export async function operationalAlert(input:EventInput & {dedupeKey?:string;ded
   const payload=operationalEvent(input)
   const url=String(process.env.BLOCKCTRL_ALERT_WEBHOOK_URL||'').trim()
   const alertEmail=String(process.env.BLOCKCTRL_ALERT_EMAIL_TO||'').trim()
-  if(!url&&!alertEmail)return {delivered:false,reason:'not-configured',payload}
+  const internalDelivered=true
   const key=input.dedupeKey||input.event
   const now=Date.now(),ttl=Math.max(30_000,input.dedupeMs??300_000),last=recent.get(key)??0
-  if(now-last<ttl)return {delivered:false,reason:'deduped',payload}
+  if(now-last<ttl)return {delivered:true,internalDelivered,reason:'deduped',payload}
   recent.set(key,now)
   let webhookDelivered=false
   if(url){
@@ -47,5 +47,5 @@ export async function operationalAlert(input:EventInput & {dedupeKey?:string;ded
   if(alertEmail){
     try{const mail=await sendEmail({to:alertEmail.split(',').map(x=>x.trim()),subject:`[BlockCtrl] ${input.level.toUpperCase()} · ${input.event}`,text:`${input.message}\n\n${JSON.stringify(payload.details??{},null,2)}`,tag:'operational-alert'});emailDelivered=mail.sent}catch(error){operationalEvent({level:'error',event:'observability.email.failed',message:error instanceof Error?error.message:'Alert email failed'})}
   }
-  return {delivered:webhookDelivered||emailDelivered,webhookDelivered,emailDelivered,payload}
+  return {delivered:true,internalDelivered,webhookDelivered,emailDelivered,reason:webhookDelivered||emailDelivered?'external-delivered':'internal-log',payload}
 }
