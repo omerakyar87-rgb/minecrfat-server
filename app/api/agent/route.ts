@@ -284,6 +284,17 @@ export async function POST(request:NextRequest){
         const integrationEvent=integrationEventFromConsoleLine(logLine)
         if(integrationEvent)await emitDiscordEvent(body.serverId,integrationEvent.event,integrationEvent.payload)
       }
+    }else if(body.type==='security-event'&&body.serverId){
+      const server=(await db.select({id:servers.id,userId:servers.userId}).from(servers).where(and(eq(servers.id,String(body.serverId)),eq(servers.nodeId,node.id))).limit(1))[0]
+      if(server){
+        const severity=['critical','high','medium','low','info'].includes(String(body.severity))?String(body.severity):'info'
+        const source=String(body.source??'agent').slice(0,80)
+        const event=String(body.event??'Agent güvenlik olayı').slice(0,300)
+        const ip=body.ip?String(body.ip).slice(0,120):null
+        const details=body.details&&typeof body.details==='object'?body.details:{}
+        const recent=await pool.query(`SELECT id FROM security_events WHERE "serverId"=$1 AND source=$2 AND event=$3 AND COALESCE(ip,'')=COALESCE($4,'') AND "createdAt">now()-interval '10 seconds' LIMIT 1`,[server.id,source,event,ip])
+        if(!recent.rowCount)await pool.query(`INSERT INTO security_events ("userId","serverId",severity,source,event,status,ip,details) VALUES ($1,$2,$3,$4,$5,'open',$6,$7::jsonb)`,[server.userId,server.id,severity,source,event,ip,JSON.stringify(details)])
+      }
     }else if(body.type==='server-status'&&body.serverId){
       const previous=(await db.select({status:servers.status}).from(servers).where(and(eq(servers.id,body.serverId),eq(servers.userId,node.userId))).limit(1))[0]
       await db.update(servers).set({status:body.status,pid:body.pid??null,playerCount:body.playerCount??0,installProgress:body.status==='ready'||body.status==='stopped'?100:undefined,updatedAt:new Date()}).where(and(eq(servers.id,body.serverId),eq(servers.userId,node.userId)))
