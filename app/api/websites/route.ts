@@ -501,8 +501,8 @@ export async function POST(request:NextRequest){
     validateAuthPages(builderData)
     const updated=await db.transaction(async tx=>{
       await syncAuthSettings(site.id,builderData,tx)
-      const [row]=await tx.update(websites).set({builderData,updatedAt:new Date(),lastError:null}).where(eq(websites.id,site.id)).returning()
-      await tx.insert(auditLog).values({userId:a.id,action:'website.builder.save',resourceType:'website',resourceId:site.id,details:{pages:builderData.pages.length,sections:builderData.pages.reduce((sum,page)=>sum+page.sections.length,0)}})
+      const [row]=await tx.update(websites).set({serverId:builderData.binding.serverId||null,builderData,updatedAt:new Date(),lastError:null}).where(eq(websites.id,site.id)).returning()
+      await tx.insert(auditLog).values({userId:a.id,action:'website.builder.save',resourceType:'website',resourceId:site.id,details:{serverId:builderData.binding.serverId||null,pages:builderData.pages.length,sections:builderData.pages.reduce((sum,page)=>sum+page.sections.length,0)}})
       return row
     })
     return NextResponse.json({ok:true,website:updated})
@@ -520,7 +520,7 @@ export async function POST(request:NextRequest){
     try{
       await db.transaction(async tx=>{
         await syncAuthSettings(site.id,builderData,tx)
-        await tx.update(websites).set({builderData,status:'building',lastError:null,updatedAt:new Date()}).where(eq(websites.id,site.id))
+        await tx.update(websites).set({serverId:builderData.binding.serverId||null,builderData,status:'building',lastError:null,updatedAt:new Date()}).where(eq(websites.id,site.id))
       })
       const deployment=await vercel('/v13/deployments',{method:'POST',body:JSON.stringify({
         name:site.projectName,project:site.vercelProjectId,target:'production',files:deploymentFiles({name:site.name,slug:site.slug},builderData,runtimeBase),projectSettings:{framework:null},meta:{createdBy:'blockctrl-builder',ownerUserId:site.userId,websiteId:site.id},
@@ -530,8 +530,8 @@ export async function POST(request:NextRequest){
       const readyState=String(deployment.readyState||deployment.state||'QUEUED').toUpperCase()
       const productionUrl=await resolveVercelAlias(site.vercelProjectId,site.projectName)
       const updated=await db.transaction(async tx=>{
-        const [row]=await tx.update(websites).set({builderData,deploymentId:deploymentId||site.deploymentId,deploymentUrl:deploymentHost?`https://${deploymentHost}`:site.deploymentUrl,productionUrl:productionUrl||site.productionUrl,status:STATUS_MAP[readyState]||'queued',publishedAt:readyState==='READY'?new Date():site.publishedAt,lastError:null,updatedAt:new Date()}).where(eq(websites.id,site.id)).returning()
-        await tx.insert(auditLog).values({userId:a.id,action:'website.publish',resourceType:'website',resourceId:site.id,details:{deploymentId,pages:builderData.pages.length}})
+        const [row]=await tx.update(websites).set({serverId:builderData.binding.serverId||null,builderData,deploymentId:deploymentId||site.deploymentId,deploymentUrl:deploymentHost?`https://${deploymentHost}`:site.deploymentUrl,productionUrl:productionUrl||site.productionUrl,status:STATUS_MAP[readyState]||'queued',publishedAt:readyState==='READY'?new Date():site.publishedAt,lastError:null,updatedAt:new Date()}).where(eq(websites.id,site.id)).returning()
+        await tx.insert(auditLog).values({userId:a.id,action:'website.publish',resourceType:'website',resourceId:site.id,details:{deploymentId,serverId:builderData.binding.serverId||null,pages:builderData.pages.length}})
         return row
       })
       return NextResponse.json({ok:true,website:updated})
