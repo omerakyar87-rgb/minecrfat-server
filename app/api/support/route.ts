@@ -5,6 +5,7 @@ import { get } from '@vercel/blob'
 import { auth } from '@/lib/auth'
 import { ensurePanelSchema, pool } from '@/lib/db'
 import { resolvePanelUser } from '@/lib/db/identity'
+import { getDbMediaByPath } from '@/lib/media-store'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -154,9 +155,22 @@ async function attachmentResponse(request: NextRequest, actor: NonNullable<Await
   const thread = await threadById(attachment.threadId)
   if (!thread || !canReadThread(actor, thread)) return NextResponse.json({ error: 'Bu dosyaya erişiminiz yok' }, { status: 403 })
   try {
+    const stored=await getDbMediaByPath(attachment.pathname)
+    const safeName = attachment.filename.replace(/[\r\n"]/g, '_')
+    if(stored){
+      return new Response(new Uint8Array(stored.data),{
+        status:200,
+        headers:{
+          'Content-Type':attachment.contentType||stored.contentType||'application/octet-stream',
+          'Content-Length':String(stored.sizeBytes),
+          'Content-Disposition':`inline; filename="${safeName}"`,
+          'Cache-Control':'private, no-store',
+          'X-Content-Type-Options':'nosniff',
+        },
+      })
+    }
     const blob = await get(attachment.pathname, { access: 'private', useCache: false })
     if (!blob) return NextResponse.json({ error: 'Dosya depolamada bulunamadı' }, { status: 404 })
-    const safeName = attachment.filename.replace(/[\r\n"]/g, '_')
     return new Response(blob.stream, {
       status: 200,
       headers: {
@@ -169,6 +183,18 @@ async function attachmentResponse(request: NextRequest, actor: NonNullable<Await
   } catch {
     return NextResponse.json({ error: 'Dosya okunamadı' }, { status: 502 })
   }
+}
+
+async function informationAssetResponse(pathname:string){
+  const safe=String(pathname||'').trim()
+  if(!safe.startsWith('information/')||safe.includes('..'))return NextResponse.json({error:'Geçersiz bilgi medyası yolu'},{status:400})
+  try{
+    const stored=await getDbMediaByPath(safe)
+    if(stored)return new Response(new Uint8Array(stored.data),{status:200,headers:{'Content-Type':stored.contentType||'application/octet-stream','Content-Length':String(stored.sizeBytes),'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Content-Disposition':'inline'}})
+    const blob=await get(safe,{access:'private',useCache:false})
+    if(!blob)return NextResponse.json({error:'Bilgi medyası bulunamadı'},{status:404})
+    return new Response(blob.stream,{status:200,headers:{'Content-Type':blob.blob.contentType||'application/octet-stream','Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Content-Disposition':'inline'}})
+  }catch{return NextResponse.json({error:'Bilgi medyası okunamadı'},{status:502})}
 }
 
 async function threadDetail(actor: NonNullable<Awaited<ReturnType<typeof currentActor>>>, threadId: string) {
@@ -217,6 +243,8 @@ export async function GET(request: NextRequest) {
   const accepted = staff || await consentAccepted(actor.id)
   const attachmentId = request.nextUrl.searchParams.get('attachmentId')
   const threadId = request.nextUrl.searchParams.get('threadId')
+  const informationAsset=request.nextUrl.searchParams.get('informationAsset')
+  if(informationAsset)return informationAssetResponse(informationAsset)
   if ((attachmentId || threadId) && !accepted) return NextResponse.json({ error: 'Önce destek bilgilendirmesini kabul edin' }, { status: 428 })
   if (attachmentId) return attachmentResponse(request, actor, attachmentId)
   if (threadId) return threadDetail(actor, threadId)
