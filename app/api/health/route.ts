@@ -51,8 +51,10 @@ export async function GET() {
       health.migration.status=latest>=EXPECTED_MIGRATION?'ok':'outdated'
       if(health.migration.status!=='ok')health.status='error'
     }catch(error){
-      health.migration.status='error'
-      health.migration.error=errorMessage(error,'Migration status unavailable')
+      const message=errorMessage(error,'Migration status unavailable')
+      const migrationTableMissing=/schema_migrations/i.test(message)&&/does not exist|undefined table|relation/i.test(message)
+      health.migration.status=migrationTableMissing?'outdated':'error'
+      health.migration.error=migrationTableMissing?'Migration zinciri henüz başlatılmamış; pnpm db:migrate çalıştırılmalı.':message
       health.status='error'
     }
 
