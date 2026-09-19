@@ -586,6 +586,7 @@ export async function POST(request:NextRequest){
       })
       return NextResponse.json({ok:true,website:updated,hosting:'internal'})
     }
+    const vercelProjectId=String(site.vercelProjectId)
     try{
       await db.transaction(async tx=>{
         await syncAuthSettings(site.id,builderData,tx)
@@ -593,12 +594,12 @@ export async function POST(request:NextRequest){
         await tx.update(websites).set({serverId:builderData.binding.serverId||null,builderData,status:'building',lastError:null,updatedAt:new Date()}).where(eq(websites.id,site.id))
       })
       const deployment=await vercel('/v13/deployments',{method:'POST',body:JSON.stringify({
-        name:site.projectName,project:site.vercelProjectId,target:'production',files:deploymentFiles({name:site.name,slug:site.slug},builderData,runtimeOrigin),projectSettings:{framework:null},meta:{createdBy:'blockctrl-builder',ownerUserId:site.userId,websiteId:site.id},
+        name:site.projectName,project:vercelProjectId,target:'production',files:deploymentFiles({name:site.name,slug:site.slug},builderData,runtimeOrigin),projectSettings:{framework:null},meta:{createdBy:'blockctrl-builder',ownerUserId:site.userId,websiteId:site.id},
       })})
       const deploymentId=String(deployment.id||'')
       const deploymentHost=String(deployment.url||'')
       const readyState=String(deployment.readyState||deployment.state||'QUEUED').toUpperCase()
-      const productionUrl=await resolveVercelAlias(site.vercelProjectId,site.projectName)
+      const productionUrl=await resolveVercelAlias(vercelProjectId,site.projectName)
       const updated=await db.transaction(async tx=>{
         const [row]=await tx.update(websites).set({serverId:builderData.binding.serverId||null,builderData,deploymentId:deploymentId||site.deploymentId,deploymentUrl:deploymentHost?`https://${deploymentHost}`:site.deploymentUrl,productionUrl:productionUrl||site.productionUrl,status:STATUS_MAP[readyState]||'queued',publishedAt:readyState==='READY'?new Date():site.publishedAt,lastError:null,updatedAt:new Date()}).where(eq(websites.id,site.id)).returning()
         await tx.insert(auditLog).values({userId:a.id,action:'website.publish',resourceType:'website',resourceId:site.id,details:{deploymentId,serverId:builderData.binding.serverId||null,pages:builderData.pages.length}})
