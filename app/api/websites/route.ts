@@ -203,7 +203,7 @@ async function prepareBuilderData(input:unknown,siteName:string,userId:string,ro
   for(const page of builder.pages)for(const section of page.sections){
     if(section.liveData.mode==='static'||section.liveData.source==='custom-json')continue
     if(section.liveData.serverId&&!allowedSet.has(section.liveData.serverId))section.liveData.serverId=''
-    if(!section.liveData.serverId&&builder.binding.serverId)section.liveData.serverId=builder.binding.serverId
+    if(builder.binding.inheritLiveData&&section.liveData.serverId===builder.binding.serverId)section.liveData.serverId=''
   }
   return builder
 }
@@ -399,6 +399,12 @@ export async function POST(request:NextRequest){
     if(requestedServerId&&!serverId)return NextResponse.json({error:'Bu sunucunun website verilerini kullanma yetkiniz yok.'},{status:403})
     if(name.length<2||name.length>80)return NextResponse.json({error:'Website adı 2-80 karakter olmalı.'},{status:400})
     if(slug.length<3||slug.length>40||RESERVED.has(slug))return NextResponse.json({error:'Yayın adı 3-40 karakter olmalı ve ayrılmış bir ad kullanmamalı.'},{status:400})
+    const initialBuilder=await prepareBuilderData(body.builderData,name,a.id,role,serverId)
+    initialBuilder.binding.serverId=serverId
+    if(!initialBuilder.auth.serverId&&serverId)initialBuilder.auth.serverId=serverId
+    const hasLiveSections=initialBuilder.pages.some(page=>page.sections.some(section=>section.liveData.mode!=='static'&&section.liveData.source!=='custom-json'))
+    const configuredRuntimeBase=String(process.env.BLOCKCTRL_PUBLIC_URL||'').trim().replace(/\/$/,'')
+    if(hasLiveSections&&!configuredRuntimeBase)return NextResponse.json({error:'Canlı sunucu verisi kullanan website yayınları için BLOCKCTRL_PUBLIC_URL zorunludur.'},{status:503})
     const projectName=`${slug}-${suffix()}`
     const existing=await db.select().from(websites).where(or(eq(websites.slug,slug),eq(websites.projectName,projectName))).limit(1)
     if(existing.length){
@@ -416,7 +422,7 @@ export async function POST(request:NextRequest){
         name:projectName,
         project:projectName,
         target:'production',
-        files:[{file:'index.html',data:starterHtml(name,description,template)}],
+        files:configuredRuntimeBase?deploymentFiles({name,slug},initialBuilder,configuredRuntimeBase):[{file:'index.html',data:starterHtml(name,description,template)}],
         projectSettings:{framework:null},
         meta:{createdBy:'blockctrl',ownerUserId:a.id,websiteSlug:slug},
       })})
@@ -426,13 +432,13 @@ export async function POST(request:NextRequest){
       const productionUrl=projectId?await resolveVercelAlias(projectId,projectName):null
       const created=await db.transaction(async tx=>{
         const [row]=await tx.insert(websites).values({
-          userId:a.id,serverId:serverId||null,name,slug,projectName,template,description:description||null,
+          userId:a.id,serverId:serverId||null,name,slug,projectName,template,description:description||null,builderData:initialBuilder,
           vercelProjectId:projectId||null,deploymentId:deploymentId||null,
           deploymentUrl:deploymentHost?`https://${deploymentHost}`:null,
           productionUrl,status:STATUS_MAP[readyState]||'queued',
           publishedAt:readyState==='READY'?new Date():null,
         }).returning()
-        await tx.insert(auditLog).values({userId:a.id,action:'website.create',resourceType:'website',resourceId:row.id,details:{slug,projectName,template,deploymentId,serverId:serverId||null}})
+        await tx.insert(auditLog).values({userId:a.id,action:'website.create',resourceType:'website',resourceId:row.id,details:{slug,projectName,template,deploymentId,serverId:serverId||null,pages:initialBuilder.pages.length,liveSections:initialBuilder.pages.reduce((sum,page)=>sum+page.sections.filter(section=>section.liveData.mode!=='static').length,0)}})
         return row
       })
       return NextResponse.json({ok:true,website:created},{status:201})
@@ -460,7 +466,7 @@ export async function POST(request:NextRequest){
     if(builder.auth.serverId===oldServerId||!builder.auth.serverId)builder.auth.serverId=serverId
     for(const page of builder.pages)for(const section of page.sections){
       if(section.liveData.mode==='static'||section.liveData.source==='custom-json')continue
-      if(!section.liveData.serverId||section.liveData.serverId===oldServerId)section.liveData.serverId=serverId
+      if(!section.liveData.serverId||section.liveData.serverId===oldServerId)section.liveData.serverId=''
     }
     const updated=await db.transaction(async tx=>{
       await syncAuthSettings(site.id,builder,tx)
