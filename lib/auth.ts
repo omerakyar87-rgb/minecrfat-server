@@ -8,6 +8,22 @@ export const auth = {
       if (!user) return null
       return { user: { id: user.id, email: user.email ?? '', name: user.user_metadata?.name ?? user.email ?? '' } }
     },
+    async getSessionSecurity() {
+      const supabase = await createClient()
+      const { data: { session }, error } = await supabase.auth.getSession()
+      if(error)throw error
+      if(!session)return null
+      return {
+        userId:session.user.id,
+        expiresAt:session.expires_at?new Date(session.expires_at*1000).toISOString():null,
+      }
+    },
+    async revokeOtherSessions() {
+      const supabase = await createClient()
+      const { error } = await supabase.auth.signOut({ scope: 'others' })
+      if(error)throw error
+      return true
+    },
     async getMfaStatus() {
       const supabase = await createClient()
       const { data: { user } } = await supabase.auth.getUser()
