@@ -19,13 +19,21 @@ function normalizeConnectionString(value: string | undefined) {
   }
 }
 
+function integerEnv(name: string, fallback: number, min: number, max: number) {
+  const raw = Number(process.env[name])
+  if (!Number.isFinite(raw)) return fallback
+  return Math.min(max, Math.max(min, Math.trunc(raw)))
+}
+
 export function createPostgresPool(overrides: PoolConfig = {}) {
   const connectionString = normalizeConnectionString(databaseUrl)
 
   return new Pool({
     ...(connectionString ? { connectionString } : {}),
-    connectionTimeoutMillis: 5000,
-    max: 5,
+    max: integerEnv('PG_POOL_MAX', 5, 1, 50),
+    idleTimeoutMillis: integerEnv('PG_POOL_IDLE_TIMEOUT_MS', 10_000, 1_000, 300_000),
+    connectionTimeoutMillis: integerEnv('PG_POOL_CONNECTION_TIMEOUT_MS', 5_000, 500, 60_000),
+    maxLifetimeSeconds: integerEnv('PG_POOL_MAX_LIFETIME_SECONDS', 300, 0, 3_600),
     ...overrides,
   })
 }
