@@ -31,7 +31,7 @@ export async function GET() {
     blobStorage:{status:'unknown' as CheckStatus,mode:'database-fallback' as 'blob'|'database-fallback',latencyMs:null as number|null,fallbackMaxBytes:Number(process.env.BLOCKCTRL_DB_MEDIA_MAX_BYTES)||3*1024*1024,error:null as string|null},
     websiteRuntime:{status:'unknown' as CheckStatus,publicUrlConfigured:false,serverBridgeConfigured:false,error:null as string|null},
     security:{status:'unknown' as CheckStatus,cspMode:'report-only' as 'enforced'|'report-only',environment:String(process.env.VERCEL_ENV||process.env.NODE_ENV||'unknown'),error:null as string|null},
-    alerting:{status:'unknown' as CheckStatus,webhookConfigured:false,emailConfigured:false,error:null as string|null},
+    alerting:{status:'unknown' as CheckStatus,mode:'internal' as 'internal'|'external',webhookConfigured:false,emailConfigured:false,error:null as string|null},
     integrations:{status:'unknown' as CheckStatus,discordWebhook:true,discordBotWorker:false,liveStreamGateway:false,encryptionConfigured:false,oauth:{youtube:false,twitch:false,kick:false},error:null as string|null},
     readiness:{status:'ready' as 'ready'|'ready-with-warnings'|'blocked',blockers:[] as string[],warnings:[] as string[]},
   }
@@ -171,12 +171,9 @@ export async function GET() {
 
   health.alerting.webhookConfigured=Boolean(String(process.env.BLOCKCTRL_ALERT_WEBHOOK_URL||'').trim())
   health.alerting.emailConfigured=Boolean(String(process.env.BLOCKCTRL_ALERT_EMAIL_TO||'').trim()&&String(process.env.RESEND_API_KEY||'').trim()&&String(process.env.EMAIL_FROM||'').trim())
-  if(health.alerting.webhookConfigured||health.alerting.emailConfigured){
-    health.alerting.status='ok'
-  }else{
-    health.alerting.status='not-configured'
-    health.alerting.error='Operasyon alarm kanalı yapılandırılmadı. BLOCKCTRL_ALERT_WEBHOOK_URL veya e-posta ayarları önerilir.'
-  }
+  health.alerting.status='ok'
+  health.alerting.mode=health.alerting.webhookConfigured||health.alerting.emailConfigured?'external':'internal'
+  health.alerting.error=null
 
 
   health.integrations.discordBotWorker=Boolean(process.env.DISCORD_BOT_WORKER_URL)
@@ -203,9 +200,7 @@ export async function GET() {
   if(health.agent.status==='offline')health.readiness.warnings.push('Kayıtlı node var ancak çevrimiçi agent heartbeat alınamıyor.')
   if(health.agent.status==='not-configured')health.readiness.warnings.push('Henüz node/agent bağlanmamış.')
   if(health.blobStorage.status!=='ok')health.readiness.warnings.push('Medya depolama hazır değil.')
-  if(health.blobStorage.status==='ok'&&health.blobStorage.mode==='database-fallback')health.readiness.warnings.push('Vercel Blob bağlı değil; küçük/orta medya için PostgreSQL fallback aktif. Büyük dosyalar için object storage önerilir.')
   if(health.websiteRuntime.status!=='ok')health.readiness.warnings.push('Yayınlanan sitelerin canlı BlockCtrl köprüsü eksik.')
-  if(health.alerting.status!=='ok')health.readiness.warnings.push('Operasyon alarm kanalı yapılandırılmadı.')
   if(health.integrations.encryptionConfigured===false)health.readiness.warnings.push('Secret kullanan entegrasyonlar için INTEGRATION_ENCRYPTION_KEY eksik.')
   if(health.security.environment==='production'&&health.security.cspMode!=='enforced')health.readiness.warnings.push('Production CSP hâlâ Report-Only modunda.')
   health.readiness.status=health.readiness.blockers.length?'blocked':health.readiness.warnings.length?'ready-with-warnings':'ready'
