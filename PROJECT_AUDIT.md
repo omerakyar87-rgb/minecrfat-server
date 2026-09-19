@@ -146,3 +146,15 @@ Bu geçişte TS/TSX dosyaları TypeScript parse taramasından geçirildi; yeni s
 96. Generic ServerFeatureActions kendi capability tahminini bıraktı; /api/server-actions tarafından dönen gerçek supportedActions listesine göre buton açıyor. Seçili databaseId gerektiren duplicate generic DB kartı kaldırıldı.
 97. Regression contract testleri protected pages, path traversal, grouped navigation, native confirm/prompt yokluğu, website public snapshot provider'ları, backup server scope ve gerçek agent action gate'lerini kapsayacak şekilde genişletildi.
 98. Git/Vercel production branch hazırlığı blockctrl/p0-hardening-20260919 üzerinde yapılıyor. Vercel'in son doğrulama denemeleri uygulama build hatası yerine hesap build-rate-limit nedeniyle çalıştırılamadı; bu nedenle tam pnpm check && pnpm build && pnpm agent:build sonucu henüz doğrulanmış sayılmamalıdır.
+
+
+## Production Hardening / P2 devamı — 19 Eylül 2026
+
+99. Security Center Erişim sekmesi `components/server-security-access-tab.tsx` içine ayrıldı. Supabase oturum sonlandırma akışı native `confirm()` yerine yazılı onay destekli ortak `ActionConfirmDialog` kullanıyor.
+100. Security Center içindeki X-Ray strict profil, X-Ray kapatma, karantina restore/delete ve güvenlik politikası uygulama native `confirm()` çağrıları ortak modal akışına taşındı. 8–11px sabit metinler kaldırıldı.
+101. Sunucu detay ekranında kalan 11px metinler ve mobil arama alanı minimum genişlik baskısı temizlenerek okunabilirlik/responsive davranış iyileştirildi.
+102. Ortak `lib/api-auth.ts` katmanı eklendi. Panel aktörü çözümleme ve standart private/no-store JSON cevap yardımcıları merkezi hale getirilmeye başlandı; `server-actions` ve `security` route'ları ortak actor resolver kullanıyor.
+103. Production/preview smoke testi ana sayfaya ek olarak `/api/health` sözleşmesini ve anonim istekte `/api/server-actions` ile `/api/security` için 401 auth sınırını doğruluyor.
+104. CSP rollout kontrollü hale getirildi. Varsayılan `Content-Security-Policy-Report-Only` korunuyor; yalnız `BLOCKCTRL_CSP_ENFORCE=true` olduğunda aynı policy zorunlu CSP header'ına dönüşüyor.
+105. Contract testleri Security Center'da native confirm geri dönüşünü, küçük sabit fontları, ortak API auth resolver'ını, CSP rollout anahtarını ve genişletilmiş E2E smoke kontrollerini kapsayacak şekilde genişletildi.
+106. Vercel/GitHub production doğrulaması tamamlanmadan branch ana dala birleştirilmeyecek; önceki Vercel denemelerinde görülen build-rate-limit uygulama build başarısı olarak kabul edilmiyor.
