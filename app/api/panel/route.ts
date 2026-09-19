@@ -1,4 +1,4 @@
-import { createHash, randomBytes, randomUUID } from 'node:crypto'
+import { createHash, createSign, randomBytes, randomUUID } from 'node:crypto'
 import { lookup, resolveSrv } from 'node:dns/promises'
 import { createConnection } from 'node:net'
 import { headers } from 'next/headers'
@@ -77,12 +77,45 @@ async function tcpReachability(host:string,port:number,timeoutMs=4500){
     socket.once('error',error=>{clearTimeout(timer);finish({reachable:false,latencyMs:null,error:error.message.slice(0,240)})})
   })
 }
-async function externalNetworkDiagnostics(host:string,port:number){
+type OciConfig={region:string;tenancy:string;user:string;fingerprint:string;privateKey:string;nsgId:string;writeEnabled:boolean}
+function ociConfig(nodeId:string):OciConfig|null{
+  const region=String(process.env.OCI_REGION??'').trim(),tenancy=String(process.env.OCI_TENANCY_OCID??'').trim(),user=String(process.env.OCI_USER_OCID??'').trim(),fingerprint=String(process.env.OCI_FINGERPRINT??'').trim()
+  const encoded=String(process.env.OCI_PRIVATE_KEY_B64??'').trim(),raw=String(process.env.OCI_PRIVATE_KEY??'').replace(/\\n/g,'\n').trim(),privateKey=encoded?Buffer.from(encoded,'base64').toString('utf8'):raw
+  let mapped='';try{const map=JSON.parse(String(process.env.OCI_NODE_NSGS??'{}')) as Record<string,string>;mapped=String(map[nodeId]??'').trim()}catch{}
+  const nsgId=mapped||String(process.env.OCI_NSG_OCID??'').trim()
+  if(!region||!tenancy||!user||!fingerprint||!privateKey||!nsgId)return null
+  return {region,tenancy,user,fingerprint,privateKey,nsgId,writeEnabled:String(process.env.OCI_NSG_WRITE_ENABLED??'false').toLowerCase()==='true'}
+}
+async function ociRequest(config:OciConfig,method:'GET'|'POST',path:string,body?:Record<string,unknown>){
+  const host=`iaas.${config.region}.oraclecloud.com`,date=new Date().toUTCString(),bodyText=body?JSON.stringify(body):''
+  const headerNames=['(request-target)','host','date'];const lines=[`(request-target): ${method.toLowerCase()} ${path}`,`host: ${host}`,`date: ${date}`]
+  const requestHeaders:Record<string,string>={host,date,accept:'application/json'}
+  if(body){const digest=createHash('sha256').update(bodyText).digest('base64');headerNames.push('x-content-sha256','content-type','content-length');lines.push(`x-content-sha256: ${digest}`,'content-type: application/json',`content-length: ${Buffer.byteLength(bodyText)}`);requestHeaders['x-content-sha256']=digest;requestHeaders['content-type']='application/json';requestHeaders['content-length']=String(Buffer.byteLength(bodyText))}
+  const signer=createSign('RSA-SHA256');signer.update(lines.join('\n'));signer.end();const signature=signer.sign(config.privateKey,'base64')
+  requestHeaders.authorization=`Signature version="1",keyId="${config.tenancy}/${config.user}/${config.fingerprint}",algorithm="rsa-sha256",headers="${headerNames.join(' ')}",signature="${signature}"`
+  const response=await fetch(`https://${host}${path}`,{method,headers:requestHeaders,body:body?bodyText:undefined,cache:'no-store',signal:AbortSignal.timeout(8000)})
+  const text=await response.text();let data:any=null;try{data=text?JSON.parse(text):null}catch{data={raw:text.slice(0,1000)}}
+  if(!response.ok)throw new Error(`OCI API HTTP ${response.status}: ${String(data?.message??data?.code??'request failed').slice(0,240)}`)
+  return {data,requestId:response.headers.get('opc-request-id')}
+}
+function ociTcpRuleCovers(rule:any,port:number){const range=rule?.tcpOptions?.destinationPortRange;const min=Number(range?.min??-1),max=Number(range?.max??-1);return rule?.direction==='INGRESS'&&String(rule?.protocol)==='6'&&rule?.isValid!==false&&min<=port&&max>=port}
+async function ociNsgStatus(nodeId:string,port:number){
+  const config=ociConfig(nodeId);if(!config)return{status:'not-connected',configured:false,writeEnabled:false,portAllowed:null,detail:'OCI NSG API için region, kullanıcı/tenancy OCID, fingerprint, signing key ve NSG OCID yapılandırılmalı.'}
+  try{const path=`/20160918/networkSecurityGroups/${encodeURIComponent(config.nsgId)}/securityRules?direction=INGRESS&limit=1000`;const {data,requestId}=await ociRequest(config,'GET',path);const rules=Array.isArray(data)?data:[];const matching=rules.filter(rule=>ociTcpRuleCovers(rule,port));return{status:'connected',configured:true,writeEnabled:config.writeEnabled,portAllowed:matching.length>0,ingressRules:rules.length,matchingRules:matching.map(rule=>({id:rule.id??null,source:rule.source??null,description:rule.description??null,isStateless:Boolean(rule.isStateless)})).slice(0,10),requestId,nsg:`…${config.nsgId.slice(-12)}`,detail:matching.length?`OCI NSG Minecraft TCP ${port} için ingress kuralı içeriyor.`:`OCI NSG bağlı ancak TCP ${port} ingress kuralı bulunamadı.`}}catch(error){return{status:'error',configured:true,writeEnabled:config.writeEnabled,portAllowed:null,detail:error instanceof Error?error.message:'OCI NSG sorgusu başarısız'}}
+}
+async function ociEnsureMinecraftPort(nodeId:string,port:number,cidr:string){
+  const config=ociConfig(nodeId);if(!config)throw new Error('OCI NSG yapılandırması eksik');if(!config.writeEnabled)throw new Error('OCI NSG yazma işlemleri kapalı. OCI_NSG_WRITE_ENABLED=true olmadan kural değiştirilemez.')
+  if(!/^((?:\d{1,3}\.){3}\d{1,3})\/(?:[0-9]|[12][0-9]|3[0-2])$/.test(cidr)&&cidr!=='0.0.0.0/0')throw new Error('Geçersiz IPv4 CIDR')
+  const status=await ociNsgStatus(nodeId,port);if(status.status==='connected'&&status.portAllowed)return{changed:false,status}
+  const body={securityRules:[{direction:'INGRESS',protocol:'6',source:cidr,sourceType:'CIDR_BLOCK',isStateless:false,tcpOptions:{destinationPortRange:{min:port,max:port}},description:`BlockCtrl Minecraft TCP ${port}`}]} as Record<string,unknown>
+  const path=`/20160918/networkSecurityGroups/${encodeURIComponent(config.nsgId)}/actions/addSecurityRules`;const result=await ociRequest(config,'POST',path,body);return{changed:true,requestId:result.requestId,status:await ociNsgStatus(nodeId,port)}
+}
+async function externalNetworkDiagnostics(host:string,port:number,nodeId:string){
   const dns=await lookup(host,{all:true,verbatim:true}).then(rows=>rows.map(row=>({address:row.address,family:row.family}))).catch(()=>[] as Array<{address:string;family:number}>)
   const srv=await resolveSrv(`_minecraft._tcp.${host}`).then(rows=>rows.sort((a,b)=>a.priority-b.priority||b.weight-a.weight).map(row=>({name:row.name,port:row.port,priority:row.priority,weight:row.weight}))).catch(()=>[] as Array<{name:string;port:number;priority:number;weight:number}>)
   const targetHost=srv[0]?.name||host;const targetPort=srv[0]?.port||port
-  const tcp=await tcpReachability(targetHost,targetPort)
-  return {checkedAt:new Date().toISOString(),requested:{host,port},dns,srv,effectiveTarget:{host:targetHost,port:targetPort,viaSrv:srv.length>0},tcp,oracleNsg:{status:'not-connected',detail:'OCI control-plane/NSG API bağlantısı yapılandırılmadı. Dış TCP testi, etkin erişilebilirliği bağımsız olarak doğrular.'}}
+  const [tcp,oracleNsg]=await Promise.all([tcpReachability(targetHost,targetPort),ociNsgStatus(nodeId,port)])
+  return {checkedAt:new Date().toISOString(),requested:{host,port},dns,srv,effectiveTarget:{host:targetHost,port:targetPort,viaSrv:srv.length>0},tcp,oracleNsg}
 }
 
 function nextScheduleAt(input:{cadence:string;timeOfDay?:string|null;weekday?:number|null;intervalMinutes?:number|null;timezoneOffsetMinutes?:number|null}, from=new Date()){
@@ -326,9 +359,17 @@ async function postPanel(request:NextRequest) {
     if(!result.fullAccess&&!result.isOwner&&!result.sections.includes('network'))return NextResponse.json({error:'Ağ teşhisi için yetkiniz yok'},{status:403})
     const host=cleanNetworkHost(publicHostForNode(result.server.nodeId))
     if(!host||host==='Public IP bekleniyor')return NextResponse.json({error:'Node için doğrulanabilir public host/IP bulunamadı'},{status:409})
-    const diagnostics=await externalNetworkDiagnostics(host,result.server.port)
+    const diagnostics=await externalNetworkDiagnostics(host,result.server.port,result.server.nodeId)
     await db.insert(auditLog).values({userId:a.id,action:'server.network.diagnostics',resourceType:'server',resourceId:serverId,details:{host,port:result.server.port,reachable:diagnostics.tcp.reachable,latencyMs:diagnostics.tcp.latencyMs,srv:diagnostics.srv.length}})
     return NextResponse.json({ok:true,diagnostics},{headers:{'Cache-Control':'private, no-store'}})
+  }
+
+  if(body.action==='oci-nsg-ensure-port'){
+    if(!manager)return NextResponse.json({error:'OCI NSG kuralı değiştirmek için Yönetici yetkisi gerekir'},{status:403})
+    const serverId=z.string().uuid().parse(body.serverId);const result=await access(a,serverId);if(!result)return NextResponse.json({error:'Sunucu bulunamadı'},{status:404})
+    const cidr=z.string().trim().max(64).parse(body.cidr??'0.0.0.0/0');const oci=await ociEnsureMinecraftPort(result.server.nodeId,result.server.port,cidr)
+    await db.insert(auditLog).values({userId:a.id,action:'server.network.oci-nsg.ensure-port',resourceType:'server',resourceId:serverId,details:{port:result.server.port,cidr,changed:oci.changed,requestId:oci.requestId??null}})
+    return NextResponse.json({ok:true,oci},{headers:{'Cache-Control':'private, no-store'}})
   }
 
   if(body.action==='create-schedule'){
