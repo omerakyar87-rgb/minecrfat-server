@@ -27,7 +27,7 @@ export async function GET() {
     migration:{status:'unknown' as CheckStatus,expected:EXPECTED_MIGRATION,latest:null as string|null,error:null as string|null},
     agent:{status:'unknown' as CheckStatus,totalNodes:0,onlineNodes:0,latestHeartbeat:null as string|null,error:null as string|null},
     auth:{status:'unknown' as CheckStatus,supabaseUrlConfigured:false,publishableKeyConfigured:false,error:null as string|null},
-    vercelWebsite:{status:'unknown' as CheckStatus,latencyMs:null as number|null,teamConfigured:false,error:null as string|null},
+    vercelWebsite:{status:'unknown' as CheckStatus,mode:'internal' as 'internal'|'vercel',latencyMs:null as number|null,teamConfigured:false,externalConfigured:false,error:null as string|null},
     blobStorage:{status:'unknown' as CheckStatus,latencyMs:null as number|null,error:null as string|null},
     websiteRuntime:{status:'unknown' as CheckStatus,publicUrlConfigured:false,serverBridgeConfigured:false,error:null as string|null},
     security:{status:'unknown' as CheckStatus,cspMode:'report-only' as 'enforced'|'report-only',environment:String(process.env.VERCEL_ENV||process.env.NODE_ENV||'unknown'),error:null as string|null},
@@ -99,10 +99,11 @@ export async function GET() {
   const teamId=process.env.VERCEL_TEAM_ID||process.env.VERCEL_ORG_ID||''
   const teamSlug=process.env.VERCEL_TEAM_SLUG||''
   health.vercelWebsite.teamConfigured=Boolean(teamId||teamSlug)
-  if(!vercelToken){
-    health.vercelWebsite.status='not-configured'
-    health.vercelWebsite.error='VERCEL_TOKEN is not configured'
-    markDegraded(health)
+  health.vercelWebsite.externalConfigured=Boolean(vercelToken&&(teamId||teamSlug))
+  if(!health.vercelWebsite.externalConfigured){
+    health.vercelWebsite.status='ok'
+    health.vercelWebsite.mode='internal'
+    health.vercelWebsite.error=null
   }else{
     try{
       const vercelStarted=Date.now()
@@ -114,10 +115,12 @@ export async function GET() {
       if(!response.ok)throw new Error(`Vercel API returned HTTP ${response.status}`)
       await response.json()
       health.vercelWebsite.status='ok'
+      health.vercelWebsite.mode='vercel'
     }catch(error){
-      health.vercelWebsite.status='error'
-      health.vercelWebsite.error=errorMessage(error,'Vercel website integration unavailable')
-      markDegraded(health)
+      health.vercelWebsite.status='ok'
+      health.vercelWebsite.mode='internal'
+      health.vercelWebsite.error=`Ayrı Vercel proje yayını kullanılamıyor; dahili yayın aktif. ${errorMessage(error,'Vercel API unavailable')}`
+      health.readiness.warnings.push('Ayrı Vercel proje yayını kullanılamıyor; BlockCtrl dahili yayın modu aktif.')
     }
   }
 
@@ -195,7 +198,6 @@ export async function GET() {
   if(health.auth.status!=='ok')health.readiness.blockers.push('Supabase kimlik doğrulama ortam değişkenleri eksik veya geçersiz.')
   if(health.agent.status==='offline')health.readiness.warnings.push('Kayıtlı node var ancak çevrimiçi agent heartbeat alınamıyor.')
   if(health.agent.status==='not-configured')health.readiness.warnings.push('Henüz node/agent bağlanmamış.')
-  if(health.vercelWebsite.status!=='ok')health.readiness.blockers.push('Website oluşturma/yayınlama için Vercel API bağlantısı hazır değil.')
   if(health.blobStorage.status!=='ok')health.readiness.warnings.push('Medya yüklemeleri için Vercel Blob hazır değil.')
   if(health.websiteRuntime.status!=='ok')health.readiness.warnings.push('Yayınlanan sitelerin canlı BlockCtrl köprüsü eksik.')
   if(health.alerting.status!=='ok')health.readiness.warnings.push('Operasyon alarm kanalı yapılandırılmadı.')
