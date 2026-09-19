@@ -26,10 +26,14 @@ export async function GET() {
     database:{status:'unknown' as CheckStatus,latencyMs:null as number|null,error:null as string|null,pool:{total:0,idle:0,waiting:0,max:Number(process.env.PG_POOL_MAX||10)}},
     migration:{status:'unknown' as CheckStatus,expected:EXPECTED_MIGRATION,latest:null as string|null,error:null as string|null},
     agent:{status:'unknown' as CheckStatus,totalNodes:0,onlineNodes:0,latestHeartbeat:null as string|null,error:null as string|null},
+    auth:{status:'unknown' as CheckStatus,supabaseUrlConfigured:false,publishableKeyConfigured:false,error:null as string|null},
     vercelWebsite:{status:'unknown' as CheckStatus,latencyMs:null as number|null,teamConfigured:false,error:null as string|null},
     blobStorage:{status:'unknown' as CheckStatus,latencyMs:null as number|null,error:null as string|null},
     websiteRuntime:{status:'unknown' as CheckStatus,publicUrlConfigured:false,serverBridgeConfigured:false,error:null as string|null},
+    security:{status:'unknown' as CheckStatus,cspMode:'report-only' as 'enforced'|'report-only',environment:String(process.env.VERCEL_ENV||process.env.NODE_ENV||'unknown'),error:null as string|null},
+    alerting:{status:'unknown' as CheckStatus,webhookConfigured:false,emailConfigured:false,error:null as string|null},
     integrations:{status:'unknown' as CheckStatus,discordWebhook:true,discordBotWorker:false,liveStreamGateway:false,encryptionConfigured:false,oauth:{youtube:false,twitch:false,kick:false},error:null as string|null},
+    readiness:{status:'ready' as 'ready'|'ready-with-warnings'|'blocked',blockers:[] as string[],warnings:[] as string[]},
   }
 
 
@@ -72,6 +76,22 @@ export async function GET() {
       health.agent.error=errorMessage(error,'Agent status unavailable')
       markDegraded(health)
     }
+  }
+
+
+  const supabaseUrl=String(process.env.NEXT_PUBLIC_SUPABASE_URL||process.env.SUPABASE_URL||'').trim()
+  const supabaseKey=String(process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY||process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY||process.env.SUPABASE_PUBLISHABLE_KEY||process.env.SUPABASE_ANON_KEY||'').trim()
+  health.auth.supabaseUrlConfigured=/^https:\/\//i.test(supabaseUrl)
+  health.auth.publishableKeyConfigured=supabaseKey.length>=20
+  if(health.auth.supabaseUrlConfigured&&health.auth.publishableKeyConfigured){
+    health.auth.status='ok'
+  }else{
+    health.auth.status='error'
+    const missing=[] as string[]
+    if(!health.auth.supabaseUrlConfigured)missing.push('NEXT_PUBLIC_SUPABASE_URL')
+    if(!health.auth.publishableKeyConfigured)missing.push('NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY')
+    health.auth.error=`Eksik auth ayarı: ${missing.join(', ')}`
+    health.status='error'
   }
 
 
@@ -137,6 +157,20 @@ export async function GET() {
   }
 
 
+  health.security.cspMode=String(process.env.BLOCKCTRL_CSP_ENFORCE||'').toLowerCase()==='true'?'enforced':'report-only'
+  health.security.status='ok'
+
+
+  health.alerting.webhookConfigured=Boolean(String(process.env.BLOCKCTRL_ALERT_WEBHOOK_URL||'').trim())
+  health.alerting.emailConfigured=Boolean(String(process.env.BLOCKCTRL_ALERT_EMAIL_TO||'').trim()&&String(process.env.RESEND_API_KEY||'').trim()&&String(process.env.EMAIL_FROM||'').trim())
+  if(health.alerting.webhookConfigured||health.alerting.emailConfigured){
+    health.alerting.status='ok'
+  }else{
+    health.alerting.status='not-configured'
+    health.alerting.error='Operasyon alarm kanalı yapılandırılmadı. BLOCKCTRL_ALERT_WEBHOOK_URL veya e-posta ayarları önerilir.'
+  }
+
+
   health.integrations.discordBotWorker=Boolean(process.env.DISCORD_BOT_WORKER_URL)
   health.integrations.liveStreamGateway=Boolean(process.env.LIVE_STREAM_GATEWAY_URL)
   health.integrations.encryptionConfigured=String(process.env.INTEGRATION_ENCRYPTION_KEY||'').length>=24
@@ -155,8 +189,22 @@ export async function GET() {
     markDegraded(health)
   }
 
+  if(health.database.status!=='ok')health.readiness.blockers.push('Veritabanı bağlantısı hazır değil.')
+  if(health.migration.status!=='ok')health.readiness.blockers.push(`Veritabanı migration seviyesi ${health.migration.expected} düzeyinde değil.`)
+  if(health.auth.status!=='ok')health.readiness.blockers.push('Supabase kimlik doğrulama ortam değişkenleri eksik veya geçersiz.')
+  if(health.agent.status==='offline')health.readiness.warnings.push('Kayıtlı node var ancak çevrimiçi agent heartbeat alınamıyor.')
+  if(health.agent.status==='not-configured')health.readiness.warnings.push('Henüz node/agent bağlanmamış.')
+  if(health.vercelWebsite.status!=='ok')health.readiness.warnings.push('Website yayınlama için Vercel bağlantısı hazır değil.')
+  if(health.blobStorage.status!=='ok')health.readiness.warnings.push('Medya yüklemeleri için Vercel Blob hazır değil.')
+  if(health.websiteRuntime.status!=='ok')health.readiness.warnings.push('Yayınlanan sitelerin canlı BlockCtrl köprüsü eksik.')
+  if(health.alerting.status!=='ok')health.readiness.warnings.push('Operasyon alarm kanalı yapılandırılmadı.')
+  if(health.integrations.encryptionConfigured===false)health.readiness.warnings.push('Secret kullanan entegrasyonlar için INTEGRATION_ENCRYPTION_KEY eksik.')
+  if(health.security.environment==='production'&&health.security.cspMode!=='enforced')health.readiness.warnings.push('Production CSP hâlâ Report-Only modunda.')
+  health.readiness.status=health.readiness.blockers.length?'blocked':health.readiness.warnings.length?'ready-with-warnings':'ready'
+
+
   health.responseTimeMs=Date.now()-startedAt
-  operationalEvent({level:health.status==='ok'?'info':health.status==='degraded'?'warning':'error',event:'health.check',message:`BlockCtrl health ${health.status}`,details:{responseTimeMs:health.responseTimeMs,database:health.database.status,migration:health.migration.status,agent:health.agent.status,vercelWebsite:health.vercelWebsite.status,blobStorage:health.blobStorage.status,websiteRuntime:health.websiteRuntime.status,integrations:health.integrations.status}})
+  operationalEvent({level:health.status==='ok'?'info':health.status==='degraded'?'warning':'error',event:'health.check',message:`BlockCtrl health ${health.status}`,details:{responseTimeMs:health.responseTimeMs,database:health.database.status,migration:health.migration.status,agent:health.agent.status,auth:health.auth.status,vercelWebsite:health.vercelWebsite.status,blobStorage:health.blobStorage.status,websiteRuntime:health.websiteRuntime.status,alerting:health.alerting.status,integrations:health.integrations.status,readiness:health.readiness.status}})
   if(health.status!=='ok')void operationalAlert({level:health.status==='error'?'error':'warning',event:'health.degraded',message:`BlockCtrl health ${health.status}`,dedupeKey:`health:${health.status}:${health.database.status}:${health.agent.status}`,dedupeMs:5*60_000,details:{responseTimeMs:health.responseTimeMs,database:health.database.status,migration:health.migration.status,agent:health.agent.status,vercelWebsite:health.vercelWebsite.status,blobStorage:health.blobStorage.status,websiteRuntime:health.websiteRuntime.status,integrations:health.integrations.status}})
   return NextResponse.json(health,{status:health.status==='error'?503:200,headers:{'Cache-Control':'no-store, max-age=0'}})
 }
