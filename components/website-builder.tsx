@@ -22,7 +22,7 @@ export type BuilderBackground={
   position:'center'|'top'|'bottom'|'left'|'right'
 }
 export type BuilderItem={title:string;description:string;value?:string;image?:string;href?:string}
-export type BuilderLiveData={mode:'static'|'auto'|'source';source:'server-status'|'players'|'metrics'|'map'|'lost-items'|'leaderboard-kills'|'leaderboard-money'|'leaderboard-health'|'bans'|'custom-json';serverId:string;endpoint:string;refreshSeconds:number}
+export type BuilderLiveData={mode:'static'|'auto'|'source';source:'server-status'|'players'|'metrics'|'map'|'support'|'store'|'wiki'|'lost-items'|'leaderboard-kills'|'leaderboard-money'|'leaderboard-health'|'leaderboard-playtime'|'bans'|'custom-json';serverId:string;endpoint:string;refreshSeconds:number}
 export type WebsiteAuthSettings={enabled:boolean;allowRegistration:boolean;registrationMode:'website'|'server'|'both'|'closed';loginMode:'email'|'minecraft'|'both';serverId:string;sessionDays:number;defaultRole:string;loginPageSlug:string;registerPageSlug:string;afterLoginPageSlug:string}
 export type BuilderSection={
   id:string
@@ -148,9 +148,12 @@ function slugify(value:string){return value.toLocaleLowerCase('tr-TR').normalize
 function defaultBackground():BuilderBackground{return {type:'color',color:'#071827',gradient:'linear-gradient(135deg,#071827,#0b2640)',mediaUrl:'',overlayColor:'#020817',overlayOpacity:35,position:'center'}}
 function defaultLiveData(type:string,variant=''):BuilderLiveData{
   if(type==='map')return {mode:'auto',source:'map',serverId:'',endpoint:'',refreshSeconds:30}
+  if(type==='support')return {mode:'auto',source:'support',serverId:'',endpoint:'',refreshSeconds:30}
+  if(type==='store')return {mode:'auto',source:'store',serverId:'',endpoint:'',refreshSeconds:60}
+  if(type==='wiki')return {mode:'auto',source:'wiki',serverId:'',endpoint:'',refreshSeconds:60}
   if(type==='minecraft'||type==='stats'||type==='connect'||type==='member-dashboard')return {mode:'auto',source:'server-status',serverId:'',endpoint:'',refreshSeconds:15}
   if(type==='banlist')return {mode:'auto',source:'bans',serverId:'',endpoint:'',refreshSeconds:30}
-  if(type==='leaderboard')return {mode:'auto',source:variant.includes('3')?'leaderboard-money':variant.includes('4')?'leaderboard-health':'leaderboard-kills',serverId:'',endpoint:'',refreshSeconds:30}
+  if(type==='leaderboard')return {mode:'auto',source:variant.includes('3')?'leaderboard-money':variant.includes('4')?'leaderboard-health':variant.includes('5')?'leaderboard-playtime':'leaderboard-kills',serverId:'',endpoint:'',refreshSeconds:30}
   return {mode:'static',source:'server-status',serverId:'',endpoint:'',refreshSeconds:30}
 }
 function defaultItems(type:string,variant=''):BuilderItem[]{
