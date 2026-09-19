@@ -19,7 +19,7 @@ type Health={
   agent:{status:CheckStatus;totalNodes:number;onlineNodes:number;latestHeartbeat:string|null;error:string|null}
   auth:{status:CheckStatus;supabaseUrlConfigured:boolean;publishableKeyConfigured:boolean;error:string|null}
   vercelWebsite:{status:CheckStatus;mode:'internal'|'vercel';latencyMs:number|null;teamConfigured:boolean;externalConfigured:boolean;error:string|null}
-  blobStorage:{status:CheckStatus;latencyMs:number|null;error:string|null}
+  blobStorage:{status:CheckStatus;mode:'blob'|'database-fallback';latencyMs:number|null;fallbackMaxBytes:number;error:string|null}
   websiteRuntime:{status:CheckStatus;publicUrlConfigured:boolean;serverBridgeConfigured:boolean;error:string|null}
   security:{status:CheckStatus;cspMode:'enforced'|'report-only';environment:string;error:string|null}
   alerting:{status:CheckStatus;webhookConfigured:boolean;emailConfigured:boolean;error:string|null}
@@ -91,7 +91,7 @@ export function SystemReadinessCenter({manager=false}:{manager?:boolean}){
       <StatusCard icon={Server} title="Agent / Node" status={data.agent.status} summary={`${data.agent.onlineNodes} / ${data.agent.totalNodes} node çevrimiçi`} detail={data.agent.error??ageText(data.agent.latestHeartbeat)}/>
       <StatusCard icon={Cloud} title="Website yayınlama" status={data.vercelWebsite.status} summary={data.vercelWebsite.mode==='vercel'?`Ayrı Vercel yayın · ${data.vercelWebsite.latencyMs??0} ms`:'BlockCtrl dahili yayın hazır'} detail={data.vercelWebsite.error??(data.vercelWebsite.mode==='vercel'?'Ayrı Vercel proje/deployment bağlantısı doğrulandı.':'Website’ler /site/<slug>/ altında yayınlanır; VERCEL_TOKEN opsiyoneldir.')}/>
       <StatusCard icon={Globe2} title="Website runtime" status={data.websiteRuntime.status} summary={data.websiteRuntime.status==='ok'?'Runtime URL + node bridge hazır':'Website runtime ayarları eksik'} detail={data.websiteRuntime.error??'Yayınlanan siteler canlı BlockCtrl verisine erişebilir.'}/>
-      <StatusCard icon={Activity} title="Blob Storage" status={data.blobStorage.status} summary={data.blobStorage.status==='ok'?`Storage ${data.blobStorage.latencyMs??0} ms`:'Medya depolama hazır değil'} detail={data.blobStorage.error??'Website ve bilgi medya yüklemeleri kullanılabilir.'}/>
+      <StatusCard icon={Activity} title="Medya Deposu" status={data.blobStorage.status} summary={data.blobStorage.mode==='blob'?`Vercel Blob · ${data.blobStorage.latencyMs??0} ms`:'PostgreSQL medya fallback'} detail={data.blobStorage.error??(data.blobStorage.mode==='blob'?'Website ve bilgi medyaları object storage üzerinde tutulur.':`Temel medya yüklemeleri hazır · dosya başına yaklaşık ${Math.max(1,Math.round((data.blobStorage.fallbackMaxBytes||0)/1048576))} MB. Büyük dosyalar için Blob/object storage önerilir.`)}/>
       <StatusCard icon={BellRing} title="Operasyon uyarıları" status={data.alerting?.status??'unknown'} summary={data.alerting?.status==='ok'?'Alarm kanalı hazır':'Alarm kanalı ayarlanmadı'} detail={data.alerting?.error??`Webhook ${data.alerting?.webhookConfigured?'hazır':'yok'} · e-posta ${data.alerting?.emailConfigured?'hazır':'yok'}`}/>
       <StatusCard icon={ShieldCheck} title="Güvenlik" status={data.security?.status??'unknown'} summary={data.security?.cspMode==='enforced'?'CSP enforce':'CSP Report-Only'} detail={data.security?.error??`Ortam: ${data.security?.environment??'unknown'}`}/>
     </div>
