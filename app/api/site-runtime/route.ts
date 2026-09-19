@@ -3,7 +3,7 @@ import { and, desc, eq } from 'drizzle-orm'
 import { db, ensurePanelSchema } from '@/lib/db'
 import { lostItems, serverMetrics, serverPermissions, serverSettings, serverWebsiteData, servers, websites } from '@/lib/db/schema'
 
-const ALLOWED=new Set(['server-status','players','metrics','lost-items','leaderboard-kills','leaderboard-money','leaderboard-health','bans'])
+const ALLOWED=new Set(['server-status','players','metrics','map','lost-items','leaderboard-kills','leaderboard-money','leaderboard-health','bans'])
 const cors={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'GET,OPTIONS','Access-Control-Allow-Headers':'Content-Type,Authorization','Cache-Control':'public, max-age=5, stale-while-revalidate=15'}
 function response(data:unknown,status=200){return NextResponse.json(data,{status,headers:cors})}
 export function OPTIONS(){return new NextResponse(null,{status:204,headers:cors})}
@@ -13,12 +13,13 @@ export async function GET(request:NextRequest){
   await ensurePanelSchema()
   const siteSlug=String(request.nextUrl.searchParams.get('site')||'')
   const source=String(request.nextUrl.searchParams.get('source')||'')
-  const serverId=String(request.nextUrl.searchParams.get('serverId')||'')
+  const requestedServerId=String(request.nextUrl.searchParams.get('serverId')||'')
   if(!siteSlug||!ALLOWED.has(source))return response({error:'Geçersiz canlı veri isteği.'},400)
   const site=(await db.select().from(websites).where(eq(websites.slug,siteSlug)).limit(1))[0]
   if(!site)return response({error:'Website bulunamadı.'},404)
-  if(!serverId)return response({available:false,source,reason:'Sunucu seçilmedi.',items:[]})
-  const configured=referencedServerIds(site.builderData)
+  const serverId=requestedServerId||site.serverId||''
+  if(!serverId)return response({available:false,source,reason:'Website için ana sunucu seçilmedi.',items:[]})
+  const configured=referencedServerIds(site.builderData);if(site.serverId)configured.add(site.serverId)
   if(!configured.has(serverId))return response({error:'Bu sunucu website canlı verisine bağlı değil.'},403)
   const server=(await db.select().from(servers).where(eq(servers.id,serverId)).limit(1))[0]
   if(!server)return response({available:false,source,reason:'Sunucu bulunamadı.',items:[]})
@@ -33,7 +34,14 @@ export async function GET(request:NextRequest){
   const metricAt=metric?.createdAt?new Date(metric.createdAt):null
   const telemetryFresh=Boolean(metricAt&&Date.now()-metricAt.getTime()<=120_000)
   const summary={serverId:server.id,name:server.name,status:server.status,online:server.status==='running',players:telemetryFresh?(metric?.players??server.playerCount):server.playerCount,version:server.mcVersion,loader:server.loader,port:server.port,address:hostname||null,tps:telemetryFresh?(metric?.tps??null):null,mspt:telemetryFresh?(metric?.mspt??null):null,cpuPercent:telemetryFresh?(metric?.cpuPercent??null):null,memoryUsedMb:telemetryFresh?(metric?.memoryUsedMb??null):null,memoryTotalMb:telemetryFresh?(metric?.memoryTotalMb??server.memoryMb):server.memoryMb,uptimeSeconds:telemetryFresh?(metric?.uptimeSeconds??0):0,telemetryFresh,metricAt:metricAt?.toISOString()??null}
+  const mapCandidate=String(raw.websiteMapUrl||raw.bluemapUrl||raw.dynmapUrl||'').trim()
+  let mapUrl='';try{const parsed=new URL(mapCandidate);if(parsed.protocol==='https:')mapUrl=parsed.toString()}catch{}
+  const mapProvider=['bluemap','dynmap','custom'].includes(String(raw.websiteMapProvider))?String(raw.websiteMapProvider):mapUrl?'custom':''
   if(source==='metrics'&&!telemetryFresh)return response({available:false,source,reason:'Sunucu telemetrisi güncel değil. Agent yeni metric göndermedi.',updatedAt:metricAt?.toISOString()??null,summary,items:[]})
+  if(source==='map'){
+    if(!mapUrl)return response({available:false,source,reason:'Bu sunucu için BlueMap/Dynmap HTTPS adresi yapılandırılmadı.',summary,map:{configured:false,url:null,provider:null},items:[]})
+    return response({available:true,source,updatedAt:new Date().toISOString(),summary,map:{configured:true,url:mapUrl,provider:mapProvider||'custom'},items:[{title:'Dünya Haritası',description:server.name,value:mapProvider||'Harita'}]})
+  }
   if(source==='server-status'||source==='players'||source==='metrics')return response({available:true,source,updatedAt:metricAt?.toISOString()??null,summary,items:[
     {title:'Çevrimiçi Oyuncu',description:server.name,value:String(summary.players)},
     {title:'Sunucu Durumu',description:`${server.loader} ${server.mcVersion}`,value:summary.online?'Çalışıyor':'Kapalı'},
