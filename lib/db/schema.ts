@@ -164,6 +164,30 @@ export const consoleLogs = pgTable('console_logs', { id: bigint('id', { mode: 'n
 export const playerModerationNotes = pgTable('player_moderation_notes', { id: uuid('id').primaryKey().defaultRandom(), serverId: uuid('serverId').notNull().references(() => servers.id, { onDelete: 'cascade' }), playerName: text('playerName').notNull(), note: text('note').notNull(), authorUserId: text('authorUserId').notNull(), authorName: text('authorName').notNull(), createdAt: timestamp('createdAt').notNull().defaultNow(), updatedAt: timestamp('updatedAt').notNull().defaultNow() })
 
 
+export const serverPlayers = pgTable('server_players', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: text('userId').notNull(),
+  serverId: uuid('serverId').notNull().references(() => servers.id, { onDelete: 'cascade' }),
+  playerUuid: text('playerUuid'),
+  playerName: text('playerName').notNull(),
+  playerNameKey: text('playerNameKey').notNull(),
+  firstSeenAt: timestamp('firstSeenAt').notNull().defaultNow(),
+  lastSeenAt: timestamp('lastSeenAt'),
+  lastJoinAt: timestamp('lastJoinAt'),
+  lastLeaveAt: timestamp('lastLeaveAt'),
+  sessionStartedAt: timestamp('sessionStartedAt'),
+  totalPlaySeconds: integer('totalPlaySeconds').notNull().default(0),
+  isOnline: boolean('isOnline').notNull().default(false),
+  isOp: boolean('isOp').notNull().default(false),
+  whitelisted: boolean('whitelisted').notNull().default(false),
+  banned: boolean('banned').notNull().default(false),
+  banReason: text('banReason'),
+  banExpiresAt: timestamp('banExpiresAt'),
+  lastSyncAt: timestamp('lastSyncAt'),
+  createdAt: timestamp('createdAt').notNull().defaultNow(),
+  updatedAt: timestamp('updatedAt').notNull().defaultNow(),
+}, (t) => [unique().on(t.serverId, t.playerNameKey)])
+
 export const supportConsents = pgTable('support_consents', {
   userId: text('userId').primaryKey(),
   version: text('version').notNull(),
