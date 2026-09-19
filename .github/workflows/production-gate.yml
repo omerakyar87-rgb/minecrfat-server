@@ -49,7 +49,7 @@ jobs:
       - name: Verify or apply database migrations
         shell: bash
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          MIGRATION_DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL || secrets.DATABASE_URL_UNPOOLED || secrets.DATABASE_URL }}
           HEALTH_URL: ${{ vars.BLOCKCTRL_PUBLIC_URL || vars.NEXT_PUBLIC_APP_URL }}
         run: |
           set -euo pipefail
