@@ -6,7 +6,7 @@ import { agentCommands, auditLog, nodes, serverPermissions, servers, worlds } fr
 import { nodeDiagnosticMessage, nodeFetch } from '@/lib/node-bridge'
 import { WORLD_TEMPLATE_MAP, WORLD_TEMPLATES, WORLD_TEMPLATE_CATEGORIES } from '@/lib/world-templates'
 
-async function actor(){const session=await auth.api.getSession({headers:await headers()});if(!session?.user)return null;return resolvePanelUser(session.user)}
+async function actor(){return getPanelActor()}
 async function access(serverId:string,a:NonNullable<Awaited<ReturnType<typeof actor>>>){
   const server=(await db.select().from(servers).where(eq(servers.id,serverId)).limit(1))[0]
   if(!server||server.status==='deleted')return null
