@@ -14,8 +14,8 @@
     "agent:build": "pnpm --dir agent build",
     "agent:start": "pnpm --dir agent start",
     "test:contracts": "node scripts/check-contracts.mjs",
-    "test:unit": "vitest run",
-    "test:e2e": "playwright test",
+    "test:unit": "node --test tests/unit/*.test.mjs",
+    "test:e2e": "node scripts/e2e-smoke.mjs",
     "test": "pnpm test:contracts && pnpm test:unit"
   },
   "dependencies": {
@@ -55,9 +55,7 @@
     "tailwindcss": "^4.3.3",
     "tsx": "^4.23.12",
     "typescript": "5.7.3",
-    "typescript-eslint": "^8.70.0",
-    "@playwright/test": "^1.63.0",
-    "vitest": "^5.0.1"
+    "typescript-eslint": "^8.70.0"
   },
   "pnpm": {
     "overrides": {
