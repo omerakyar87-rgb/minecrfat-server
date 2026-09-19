@@ -10,6 +10,10 @@ type ContentCategory = 'mods' | 'plugins' | 'plugin-config' | 'resource-packs' |
 type ContentItem = { name:string; path:string; category:ContentCategory; directory:boolean; size:number; updatedAt:string; editable:boolean; source:'disk' }
 type InventoryResponse = { items:ContentItem[]; scannedAt?:string; serverRunning?:boolean; error?:string }
 type UploadTarget = 'auto'|'mods'|'plugins'|'configs'|'resource-packs'|'worlds'
+type AddonSource='modrinth'|'curseforge'
+type AddonKind='mods'|'plugins'
+type AddonSearchResult={source:AddonSource;projectId:string;title:string;description:string;author:string;iconUrl:string|null;downloads:number;slug?:string|null;categories:string[];versions:string[]}
+type AddonInstallFile={source:AddonSource;projectId:string;versionId:string;title:string;fileName:string;url:string;size:number;sha1?:string|null;sha512?:string|null;kind:AddonKind}
 
 const MAX_UPLOAD = 2 * 1024 * 1024 * 1024
 const CHUNK_RETRY = 3
@@ -49,7 +53,7 @@ const categoryLabels:Record<ContentCategory,string>={mods:'Mod',plugins:'Plugin'
 const categoryClass:Record<ContentCategory,string>={mods:'bg-blue-500/10 text-blue-300',plugins:'bg-violet-500/10 text-violet-300','plugin-config':'bg-fuchsia-500/10 text-fuchsia-300','resource-packs':'bg-amber-500/10 text-amber-300',config:'bg-cyan-500/10 text-cyan-300',worlds:'bg-blue-500/10 text-cyan-300','world-file':'bg-sky-500/10 text-sky-300'}
 function formatSize(bytes:number,directory:boolean){if(directory)return 'Klasör';if(bytes<1024)return `${bytes} B`;if(bytes<1048576)return `${(bytes/1024).toFixed(1)} KB`;if(bytes<1073741824)return `${(bytes/1048576).toFixed(1)} MB`;return `${(bytes/1073741824).toFixed(2)} GB`}
 
-export function ServerContentManager({serverId,running,canEdit,scopeWorld}:{serverId:string;running:boolean;canEdit:boolean;scopeWorld?:string}){
+export function ServerContentManager({serverId,running,canEdit,scopeWorld,loader,mcVersion,serverName,canInstallMarketplace=false}:{serverId:string;running:boolean;canEdit:boolean;scopeWorld?:string;loader?:string;mcVersion?:string;serverName?:string;canInstallMarketplace?:boolean}){
   const inputRef=useRef<HTMLInputElement>(null)
   const inventoryUrl=`/api/server-content?serverId=${encodeURIComponent(serverId)}${scopeWorld?`&world=${encodeURIComponent(scopeWorld)}`:''}`
   const {data,error,mutate,isLoading}=useSWR<InventoryResponse>(inventoryUrl,fetcher,{refreshInterval:8000})
@@ -64,6 +68,14 @@ export function ServerContentManager({serverId,running,canEdit,scopeWorld}:{serv
   const [editorValue,setEditorValue]=useState('')
   const [editorLoading,setEditorLoading]=useState(false)
   const [newWorldFile,setNewWorldFile]=useState('datapacks/blockctrl/functions/setup.txt')
+  const [marketSource,setMarketSource]=useState<AddonSource>('modrinth')
+  const [marketKind,setMarketKind]=useState<AddonKind>(loader==='paper'?'plugins':'mods')
+  const [marketQuery,setMarketQuery]=useState('')
+  const [marketResults,setMarketResults]=useState<AddonSearchResult[]>([])
+  const [marketBusy,setMarketBusy]=useState(false)
+  const [marketError,setMarketError]=useState('')
+  const [curseforgeReady,setCurseforgeReady]=useState<boolean|null>(null)
+  const marketplaceEnabled=!scopeWorld&&!!loader&&!!mcVersion&&loader!=='vanilla'
 
   const items=data?.items??[]
   const filtered=useMemo(()=>items.filter(item=>{
@@ -114,6 +126,40 @@ export function ServerContentManager({serverId,running,canEdit,scopeWorld}:{serv
     catch(error){setNotice(error instanceof Error?error.message:'Dünya dosyası oluşturulamadı')}
     finally{setBusy(false)}
   }
+  async function searchMarketplace(){
+    if(!marketplaceEnabled||!loader||!mcVersion)return
+    setMarketBusy(true);setMarketError('')
+    try{
+      const params=new URLSearchParams({mode:'addons',source:marketSource,kind:marketKind,loader,mcVersion,query:marketQuery.trim()})
+      const response=await fetch(`/api/catalog?${params.toString()}`,{cache:'no-store'})
+      const body=await readJson(response) as {error?:string;results?:AddonSearchResult[];capabilities?:{curseforge?:boolean}}
+      if(typeof body.capabilities?.curseforge==='boolean')setCurseforgeReady(body.capabilities.curseforge)
+      if(!response.ok)throw new Error(body.error??'Katalog araması başarısız')
+      setMarketResults(Array.isArray(body.results)?body.results:[])
+      if(!body.results?.length)setMarketError(`${mcVersion} / ${loader} için eşleşen ${marketKind==='plugins'?'plugin':'mod'} bulunamadı.`)
+    }catch(error){setMarketResults([]);setMarketError(error instanceof Error?error.message:'Katalog araması başarısız')}finally{setMarketBusy(false)}
+  }
+
+  async function installMarketplaceAddon(project:AddonSearchResult){
+    if(!marketplaceEnabled||!loader||!mcVersion||!serverName||running||!canEdit||!canInstallMarketplace)return
+    setMarketBusy(true);setMarketError('');setNotice('')
+    try{
+      const params=new URLSearchParams({mode:'addon-plan',source:project.source,kind:marketKind,loader,mcVersion,projectId:project.projectId})
+      const response=await fetch(`/api/catalog?${params.toString()}`,{cache:'no-store'})
+      const body=await readJson(response) as {error?:string;plan?:AddonInstallFile[];dependencyCount?:number}
+      if(!response.ok||!Array.isArray(body.plan)||!body.plan.length)throw new Error(body.error??'Kurulum planı oluşturulamadı')
+      const deps=Math.max(0,Number(body.dependencyCount??body.plan.length-1))
+      if(!confirm(`${project.title}${deps?` + ${deps} zorunlu bağımlılık`:''} kurulacak. Sunucu kapalı kalmalıdır. Devam edilsin mi?`))return
+      for(const file of body.plan){
+        const install=await fetch('/api/panel',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'command',serverId,type:'install-addon',payload:{url:file.url,filename:file.fileName,kind:file.kind,size:file.size,sha1:file.sha1??undefined,sha512:file.sha512??undefined,source:file.source,projectId:file.projectId,versionId:file.versionId},confirm:serverName})})
+        const installBody=await readJson(install) as {error?:string}
+        if(!install.ok)throw new Error(`${file.title}: ${installBody.error??'kurulum kuyruğa alınamadı'}`)
+      }
+      setNotice(`${project.title}${deps?` ve ${deps} bağımlılığı`:''} doğrulamalı kurulum kuyruğuna alındı.`)
+      await mutate()
+    }catch(error){setMarketError(error instanceof Error?error.message:'Kurulum başarısız')}finally{setMarketBusy(false)}
+  }
+
   async function remove(item:ContentItem){
     if(running||!canEdit)return
     if(item.category==='worlds'){setNotice('Dünya klasörünü silmek için Dünya yönetimindeki güvenli “Dünyayı sil” işlemini kullanın.');return}
@@ -131,6 +177,14 @@ export function ServerContentManager({serverId,running,canEdit,scopeWorld}:{serv
       <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-6"><MiniStat icon={Box} label="Mod" value={counts.mods}/><MiniStat icon={Package} label="Plugin" value={counts.plugins}/><MiniStat icon={FileText} label="Plugin config" value={counts.pluginConfigs}/><MiniStat icon={Archive} label="Resource pack" value={counts.packs}/><MiniStat icon={Globe2} label="Dünya" value={counts.worlds}/><MiniStat icon={FileText} label="Dünya dosyası" value={counts.worldFiles}/></div>
       {data?.scannedAt&&<p className="mt-3 text-[10px] text-slate-600">Son gerçek disk taraması: {new Date(data.scannedAt).toLocaleString('tr-TR')}</p>}
     </section>
+
+    {marketplaceEnabled&&<section className="rounded-xl border border-cyan-500/20 bg-[linear-gradient(145deg,rgba(8,27,35,.9),rgba(7,19,15,.94))] p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-sm font-semibold text-white">Mod / Plugin marketi</h3><p className="mt-1 max-w-3xl text-[11px] leading-5 text-slate-500">{mcVersion} · {loader} uyumluluğuna göre Modrinth veya CurseForge üzerinde arayın. Kurulumdan önce seçilen sürüm ve zorunlu bağımlılıklar çözülür; SHA-1 mevcutsa agent dosyayı diske almadan önce doğrular.</p></div><span className="rounded-full border border-sky-900/70 px-2 py-1 text-[10px] text-cyan-300">{running?'Kurulum için sunucuyu durdurun':!canInstallMarketplace?'Kurulum yetkisi yok':'Kurulum hazır'}</span></div>
+      <div className="mt-3 grid gap-2 md:grid-cols-[150px_150px_1fr_auto]"><select value={marketSource} onChange={e=>{setMarketSource(e.target.value as AddonSource);setMarketResults([]);setMarketError('')}} className="h-9 rounded-md border border-sky-950/80 bg-[#07130f] px-3 text-xs"><option value="modrinth">Modrinth</option><option value="curseforge">CurseForge</option></select><select value={marketKind} onChange={e=>{setMarketKind(e.target.value as AddonKind);setMarketResults([])}} className="h-9 rounded-md border border-sky-950/80 bg-[#07130f] px-3 text-xs"><option value="mods">Modlar</option><option value="plugins">Pluginler</option></select><div className="relative"><Search className="absolute left-2.5 top-2.5 size-3.5 text-slate-500"/><Input value={marketQuery} onChange={e=>setMarketQuery(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')void searchMarketplace()}} placeholder="Örn. Lithium, LuckPerms, WorldEdit..." className="h-9 border-sky-950/80 bg-[#07130f] pl-8 text-xs"/></div><Button variant="outline" disabled={marketBusy} onClick={searchMarketplace}>{marketBusy?<Loader2 className="mr-2 size-4 animate-spin"/>:<Search className="mr-2 size-4"/>}Ara</Button></div>
+      {marketSource==='curseforge'&&curseforgeReady===false&&<p className="mt-2 text-[10px] text-amber-300">CurseForge için Vercel ortamında CURSEFORGE_API_KEY gerekli. Modrinth anahtarsız çalışır.</p>}
+      {marketError&&<div className="mt-3 rounded-lg border border-amber-500/25 bg-amber-950/20 px-3 py-2 text-[11px] text-amber-200">{marketError}</div>}
+      {marketResults.length>0&&<div className="mt-3 grid gap-2 xl:grid-cols-2">{marketResults.map(project=><div key={`${project.source}:${project.projectId}`} className="flex gap-3 rounded-lg border border-sky-950/65 bg-black/10 p-3">{project.iconUrl?<img src={project.iconUrl} alt="" className="size-12 shrink-0 rounded-lg object-cover" loading="lazy"/>:<div className="grid size-12 shrink-0 place-items-center rounded-lg bg-slate-800"><Package className="size-5 text-slate-400"/></div>}<div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><b className="truncate text-xs text-white">{project.title}</b><span className="rounded bg-slate-800 px-1.5 py-0.5 text-[9px] uppercase text-slate-400">{project.source}</span></div><p className="mt-1 line-clamp-2 text-[10px] leading-4 text-slate-500">{project.description||'Açıklama yok'}</p><div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[9px] text-slate-500"><span>{project.author||'Bilinmeyen geliştirici'} · {Intl.NumberFormat('tr-TR',{notation:'compact'}).format(project.downloads)} indirme</span><Button size="sm" className="h-7 bg-blue-600 px-2 text-[10px] text-white" disabled={marketBusy||running||!canEdit||!canInstallMarketplace||!serverName} onClick={()=>installMarketplaceAddon(project)}>Kur</Button></div></div></div>)}</div>}
+    </section>}
 
     {scopeWorld&&<section className="rounded-xl border border-sky-900/50 bg-sky-950/10 p-4"><div className="flex flex-wrap items-end gap-3"><label className="min-w-[260px] flex-1 text-[11px] font-semibold text-slate-300">Yeni dünya metin dosyası<Input className="mt-1" value={newWorldFile} onChange={e=>setNewWorldFile(e.target.value)} placeholder="datapacks/paket/data/.../function.mcfunction"/></label><Button variant="outline" disabled={running||busy||!canEdit} onClick={createWorldTextFile}><FileText className="mr-2 size-4"/>Boş dosya oluştur</Button></div><p className="mt-2 text-[10px] leading-5 text-slate-500">Güvenlik için yalnız metin tabanlı .yml, .json, .properties, .toml, .ini, .cfg, .conf, .txt, .md, .mcmeta ve .mcfunction dosyaları panelden oluşturulup düzenlenir. level.dat gibi binary/kritik dosyalar salt görüntü listesinde kalır.</p></section>}
 
