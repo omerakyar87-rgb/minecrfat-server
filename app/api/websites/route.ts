@@ -551,7 +551,7 @@ export async function POST(request:NextRequest){
     validateAuthPages(builderData)
     const configuredRuntimeBase=runtimeBase(request)
     if(!configuredRuntimeBase)return NextResponse.json({error:'Production yayını için güvenli panel runtime URL adresi çözümlenemedi.'},{status:503})
-    const runtimeBase=configuredRuntimeBase.replace(/\/$/,'')
+    const runtimeOrigin=configuredRuntimeBase.replace(/\/$/,'')
     if(!site.vercelProjectId)return NextResponse.json({error:'Website Vercel projesi bulunamadı.'},{status:409})
     try{
       await db.transaction(async tx=>{
@@ -560,7 +560,7 @@ export async function POST(request:NextRequest){
         await tx.update(websites).set({serverId:builderData.binding.serverId||null,builderData,status:'building',lastError:null,updatedAt:new Date()}).where(eq(websites.id,site.id))
       })
       const deployment=await vercel('/v13/deployments',{method:'POST',body:JSON.stringify({
-        name:site.projectName,project:site.vercelProjectId,target:'production',files:deploymentFiles({name:site.name,slug:site.slug},builderData,runtimeBase),projectSettings:{framework:null},meta:{createdBy:'blockctrl-builder',ownerUserId:site.userId,websiteId:site.id},
+        name:site.projectName,project:site.vercelProjectId,target:'production',files:deploymentFiles({name:site.name,slug:site.slug},builderData,runtimeOrigin),projectSettings:{framework:null},meta:{createdBy:'blockctrl-builder',ownerUserId:site.userId,websiteId:site.id},
       })})
       const deploymentId=String(deployment.id||'')
       const deploymentHost=String(deployment.url||'')
