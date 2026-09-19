@@ -1,7 +1,8 @@
+import { createHash } from 'node:crypto'
 import { headers } from 'next/headers'
 import { del, list } from '@vercel/blob'
 import { NextRequest, NextResponse } from 'next/server'
-import { and, desc, eq, inArray, or } from 'drizzle-orm'
+import { and, desc, eq, gt, inArray, or } from 'drizzle-orm'
 import { auth } from '@/lib/auth'
 import { db, ensurePanelSchema } from '@/lib/db'
 import { auditLog, serverPermissions, servers, websiteAuthRateLimits, websiteAuthSettings, websiteFormSubmissions, websiteMembers, websiteMemberSessions, websites } from '@/lib/db/schema'
@@ -246,7 +247,7 @@ function renderPublishedPage(site:{name:string;slug:string},page:BuilderPage,bui
     async function json(url,opts={}){const headers={...(opts.headers||{})};let trusted=false;try{const target=new URL(url,location.href);const runtime=new URL(CFG.runtimeBase);trusted=target.origin===runtime.origin&&target.pathname.startsWith('/api/')}catch{}if(trusted&&token())headers.Authorization='Bearer '+token();const r=await fetch(url,{...opts,headers});const text=await r.text();let data={};try{data=text?JSON.parse(text):{}}catch{}if(!r.ok)throw new Error(data.error||('HTTP '+r.status));return data}
     function liveMarkup(source,items){if(source==='leaderboard-kills'||source==='leaderboard-money'||source==='leaderboard-health')return '<div class="data-list leaderboard">'+items.map((x,i)=>'<article class="'+(i===0?'top':'')+'"><strong>#'+(i+1)+'</strong><div><b>'+escapeHtml(x.title||'')+'</b><span>'+escapeHtml(x.description||'')+'</span></div><em>'+escapeHtml(x.value||'—')+'</em></article>').join('')+'</div>';if(source==='bans')return '<div class="data-list bans">'+items.map((x,i)=>'<article><strong>'+(i+1)+'</strong><div><b>'+escapeHtml(x.title||'')+'</b><span>'+escapeHtml(x.description||'')+'</span></div><em>'+escapeHtml(x.value||'Aktif')+'</em></article>').join('')+'</div>';return '<div class="grid stats">'+items.map(x=>'<article><strong>'+escapeHtml(x.value||'—')+'</strong><b>'+escapeHtml(x.title||'')+'</b><span>'+escapeHtml(x.description||'')+'</span></article>').join('')+'</div>'}
     function escapeHtml(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-    async function refreshSection(section){const source=section.dataset.liveSource,serverId=section.dataset.liveServer,endpoint=section.dataset.liveEndpoint;let target=section.querySelector('.live-target,.stats,.features,.data-list');if(!target||!source)return;section.classList.add('live-loading');try{let data;if(source==='custom-json'&&endpoint){data=await json(endpoint)}else{const q=new URLSearchParams({site:CFG.site,source,serverId:serverId||''});data=await json(CFG.runtimeBase+'/api/site-runtime-data?'+q.toString())}if(data.available===false||!Array.isArray(data.items)||!data.items.length){target.outerHTML='<div class="live-empty"><b>Canlı veri kullanılamıyor</b><span>'+escapeHtml(data.reason||'Bu bölüm için henüz canlı veri yok.')+'</span></div>';section.classList.remove('live-error');return}target.outerHTML=liveMarkup(source,data.items);section.classList.remove('live-error')}catch{section.classList.add('live-error')}finally{section.classList.remove('live-loading')}}
+    async function refreshSection(section){const source=section.dataset.liveSource,serverId=section.dataset.liveServer,endpoint=section.dataset.liveEndpoint;let target=section.querySelector('.live-target,.stats,.features,.data-list');if(!target||!source)return;section.classList.add('live-loading');try{let data;if(source==='custom-json'&&endpoint){data=await json(endpoint)}else{const q=new URLSearchParams({site:CFG.site,source,serverId:serverId||''});data=await json(CFG.runtimeBase+'/api/site-runtime-data-data?'+q.toString())}if(data.available===false||!Array.isArray(data.items)||!data.items.length){target.outerHTML='<div class="live-empty"><b>Canlı veri kullanılamıyor</b><span>'+escapeHtml(data.reason||'Bu bölüm için henüz canlı veri yok.')+'</span></div>';section.classList.remove('live-error');return}target.outerHTML=liveMarkup(source,data.items);section.classList.remove('live-error')}catch{section.classList.add('live-error')}finally{section.classList.remove('live-loading')}}
     document.querySelectorAll('[data-live-source]').forEach(section=>{refreshSection(section);const seconds=Math.max(5,Number(section.dataset.liveRefresh||30));setInterval(()=>refreshSection(section),seconds*1000)})
     async function me(){try{return await json(CFG.runtimeBase+'/api/site-auth?site='+encodeURIComponent(CFG.site))}catch{return {user:null}}}
     document.querySelectorAll('[data-blockctrl-auth]').forEach(form=>form.addEventListener('submit',async e=>{e.preventDefault();const kind=form.dataset.blockctrlAuth;const fd=new FormData(form);const message=form.querySelector('.form-message');if(message)message.textContent='İşleniyor...';try{const data=await json(CFG.runtimeBase+'/api/site-auth',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({site:CFG.site,action:kind,name:fd.get('name'),minecraftUsername:fd.get('minecraftUsername'),email:fd.get('email'),identifier:fd.get('identifier'),password:fd.get('password')})});if(data.token)localStorage.setItem(tokenKey,data.token);location.href=data.redirect||('/'+CFG.auth.afterLoginPageSlug+'/')}catch(err){if(message)message.textContent=err.message||'İşlem başarısız.'}}))
@@ -256,8 +257,35 @@ function renderPublishedPage(site:{name:string;slug:string},page:BuilderPage,bui
   })();
   </script></body></html>`
 }
-function deploymentFiles(site:{name:string;slug:string},builderData:BuilderData,runtimeBase:string){return builderData.pages.map(page=>({file:page.slug?`${page.slug}/index.html`:'index.html',data:renderPublishedPage(site,page,builderData,runtimeBase)}))}
+function pageAccessMode(page:BuilderPage){return page.accessMode||((page.requiresAuth)?'authenticated':'public')}
+function protectedPageShell(site:{name:string;slug:string},page:BuilderPage,builder:BuilderData,runtimeBase:string){
+  const cfg={site:site.slug,pageSlug:page.slug,runtimeBase,loginPageSlug:builder.auth.loginPageSlug,afterLoginPageSlug:builder.auth.afterLoginPageSlug}
+  return `<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>${esc(page.seoTitle||page.name)}</title><style>*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#030b13;color:#eef9ff;font-family:Inter,ui-sans-serif,system-ui,sans-serif}.box{width:min(560px,calc(100% - 32px));padding:28px;border:1px solid rgba(56,189,248,.22);border-radius:20px;background:#071827}.muted{color:#94a3b8;line-height:1.65}.error{color:#fca5a5}</style></head><body><main class="box"><h1>Sayfa doğrulanıyor</h1><p id="state" class="muted">Üyelik ve erişim yetkiniz güvenli şekilde kontrol ediliyor.</p></main><script>(()=>{const CFG=${JSON.stringify(cfg).replace(/</g,'\\u003c')};const key='blockctrl-site:'+CFG.site+':token';const token=localStorage.getItem(key)||'';const state=document.getElementById('state');const login=()=>location.replace('/'+CFG.loginPageSlug+'/');if(!token){login();return}fetch(CFG.runtimeBase+'/api/websites',{method:'POST',headers:{'content-type':'application/json','authorization':'Bearer '+token},body:JSON.stringify({action:'runtime-page',site:CFG.site,pageSlug:CFG.pageSlug})}).then(async r=>{if(r.status===401){localStorage.removeItem(key);login();return}if(r.status===403){state.className='muted error';state.textContent='Bu sayfaya erişim yetkiniz yok.';return}if(!r.ok){state.className='muted error';state.textContent='Sayfa şu anda yüklenemiyor.';return}const html=await r.text();document.open();document.write(html);document.close()}).catch(()=>{state.className='muted error';state.textContent='Güvenli sayfa servisine ulaşılamadı.'})})();</script></body></html>`
+}
+function deploymentFiles(site:{name:string;slug:string},builderData:BuilderData,runtimeBase:string){return builderData.pages.map(page=>({file:page.slug?`${page.slug}/index.html`:'index.html',data:pageAccessMode(page)==='public'?renderPublishedPage(site,page,builderData,runtimeBase):protectedPageShell(site,page,builderData,runtimeBase)}))}
 
+const runtimeCors={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'POST,OPTIONS','Access-Control-Allow-Headers':'Content-Type,Authorization','Cache-Control':'private, no-store'}
+export function OPTIONS(){return new NextResponse(null,{status:204,headers:runtimeCors})}
+function memberTokenHash(value:string){return createHash('sha256').update(value).digest('hex')}
+async function runtimeMember(siteId:string,token:string){
+  if(!token)return null
+  const session=(await db.select().from(websiteMemberSessions).where(and(eq(websiteMemberSessions.websiteId,siteId),eq(websiteMemberSessions.tokenHash,memberTokenHash(token)),gt(websiteMemberSessions.expiresAt,new Date()))).limit(1))[0]
+  if(!session)return null
+  const member=(await db.select().from(websiteMembers).where(and(eq(websiteMembers.id,session.memberId),eq(websiteMembers.websiteId,siteId))).limit(1))[0]
+  if(!member||member.status!=='active')return null
+  await db.update(websiteMemberSessions).set({lastSeenAt:new Date()}).where(eq(websiteMemberSessions.id,session.id)).catch(()=>undefined)
+  return member
+}
+function memberCanAccess(page:BuilderPage,member:any){
+  const mode=pageAccessMode(page)
+  if(mode==='public')return true
+  if(!member)return false
+  if(mode==='authenticated')return true
+  if(mode==='role')return page.allowedRoles.includes(normalizeRole(member.role))
+  if(mode==='assigned')return Array.isArray(member.allowedPages)&&member.allowedPages.map(String).includes(page.slug||'__home__')
+  return false
+}
+function runtimeJson(data:unknown,status:number){return NextResponse.json(data,{status,headers:runtimeCors})}
 
 async function actor(){
   const session=await auth.api.getSession({headers:await headers()})
@@ -301,12 +329,32 @@ export async function GET(){
 
 export async function POST(request:NextRequest){
   await ensurePanelSchema()
+  const body=await request.json().catch(()=>({})) as Record<string,unknown>
+  const action=String(body.action||'')
+
+  if(action==='runtime-page'){
+    const siteSlug=cleanSlug(body.site)
+    const requestedSlug=cleanSlug(body.pageSlug)
+    const site=(await db.select().from(websites).where(eq(websites.slug,siteSlug)).limit(1))[0]
+    if(!site)return runtimeJson({error:'Website bulunamadı.'},404)
+    const builder=normalizeBuilderData(site.builderData,site.name)
+    const page=builder.pages.find(item=>item.slug===requestedSlug)
+    if(!page)return runtimeJson({error:'Sayfa bulunamadı.'},404)
+    const mode=pageAccessMode(page)
+    if(mode!=='public'){
+      const token=(request.headers.get('authorization')||'').replace(/^Bearer\s+/i,'').trim()
+      const member=await runtimeMember(site.id,token)
+      if(!member)return runtimeJson({error:'Oturum gerekli.'},401)
+      if(!memberCanAccess(page,member))return runtimeJson({error:'Bu sayfaya erişim yetkiniz yok.'},403)
+    }
+    const configuredRuntimeBase=String(process.env.BLOCKCTRL_PUBLIC_URL||request.nextUrl.origin).trim().replace(/\/$/,'')
+    return new NextResponse(renderPublishedPage({name:site.name,slug:site.slug},page,builder,configuredRuntimeBase),{status:200,headers:{...runtimeCors,'Content-Type':'text/html; charset=utf-8','X-Content-Type-Options':'nosniff','Vary':'Authorization'}})
+  }
+
   const a=await actor()
   if(!a)return NextResponse.json({error:'Unauthorized'},{status:401})
   if(!a.approved)return NextResponse.json({error:'Approval required'},{status:403})
   const role=normalizeRole(a.role)
-  const body=await request.json().catch(()=>({})) as Record<string,unknown>
-  const action=String(body.action||'')
 
   if(action==='create'){
     if(!canCreate(role))return NextResponse.json({error:'Website oluşturma yetkiniz yok.'},{status:403})
