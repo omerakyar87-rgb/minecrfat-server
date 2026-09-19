@@ -70,7 +70,7 @@ export function ServerDetailNavigation({
         const rows=group.keys.map(key=>itemMap.get(key)).filter(Boolean) as ServerNavItem[]
         if(!rows.length)return null
         return <div key={group.label}>
-          <p className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-[.12em] text-slate-600">{group.label}</p>
+          <p className="px-3 pb-1.5 text-xs font-semibold uppercase tracking-[.12em] text-slate-600">{group.label}</p>
           <div className="space-y-1">{rows.map(([key,label,Icon])=><button key={key} aria-current={active===key?'page':undefined} onClick={()=>onSelect(key)} className={`group flex min-h-10 w-full items-center gap-3 rounded-lg px-3 text-left text-xs font-medium transition ${active===key?'border border-sky-500/30 bg-gradient-to-r from-blue-600/45 to-sky-500/20 text-white shadow-[inset_2px_0_0_#38bdf8,0_0_24px_rgba(14,165,233,.08)]':'border border-transparent text-slate-300 hover:border-[#203a55] hover:bg-[#0d1c2c] hover:text-white'}`}><Icon className={`size-4 shrink-0 ${active===key?'text-sky-300':'text-slate-400 group-hover:text-sky-300'}`}/>{label}</button>)}</div>
         </div>
       })}
