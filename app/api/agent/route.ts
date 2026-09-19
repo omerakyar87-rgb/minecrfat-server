@@ -4,13 +4,40 @@ import { and, asc, desc, eq, gte, inArray, lt, lte, notInArray } from 'drizzle-o
 import { z } from 'zod'
 import { db, ensurePanelSchema, pool } from '@/lib/db'
 import { emitDiscordEvent, integrationEventFromCommand, integrationEventFromConsoleLine } from '@/lib/integrations'
-import { agentCommands, alertRules, backups, consoleLogs, lostItems, managedDatabases, nodes, notifications, operationLogs, serverMetrics, serverWebsiteData, serverSchedules, serverSettings, serverSftp, servers, worlds } from '@/lib/db/schema'
+import { agentCommands, alertRules, backups, consoleLogs, lostItems, managedDatabases, nodes, notifications, operationLogs, serverMetrics, serverPlayers, serverWebsiteData, serverSchedules, serverSettings, serverSftp, servers, worlds } from '@/lib/db/schema'
 
 const hash=(v:string)=>createHash('sha256').update(v).digest('hex')
 const serverMetricSchema=z.object({serverId:z.string().uuid(),cpuPercent:z.number().min(0).max(100).default(0),memoryUsedMb:z.number().int().min(0).default(0),memoryTotalMb:z.number().int().min(0).default(0),diskUsedGb:z.number().min(0).default(0),diskTotalGb:z.number().min(0).default(0),tps:z.number().min(0).max(100).nullable().optional(),mspt:z.number().min(0).nullable().optional(),players:z.number().int().min(0).default(0),uptimeSeconds:z.number().int().min(0).default(0)})
 const publicWebsiteItemSchema=z.object({title:z.string().max(80),description:z.string().max(500),value:z.string().max(120),image:z.string().url().nullable().optional()})
 const serverPublicSnapshotSchema=z.object({serverId:z.string().uuid(),source:z.enum(['bans','leaderboard-kills']),data:z.object({items:z.array(publicWebsiteItemSchema).max(25)})})
 const alertMetricKeys=new Set(['cpuPercent','memoryUsedMb','memoryTotalMb','diskUsedGb','diskTotalGb','tps','mspt','players','uptimeSeconds'])
+const playerPresenceSchema=z.object({serverId:z.string().uuid(),playerName:z.string().trim().regex(/^[A-Za-z0-9_]{1,16}$/),playerUuid:z.string().max(40).nullable().optional(),event:z.enum(['join','leave']),occurredAt:z.coerce.date().optional()})
+const playerListSchema=z.object({serverId:z.string().uuid(),names:z.array(z.string().trim().regex(/^[A-Za-z0-9_]{1,16}$/)).max(500),playerCount:z.number().int().min(0).max(5000).optional(),maxPlayers:z.number().int().min(0).max(5000).optional(),observedAt:z.coerce.date().optional()})
+async function serverForNode(serverId:string,nodeId:string){return (await db.select({id:servers.id,userId:servers.userId}).from(servers).where(and(eq(servers.id,serverId),eq(servers.nodeId,nodeId))).limit(1))[0]??null}
+function sessionSeconds(start:Date|null|undefined,end:Date){return start?Math.max(0,Math.min(31_536_000,Math.floor((end.getTime()-start.getTime())/1000))):0}
+async function persistPlayerPresence(nodeId:string,input:z.infer<typeof playerPresenceSchema>){
+  const server=await serverForNode(input.serverId,nodeId);if(!server)return
+  const at=input.occurredAt??new Date();const key=input.playerName.toLowerCase();const existing=(await db.select().from(serverPlayers).where(and(eq(serverPlayers.serverId,server.id),eq(serverPlayers.playerNameKey,key))).limit(1))[0]
+  if(input.event==='join'){
+    if(existing)await db.update(serverPlayers).set({playerName:input.playerName,playerUuid:input.playerUuid??existing.playerUuid,isOnline:true,lastSeenAt:at,lastJoinAt:existing.isOnline?(existing.lastJoinAt??at):at,sessionStartedAt:existing.sessionStartedAt??at,lastSyncAt:at,updatedAt:new Date()}).where(eq(serverPlayers.id,existing.id))
+    else await db.insert(serverPlayers).values({userId:server.userId,serverId:server.id,playerUuid:input.playerUuid??null,playerName:input.playerName,playerNameKey:key,firstSeenAt:at,lastSeenAt:at,lastJoinAt:at,sessionStartedAt:at,isOnline:true,lastSyncAt:at})
+  }else{
+    if(existing){const added=existing.isOnline?sessionSeconds(existing.sessionStartedAt,at):0;await db.update(serverPlayers).set({playerName:input.playerName,playerUuid:input.playerUuid??existing.playerUuid,isOnline:false,lastSeenAt:at,lastLeaveAt:at,sessionStartedAt:null,totalPlaySeconds:existing.totalPlaySeconds+added,lastSyncAt:at,updatedAt:new Date()}).where(eq(serverPlayers.id,existing.id))}
+    else await db.insert(serverPlayers).values({userId:server.userId,serverId:server.id,playerUuid:input.playerUuid??null,playerName:input.playerName,playerNameKey:key,firstSeenAt:at,lastSeenAt:at,lastLeaveAt:at,isOnline:false,lastSyncAt:at})
+  }
+}
+async function persistPlayerList(nodeId:string,input:z.infer<typeof playerListSchema>){
+  const server=await serverForNode(input.serverId,nodeId);if(!server)return
+  const at=input.observedAt??new Date();const uniqueNames=[...new Map(input.names.map(name=>[name.toLowerCase(),name])).values()];const onlineKeys=new Set(uniqueNames.map(name=>name.toLowerCase()))
+  const existing=await db.select().from(serverPlayers).where(eq(serverPlayers.serverId,server.id));const byKey=new Map(existing.map(row=>[row.playerNameKey,row]))
+  for(const name of uniqueNames){const key=name.toLowerCase();const row=byKey.get(key);if(row){await db.update(serverPlayers).set({playerName:name,isOnline:true,lastSeenAt:at,lastJoinAt:row.isOnline?(row.lastJoinAt??at):at,sessionStartedAt:row.sessionStartedAt??at,lastSyncAt:at,updatedAt:new Date()}).where(eq(serverPlayers.id,row.id))}else await db.insert(serverPlayers).values({userId:server.userId,serverId:server.id,playerName:name,playerNameKey:key,firstSeenAt:at,lastSeenAt:at,lastJoinAt:at,sessionStartedAt:at,isOnline:true,lastSyncAt:at})}
+  for(const row of existing){if(!row.isOnline||onlineKeys.has(row.playerNameKey))continue;const added=sessionSeconds(row.sessionStartedAt,at);await db.update(serverPlayers).set({isOnline:false,lastSeenAt:at,lastLeaveAt:at,sessionStartedAt:null,totalPlaySeconds:row.totalPlaySeconds+added,lastSyncAt:at,updatedAt:new Date()}).where(eq(serverPlayers.id,row.id))}
+  if(input.playerCount!==undefined)await db.update(servers).set({playerCount:input.playerCount,updatedAt:new Date()}).where(eq(servers.id,server.id))
+}
+async function closePlayerSessions(serverId:string,at=new Date()){
+  const rows=await db.select().from(serverPlayers).where(and(eq(serverPlayers.serverId,serverId),eq(serverPlayers.isOnline,true)))
+  for(const row of rows){const added=sessionSeconds(row.sessionStartedAt,at);await db.update(serverPlayers).set({isOnline:false,lastSeenAt:at,lastLeaveAt:at,sessionStartedAt:null,totalPlaySeconds:row.totalPlaySeconds+added,lastSyncAt:at,updatedAt:new Date()}).where(eq(serverPlayers.id,row.id))}
+}
 function alertMatches(operator:string,value:number,threshold:number){switch(operator.toLowerCase()){case '>':case 'gt':return value>threshold;case '>=':case 'gte':return value>=threshold;case '<':case 'lt':return value<threshold;case '<=':case 'lte':return value<=threshold;case '=':case '==':case 'eq':return value===threshold;case '!=':case 'ne':return value!==threshold;default:return false}}
 async function evaluateMetricAlerts(metric:Record<string,unknown>,server:{id:string;userId:string}){
   const rules=await db.select().from(alertRules).where(and(eq(alertRules.serverId,server.id),eq(alertRules.enabled,true)))
@@ -278,6 +305,10 @@ export async function POST(request:NextRequest){
     }else if(body.type==='backup-progress'&&body.serverId){
       const command=(await db.select({id:agentCommands.id}).from(agentCommands).where(and(eq(agentCommands.serverId,body.serverId),eq(agentCommands.nodeId,node.id),inArray(agentCommands.type,['backup','CREATE_BACKUP','CREATE_WORLD_BACKUP']),inArray(agentCommands.status,['processing','queued']))).limit(1))[0]
       if(command)await db.update(agentCommands).set({result:{status:body.status,progress:body.progress,path:body.path??null}}).where(eq(agentCommands.id,command.id))
+    }else if(body.type==='player-presence'){
+      const presence=playerPresenceSchema.parse(body);await persistPlayerPresence(node.id,presence)
+    }else if(body.type==='player-list'){
+      const snapshot=playerListSchema.parse(body);await persistPlayerList(node.id,snapshot)
     }else if(body.type==='log'&&body.serverId&&typeof body.line==='string'){
       await db.insert(consoleLogs).values({userId:node.userId,serverId:body.serverId,stream:body.stream==='stderr'?'stderr':'stdout',line:body.line.slice(0,8000)})
       for(const logLine of String(body.line).split(/\r?\n/).filter(Boolean).slice(0,100)){
@@ -287,6 +318,7 @@ export async function POST(request:NextRequest){
     }else if(body.type==='server-status'&&body.serverId){
       const previous=(await db.select({status:servers.status}).from(servers).where(and(eq(servers.id,body.serverId),eq(servers.userId,node.userId))).limit(1))[0]
       await db.update(servers).set({status:body.status,pid:body.pid??null,playerCount:body.playerCount??0,installProgress:body.status==='ready'||body.status==='stopped'?100:undefined,updatedAt:new Date()}).where(and(eq(servers.id,body.serverId),eq(servers.userId,node.userId)))
+      if(String(body.status??'')!=='running')await closePlayerSessions(String(body.serverId))
       if(previous&&previous.status!==String(body.status??'')){
         const next=String(body.status??'')
         if(next==='running')await emitDiscordEvent(body.serverId,'server_start')
