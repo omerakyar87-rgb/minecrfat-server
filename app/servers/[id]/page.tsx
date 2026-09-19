@@ -6,7 +6,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import {
   Activity, AlertTriangle, ArrowLeft, Ban, Box, CheckCircle2, ChevronRight, Clock3, Copy, Cpu, Crown,
   Database, Download, Eye, FileText, Folder, Gamepad2, Globe2, HardDrive, HeartPulse, Info, KeyRound,
-  LifeBuoy, Menu, MoreHorizontal, Network, Package, Pencil, Play, Plus, RefreshCw, RotateCcw, Save, Search, Send,
+  LifeBuoy, MoreHorizontal, Network, Package, Pencil, Play, Plus, RefreshCw, RotateCcw, Save, Search, Send,
   Server as ServerIcon, Settings2, Shield, ShieldCheck, Signal, Square, Terminal, Trash2, UploadCloud,
   UserPlus, Users, Wifi, Wrench, X
 } from 'lucide-react'
@@ -21,9 +21,9 @@ import { ServerContentManager } from '@/components/server-content-manager'
 import { ServerSecurityCenter } from '@/components/server-security-center'
 import { ServerWorldCenter } from '@/components/server-world-center'
 import { ServerIntegrationsCenter } from '@/components/server-integrations-center'
-import { SupportCenter } from '@/components/support-center'
 import { useActionConfirm } from '@/components/action-confirm-dialog'
 import { SERVER_NAV, ServerDetailNavigation, type ServerNavKey } from '@/components/server-detail-navigation'
+import { ServerDetailHeader } from '@/components/server-detail-header'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -332,10 +332,13 @@ export default function ServerPage(){
       />
 
       <section id="server-main-content" className="min-w-0 flex-1">
-        <header className="sticky top-0 z-30 flex min-h-[62px] items-center justify-between border-b border-[#18283b] bg-[#081421]/95 px-4 backdrop-blur-xl lg:px-5">
-          <div className="flex min-w-0 items-center gap-3"><Button size="icon" variant="ghost" className="shrink-0 lg:hidden" onClick={()=>setOpen(true)}><Menu className="size-5"/></Button><div className="min-w-0"><p className="truncate text-xs text-slate-500">Sunucular <span className="mx-1">›</span> {server.name} <span className="mx-1">›</span> <span className="text-slate-300">{SERVER_NAV.find(n=>n[0]===section)?.[1]}</span></p></div></div>
-          <div className="flex shrink-0 items-center gap-1 sm:gap-2"><SupportCenter/><Button size="icon" variant="ghost" className="rounded-full" onClick={()=>mutate()} title="Canlı veriyi yenile"><RefreshCw className="size-4"/></Button>{data?.actor&&<div className="ml-1 hidden items-center gap-2 border-l border-[#1a2a3d] pl-3 sm:flex"><div className="grid size-8 place-items-center rounded-full bg-slate-700 text-xs font-bold text-white">{data.actor.name.slice(0,1).toUpperCase()}</div><div className="leading-tight"><p className="text-xs font-medium text-white">{data.actor.name}</p><p className="text-xs capitalize text-slate-500">{data.actor.role}</p></div></div>}</div>
-        </header>
+        <ServerDetailHeader
+          serverName={server.name}
+          sectionLabel={SERVER_NAV.find(item=>item[0]===section)?.[1]??section}
+          actor={data?.actor}
+          onOpenMenu={()=>setOpen(true)}
+          onRefresh={()=>{void mutate()}}
+        />
 
         <div className="mx-auto w-full max-w-[1540px] space-y-4 p-3 sm:p-4 lg:p-5">
           {notice&&<div role="status" className="rounded-lg border border-sky-500/25 bg-[#0d2034]/35 px-4 py-3 text-sm text-sky-200">{notice}</div>}
