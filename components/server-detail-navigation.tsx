@@ -45,7 +45,7 @@ type Props={
 export function ServerDetailNavigation({
   open,items,active,serverName,serverMeta,coverUrl,processState,processStatusLabel,heartbeatHealthy,onlineNode,diskPct,onClose,onSelect,onBack,
 }:Props){
-  const itemMap=new Map(items.map(item=>[item[0],item]))
+  const itemMap=new Map<ServerNavKey,ServerNavItem>(items.map(item=>[item[0],item] as [ServerNavKey,ServerNavItem]))
   return <aside className={`${open?'translate-x-0':'-translate-x-full'} fixed inset-y-0 left-0 z-40 flex w-[236px] shrink-0 flex-col border-r border-[#18283b] bg-[radial-gradient(circle_at_0%_0%,rgba(14,165,233,.13),transparent_36%),#091522] px-2.5 py-3 shadow-2xl transition-transform lg:static lg:translate-x-0`}>
     <div className="flex items-start justify-between border-b border-[#18283b] px-2 pb-4 pt-1">
       <div className="flex min-w-0 items-center"><img src="/blockctrl-logo.png" alt="BLOCKCTRL Sunucu Yönetim Paneli" className="h-[42px] w-auto max-w-[174px] object-contain object-left"/></div>
