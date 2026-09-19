@@ -8,8 +8,8 @@ import { agentCommands, alertRules, backups, consoleLogs, lostItems, managedData
 
 const hash=(v:string)=>createHash('sha256').update(v).digest('hex')
 const serverMetricSchema=z.object({serverId:z.string().uuid(),cpuPercent:z.number().min(0).max(100).default(0),memoryUsedMb:z.number().int().min(0).default(0),memoryTotalMb:z.number().int().min(0).default(0),diskUsedGb:z.number().min(0).default(0),diskTotalGb:z.number().min(0).default(0),tps:z.number().min(0).max(100).nullable().optional(),mspt:z.number().min(0).nullable().optional(),players:z.number().int().min(0).default(0),uptimeSeconds:z.number().int().min(0).default(0)})
-const publicWebsiteItemSchema=z.object({title:z.string().max(80),description:z.string().max(500),value:z.string().max(120),image:z.string().url().nullable().optional()})
-const serverPublicSnapshotSchema=z.object({serverId:z.string().uuid(),source:z.enum(['bans','leaderboard-kills']),data:z.object({items:z.array(publicWebsiteItemSchema).max(25)})})
+const publicWebsiteItemSchema=z.object({title:z.string().max(80),description:z.string().max(500),value:z.string().max(120),image:z.string().url().nullable().optional(),href:z.string().url().nullable().optional()})
+const serverPublicSnapshotSchema=z.object({serverId:z.string().uuid(),source:z.enum(['bans','leaderboard-kills','leaderboard-money','leaderboard-health','leaderboard-playtime','support','store','wiki']),data:z.object({items:z.array(publicWebsiteItemSchema).max(25)})})
 const alertMetricKeys=new Set(['cpuPercent','memoryUsedMb','memoryTotalMb','diskUsedGb','diskTotalGb','tps','mspt','players','uptimeSeconds'])
 const playerPresenceSchema=z.object({serverId:z.string().uuid(),playerName:z.string().trim().regex(/^[A-Za-z0-9_]{1,16}$/),playerUuid:z.string().max(40).nullable().optional(),event:z.enum(['join','leave']),occurredAt:z.coerce.date().optional()})
 const playerListSchema=z.object({serverId:z.string().uuid(),names:z.array(z.string().trim().regex(/^[A-Za-z0-9_]{1,16}$/)).max(500),playerCount:z.number().int().min(0).max(5000).optional(),maxPlayers:z.number().int().min(0).max(5000).optional(),observedAt:z.coerce.date().optional()})
