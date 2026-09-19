@@ -23,6 +23,7 @@ import { ServerWorldCenter } from '@/components/server-world-center'
 import { ServerIntegrationsCenter } from '@/components/server-integrations-center'
 import { SupportCenter } from '@/components/support-center'
 import { useActionConfirm } from '@/components/action-confirm-dialog'
+import { SERVER_NAV, ServerDetailNavigation, type ServerNavKey } from '@/components/server-detail-navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -88,27 +89,19 @@ async function directUploadFile(serverId:string,file:File,category:string,onProg
   const result=await readJson(done); if(!done.ok)throw new Error(result.error??'Yükleme tamamlanamadı'); return result
 }
 
-const nav=[
-  ['overview','Genel Bakış',Gamepad2],['console','Konsol',Terminal],['players','Oyuncular',Users],['files','Dosyalar',Folder],
-  ['worlds','Dünyalar',Globe2],['software','Eklentiler / Modlar',Package],['databases','Veritabanları',Database],['backups','Yedekler',RotateCcw],
-  ['schedules','Zamanlanmış Görevler',Clock3],['settings','Ayarlar',Settings2],['security','Güvenlik',ShieldCheck],['lost-items','Kayıp Eşya Takibi',Box],
-  ['sftp','SFTP',Network],['integrations','Entegrasyonlar',Zap],['support','Destek',LifeBuoy],['logs','Günlükler',FileText],
-  ['network','Ağ & Portlar',Signal],['bulk-download','Toplu İndirme',Download],['access','Erişim & Roller',Shield]
-] as const
-
 export default function ServerPage(){
   const {id}=useParams<{id:string}>(); const router=useRouter(); const searchParams=useSearchParams()
   const {data,error,mutate}=useSWR<Panel>(`/api/panel?serverId=${id}`,fetcher,{refreshInterval:visiblePoll(5000),revalidateOnFocus:true})
   const server=data?.servers.find(s=>s.id===id); const node=data?.nodes?.find(n=>n.id===server?.nodeId)
   const manager=data?.serverAccess?.isManager===true; const fullAccess=data?.serverAccess?.fullAccess===true; const permission=data?.currentPermission??undefined
-  const allowedSections=useMemo(()=>data?.allowedSections??(fullAccess?nav.map(([key])=>key):[]),[data?.allowedSections,fullAccess])
+  const allowedSections=useMemo(()=>data?.allowedSections??(fullAccess?SERVER_NAV.map(([key])=>key):[]),[data?.allowedSections,fullAccess])
   const visibleNav=useMemo(()=>nav.filter(([key])=>{if(key==='support')return true;if(key==='lost-items')return fullAccess||data?.serverAccess?.isOwner===true||!!permission?.canViewLostItems||!!permission?.canManageLostItems;if(key==='sftp')return manager;if(key==='security'||key==='access')return fullAccess||allowedSections.includes(key);if(key==='bulk-download')return fullAccess||allowedSections.includes('files');return fullAccess||allowedSections.includes(key)}),[allowedSections,data?.serverAccess?.isOwner,fullAccess,manager,permission?.canManageLostItems,permission?.canViewLostItems])
   const {data:backupData,error:backupError,mutate:mutateBackups}=useSWR<{backups:BackupRow[]}>(allowedSections.includes('backups')?`/api/backups?serverId=${id}`:null,fetcher,{refreshInterval:visiblePoll(7000),revalidateOnFocus:true})
   const {data:settingsSnapshot}=useSWR<SettingsSnapshot>(`/api/panel-settings?serverId=${id}`,fetcher,{refreshInterval:visiblePoll(15000),revalidateOnFocus:true})
   const {data:securitySnapshot}=useSWR<SecuritySnapshot>((fullAccess||allowedSections.includes('security'))?`/api/security?serverId=${id}`:null,fetcher,{refreshInterval:visiblePoll(20000),revalidateOnFocus:true})
   const canReadMetrics=fullAccess||allowedSections.includes('overview')||allowedSections.includes('players')||allowedSections.includes('console')
   const {data:metricsData}=useSWR<MetricsData>(canReadMetrics?`/api/metrics?serverId=${id}&limit=240`:null,fetcher,{refreshInterval:15000})
-  const [section,setSection]=useState<(typeof nav)[number][0]>('overview'); const [open,setOpen]=useState(false); const [busy,setBusy]=useState(false); const [notice,setNotice]=useState('')
+  const [section,setSection]=useState<ServerNavKey>('overview'); const [open,setOpen]=useState(false); const [busy,setBusy]=useState(false); const [notice,setNotice]=useState('')
   const actionConfirm=useActionConfirm()
   const [settingsTab,setSettingsTab]=useState<'general'|'security'|'performance'|'anticheat'|'backup'>('general'); const [selectedUserId,setSelectedUserId]=useState('')
   const [uiSecurity,setUiSecurity]=useState({startupScan:true,bruteForce:true,commandLog:true,fileFilter:true,proxyControl:true,movement:true,reach:true,speed:true,xray:true,crashRecovery:true,performanceMonitor:true,autoCleanup:true})
@@ -128,7 +121,7 @@ export default function ServerPage(){
   const activeSchedules=(data?.schedules??[]).filter(s=>s.enabled).length; const activeBackupSchedules=(data?.schedules??[]).filter(s=>s.enabled&&s.taskType==='backup').length; const selectedUser=data?.users?.find(u=>u.id===selectedUserId)??data?.users?.[0]; const selectedPermission=selectedUser?data?.permissions?.find(p=>p.userId===selectedUser.id):undefined
   const canStart=!!manager||!!permission?.canStart; const canStop=!!manager||!!permission?.canStop; const canRestart=!!manager||!!permission?.canRestart; const canConsole=!!manager||!!permission?.canConsole; const canFiles=!!manager||!!permission?.canFiles; const canBackup=!!manager||!!permission?.canBackup; const canReset=!!manager||!!permission?.canReset; const canManageLostItems=fullAccess||!!permission?.canManageLostItems
   useEffect(()=>{if(visibleNav.length&&!visibleNav.some(([key])=>key===section))setSection(visibleNav[0][0])},[visibleNav,section])
-  useEffect(()=>{const wanted=searchParams.get('section');if(wanted&&visibleNav.some(([key])=>key===wanted))setSection(wanted as (typeof nav)[number][0])},[searchParams,visibleNav])
+  useEffect(()=>{const wanted=searchParams.get('section');if(wanted&&visibleNav.some(([key])=>key===wanted))setSection(wanted as ServerNavKey)},[searchParams,visibleNav])
   useEffect(()=>{if(manager&&!selectedUserId&&data?.users?.length)setSelectedUserId(data.users[0].id)},[manager,selectedUserId,data?.users])
   useEffect(()=>{const x=settingsSnapshot?.settings;if(!x)return;if(typeof x.motd==='string')setMotd(x.motd);if(typeof x.maxPlayers==='number'||typeof x.maxPlayers==='string')setMaxPlayers(String(x.maxPlayers));if(typeof x.onlineMode==='boolean')setOnlineMode(x.onlineMode);if(typeof x.gamemode==='string')setGamemode(x.gamemode);if(typeof x.difficulty==='string')setDifficulty(x.difficulty);if(typeof x.pvp==='boolean')setPvp(x.pvp);if(typeof x.viewDistance==='number'||typeof x.viewDistance==='string')setViewDistance(String(x.viewDistance));if(typeof x.simulationDistance==='number'||typeof x.simulationDistance==='string')setSimulationDistance(String(x.simulationDistance));if(typeof x.spawnProtection==='number'||typeof x.spawnProtection==='string')setSpawnProtection(String(x.spawnProtection));if(typeof x.allowFlight==='boolean')setAllowFlight(x.allowFlight);if(typeof x.whitelist==='boolean')setWhitelist(x.whitelist)},[settingsSnapshot])
   useEffect(()=>{try{const raw=localStorage.getItem(`blockctrl:console-history:${id}`);if(raw){const parsed=JSON.parse(raw);if(Array.isArray(parsed))setConsoleHistory(parsed.filter(x=>typeof x==='string').slice(-60))}}catch{}},[id])
@@ -321,20 +314,26 @@ export default function ServerPage(){
     <a href="#server-main-content" className="bc-skip-link">Sunucu içeriğine geç</a>
     {actionConfirm.dialog}
     <div className="flex min-h-svh">
-      <aside className={`${open?'translate-x-0':'-translate-x-full'} fixed inset-y-0 left-0 z-40 flex w-[236px] shrink-0 flex-col border-r border-[#18283b] bg-[radial-gradient(circle_at_0%_0%,rgba(14,165,233,.13),transparent_36%),#091522] px-2.5 py-3 shadow-2xl transition-transform lg:static lg:translate-x-0`}>
-        <div className="flex items-start justify-between border-b border-[#18283b] px-2 pb-4 pt-1">
-          <div className="flex min-w-0 items-center"><img src="/blockctrl-logo.png" alt="BLOCKCTRL Sunucu Yönetim Paneli" className="h-[42px] w-auto max-w-[174px] object-contain object-left"/></div>
-          <Button size="icon" variant="ghost" className="lg:hidden" onClick={()=>setOpen(false)}><X className="size-4"/></Button>
-        </div>
-        <div className="mx-1 my-3 rounded-xl border border-[#1b3047] bg-[#0d1c2b] p-2.5"><div className="flex items-center gap-2.5">{serverCoverUrl?<img src={serverCoverUrl} alt="" className="size-10 rounded-lg object-cover"/>:<div className="grid size-10 place-items-center rounded-lg bg-sky-500/10 text-sky-300"><ServerIcon className="size-5"/></div>}<div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold text-white">{server.name}</p><p className={`mt-1 flex items-center gap-1.5 text-xs ${processState==='ok'?'text-sky-300':processState==='bad'?'text-red-300':processState==='warn'?'text-amber-300':'text-slate-400'}`}><span className={`size-1.5 rounded-full ${processState==='ok'?'bg-cyan-400':processState==='bad'?'bg-red-400':processState==='warn'?'bg-amber-400':'bg-slate-500'}`}/>{processStatusLabel}</p></div></div></div>
-        <nav className="flex flex-1 flex-col gap-1 overflow-y-auto pb-3" aria-label="Sunucu yönetimi">{visibleNav.map(([key,label,Icon])=><button key={key} aria-current={section===key?'page':undefined} onClick={()=>{setSection(key);setOpen(false)}} className={`group flex min-h-10 items-center gap-3 rounded-lg px-3 text-left text-[12px] font-medium transition ${section===key?'border border-sky-500/30 bg-gradient-to-r from-blue-600/45 to-sky-500/20 text-white shadow-[inset_2px_0_0_#38bdf8,0_0_24px_rgba(14,165,233,.08)]':'border border-transparent text-slate-300 hover:border-[#203a55] hover:bg-[#0d1c2c] hover:text-white'}`}><Icon className={`size-[16px] shrink-0 ${section===key?'text-sky-300':'text-slate-400 group-hover:text-sky-300'}`}/>{label}</button>)}</nav>
-        <button onClick={()=>router.push('/')} className="mb-3 flex min-h-10 items-center gap-3 rounded-lg border border-transparent px-3 text-left text-[12px] font-medium text-slate-300 hover:bg-sky-950/25 hover:text-white"><ArrowLeft className="size-[16px] text-slate-400"/>Sunucu Listesi</button>
-        <div className="border-t border-[#18283b] px-2 pt-3 text-xs text-slate-500"><div className="flex items-center justify-between"><span>Node</span><span className={heartbeatHealthy?'text-sky-300':'text-amber-300'}>{heartbeatHealthy?'Bağlı':'Doğrulanmadı'}</span></div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-800"><div className="h-full rounded-full bg-sky-400" style={{width:`${onlineNode&&node?Math.max(4,Math.min(100,diskPct)):4}%`}}/></div></div>
-      </aside>
+      <ServerDetailNavigation
+        open={open}
+        items={visibleNav}
+        active={section}
+        serverName={server.name}
+        serverMeta={`${server.loader} ${server.mcVersion}`}
+        coverUrl={serverCoverUrl}
+        processState={processState}
+        processStatusLabel={processStatusLabel}
+        heartbeatHealthy={heartbeatHealthy}
+        onlineNode={onlineNode}
+        diskPct={diskPct}
+        onClose={()=>setOpen(false)}
+        onSelect={key=>{setSection(key);setOpen(false)}}
+        onBack={()=>router.push('/')}
+      />
 
       <section id="server-main-content" className="min-w-0 flex-1">
         <header className="sticky top-0 z-30 flex min-h-[62px] items-center justify-between border-b border-[#18283b] bg-[#081421]/95 px-4 backdrop-blur-xl lg:px-5">
-          <div className="flex min-w-0 items-center gap-3"><Button size="icon" variant="ghost" className="shrink-0 lg:hidden" onClick={()=>setOpen(true)}><Menu className="size-5"/></Button><div className="min-w-0"><p className="truncate text-xs text-slate-500">Sunucular <span className="mx-1">›</span> {server.name} <span className="mx-1">›</span> <span className="text-slate-300">{nav.find(n=>n[0]===section)?.[1]}</span></p></div></div>
+          <div className="flex min-w-0 items-center gap-3"><Button size="icon" variant="ghost" className="shrink-0 lg:hidden" onClick={()=>setOpen(true)}><Menu className="size-5"/></Button><div className="min-w-0"><p className="truncate text-xs text-slate-500">Sunucular <span className="mx-1">›</span> {server.name} <span className="mx-1">›</span> <span className="text-slate-300">{SERVER_NAV.find(n=>n[0]===section)?.[1]}</span></p></div></div>
           <div className="flex shrink-0 items-center gap-1 sm:gap-2"><SupportCenter/><Button size="icon" variant="ghost" className="rounded-full" onClick={()=>mutate()} title="Canlı veriyi yenile"><RefreshCw className="size-4"/></Button>{data?.actor&&<div className="ml-1 hidden items-center gap-2 border-l border-[#1a2a3d] pl-3 sm:flex"><div className="grid size-8 place-items-center rounded-full bg-slate-700 text-xs font-bold text-white">{data.actor.name.slice(0,1).toUpperCase()}</div><div className="leading-tight"><p className="text-xs font-medium text-white">{data.actor.name}</p><p className="text-xs capitalize text-slate-500">{data.actor.role}</p></div></div>}</div>
         </header>
 
@@ -438,7 +437,7 @@ export default function ServerPage(){
                 nodeDiskUsedGb:onlineNode?node?.diskUsedGb:null,
                 nodeDiskTotalGb:onlineNode?node?.diskTotalGb:null,
               }}
-              onNavigate={target=>{if(visibleNav.some(([key])=>key===target))setSection(target as (typeof nav)[number][0])}}
+              onNavigate={target=>{if(visibleNav.some(([key])=>key===target))setSection(target as ServerNavKey)}}
               onStop={()=>command('stop')}
               onRestart={()=>command('restart')}
               onConsole={()=>setSection('console')}
@@ -788,7 +787,7 @@ export default function ServerPage(){
 
           {manager&&section==='security'&&<>
             <PageHeading title="Güvenlik" text="Firewall, ağ, erişim, dosya bütünlüğü, SFTP ve hile korumasını gerçek agent verileriyle yönetin."/>
-            <ServerSecurityCenter serverId={id} running={running} onNavigate={target=>setSection(target as (typeof nav)[number][0])}/>
+            <ServerSecurityCenter serverId={id} running={running} onNavigate={target=>setSection(target as ServerNavKey)}/>
           </>}
         </div>
         <footer className="mx-auto flex max-w-[1540px] items-center justify-between px-5 pb-4 pt-2 text-xs text-slate-500"><span className="flex items-center gap-2 text-sky-400"><CheckCircle2 className="size-3.5"/>BLOCKCTRL sunucu durumu izleniyor. <span className="text-slate-600">|</span><span className="text-slate-500">Yalnız doğrulanmış telemetri gösterilir.</span></span><span className="flex items-center gap-2"><span className={`size-2 rounded-full ${onlineNode?'bg-cyan-400':'bg-amber-400'}`}/>{onlineNode?'Node heartbeat güncel':'Node heartbeat güncel değil'}</span></footer>
