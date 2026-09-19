@@ -17,9 +17,10 @@ export async function GET(request:NextRequest){
   if(!siteSlug||!ALLOWED.has(source))return response({error:'Geçersiz canlı veri isteği.'},400)
   const site=(await db.select().from(websites).where(eq(websites.slug,siteSlug)).limit(1))[0]
   if(!site)return response({error:'Website bulunamadı.'},404)
-  const serverId=requestedServerId||site.serverId||''
-  if(!serverId)return response({available:false,source,reason:'Website için ana sunucu seçilmedi.',items:[]})
   const configured=referencedServerIds(site.builderData);if(site.serverId)configured.add(site.serverId)
+  let serverId=requestedServerId||site.serverId||''
+  if(requestedServerId&&!configured.has(requestedServerId)&&site.serverId)serverId=site.serverId
+  if(!serverId)return response({available:false,source,reason:'Website için ana sunucu seçilmedi.',items:[]})
   if(!configured.has(serverId))return response({error:'Bu sunucu website canlı verisine bağlı değil.'},403)
   const server=(await db.select().from(servers).where(eq(servers.id,serverId)).limit(1))[0]
   if(!server)return response({available:false,source,reason:'Sunucu bulunamadı.',items:[]})
