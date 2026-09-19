@@ -201,7 +201,7 @@ async function getPanel(request:NextRequest) {
     const maySeeLostItems=result.fullAccess||result.isOwner||!!result.permission?.canViewLostItems||!!result.permission?.canManageLostItems
     const maySeeSchedules=result.fullAccess||result.sections.includes('schedules')
     const maySeeDatabases=result.fullAccess||result.sections.includes('databases')
-    const [nodeRows,worldRows,logRows,operationRows,lostItemRows,serverPermissionRows,memberRows,scheduleRows,databaseRows,sftpRows]=await Promise.all([
+    const [nodeRows,worldRows,logRows,operationRows,lostItemRows,serverPermissionRows,memberRows,scheduleRows,databaseRows,sftpRows,databaseCommandRows]=await Promise.all([
       db.select({id:nodes.id,name:nodes.name,status:nodes.status,lastHeartbeat:nodes.lastHeartbeat,cpuPercent:nodes.cpuPercent,memoryUsedMb:nodes.memoryUsedMb,memoryTotalMb:nodes.memoryTotalMb,diskUsedGb:nodes.diskUsedGb,diskTotalGb:nodes.diskTotalGb}).from(nodes).where(eq(nodes.id,result.server.nodeId)).limit(1),
       maySeeWorlds?db.select().from(worlds).where(eq(worlds.serverId,requestedServerId)).orderBy(desc(worlds.createdAt)):Promise.resolve([]),
       maySeeLogs?db.select({id:consoleLogs.id,serverId:consoleLogs.serverId,line:consoleLogs.line,createdAt:consoleLogs.createdAt}).from(consoleLogs).where(eq(consoleLogs.serverId,requestedServerId)).orderBy(desc(consoleLogs.createdAt)).limit(200):Promise.resolve([]),
@@ -211,17 +211,20 @@ async function getPanel(request:NextRequest) {
       mayManageAccess?db.select({id:user.id,name:user.name,email:user.email,role:user.role,approved:user.approved}).from(user).where(eq(user.approved,true)).orderBy(desc(user.createdAt)):Promise.resolve([]),
       maySeeSchedules?db.select().from(serverSchedules).where(eq(serverSchedules.serverId,requestedServerId)).orderBy(desc(serverSchedules.createdAt)):Promise.resolve([]),
       maySeeDatabases?db.select().from(managedDatabases).where(eq(managedDatabases.serverId,requestedServerId)).orderBy(desc(managedDatabases.createdAt)):Promise.resolve([]),
-      result.fullAccess?db.select({id:serverSftp.id,serverId:serverSftp.serverId,nodeId:serverSftp.nodeId,username:serverSftp.username,port:serverSftp.port,rootPath:serverSftp.rootPath,status:serverSftp.status,lastError:serverSftp.lastError,lastTestAt:serverSftp.lastTestAt,passwordRotatedAt:serverSftp.passwordRotatedAt,disabledAt:serverSftp.disabledAt,createdAt:serverSftp.createdAt,updatedAt:serverSftp.updatedAt}).from(serverSftp).where(eq(serverSftp.serverId,requestedServerId)).limit(1):Promise.resolve([])
+      result.fullAccess?db.select({id:serverSftp.id,serverId:serverSftp.serverId,nodeId:serverSftp.nodeId,username:serverSftp.username,port:serverSftp.port,rootPath:serverSftp.rootPath,status:serverSftp.status,lastError:serverSftp.lastError,lastTestAt:serverSftp.lastTestAt,passwordRotatedAt:serverSftp.passwordRotatedAt,disabledAt:serverSftp.disabledAt,createdAt:serverSftp.createdAt,updatedAt:serverSftp.updatedAt}).from(serverSftp).where(eq(serverSftp.serverId,requestedServerId)).limit(1):Promise.resolve([]),
+      maySeeDatabases?db.select().from(agentCommands).where(and(eq(agentCommands.serverId,requestedServerId),inArray(agentCommands.type,['database-status','database-backup','database-export','database-optimize','database-repair','database-restore','database-import']))).orderBy(desc(agentCommands.createdAt)).limit(120):Promise.resolve([])
     ])
     const restoreActorIds=[...new Set(lostItemRows.map(row=>row.restoredByUserId).filter((value): value is string=>typeof value==='string'&&value.length>0))]
     const restoreActors=restoreActorIds.length?await db.select({id:user.id,name:user.name}).from(user).where(inArray(user.id,restoreActorIds)):[]
     const restoreNameById=new Map(restoreActors.map(member=>[member.id,member.name]))
     const lostItemsWithRestoreActor=lostItemRows.map(row=>({...row,restoredByName:row.restoredByUserId?restoreNameById.get(row.restoredByUserId)??null:null}))
+    let nodeBase='';try{nodeBase=getNodeConfig(result.server.nodeId).baseUrl}catch{}
+    const databasesWithRuntime=databaseRows.map(database=>{const related=databaseCommandRows.filter(command=>String((command.payload as Record<string,unknown>|null)?.databaseId??'')===database.id);const completed=related.filter(command=>command.status==='completed');const statusCommand=completed.find(command=>command.type==='database-status');const backupCommand=completed.find(command=>command.type==='database-backup'||command.type==='database-export');const latestCommand=related[0]??null;const backupResult=(backupCommand?.result&&typeof backupCommand.result==='object'?backupCommand.result:{}) as Record<string,unknown>;const token=String(backupResult.downloadToken??'');return{...database,telemetry:statusCommand?.result??null,lastBackup:backupCommand?{...backupResult,downloadUrl:nodeBase&&token?`${nodeBase}/public/download/${encodeURIComponent(token)}`:undefined}:null,lastMaintenance:latestCommand?{id:latestCommand.id,type:latestCommand.type,status:latestCommand.status,result:latestCommand.result??null,createdAt:latestCommand.createdAt}:null}})
     return NextResponse.json({
       nodes:nodeRows,servers:[{...compactServer,directBridge,connectivity:connectivityState(nodeRows[0]??{status:'offline',lastHeartbeat:null},directBridge.online?undefined:directBridge.error)}],worlds:worldRows,mods:[],backups:[],logs:logRows.slice().reverse(),
       users:memberRows.filter(member=>member.id!==a.id),audits:[],lostItems:lostItemsWithRestoreActor,operations:operationRows,
       permissions:serverPermissionRows,currentPermission:result.permission,allowedSections:result.sections,serverAccess:{isOwner:result.isOwner,isManager:result.isManager,fullAccess:result.fullAccess},
-      schedules:scheduleRows,databases:databaseRows,sftp:sftpRows[0]??null,
+      schedules:scheduleRows,databases:databasesWithRuntime,sftp:sftpRows[0]??null,
 actor:{id:a.id,name:a.name,email:a.email,role:normalizeRole(a.role)},nodeConnectivity:directBridge
     },{headers:{'Cache-Control':'private, no-store'}})
   }
@@ -419,6 +422,22 @@ async function postPanel(request:NextRequest) {
     await db.insert(agentCommands).values({userId:a.id,nodeId:result.server.nodeId,serverId,type:'database-create',payload:{databaseId:record.id,databaseName,databaseUser}})
     await db.insert(operationLogs).values({userId:a.id,serverId,operation:'database-create',status:'queued'})
     return NextResponse.json({database:record},{status:202})
+  }
+  if(body.action==='database-action'){
+    if(!manager)return NextResponse.json({error:'Veritabanı bakım işlemleri için Yönetici yetkisi gerekir'},{status:403})
+    const databaseId=z.string().uuid().parse(body.databaseId)
+    const operation=z.enum(['database-status','database-backup','database-export','database-optimize','database-repair','database-restore','database-import']).parse(body.operation)
+    const record=(await db.select().from(managedDatabases).where(eq(managedDatabases.id,databaseId)).limit(1))[0]
+    if(!record)return NextResponse.json({error:'Veritabanı kaydı bulunamadı'},{status:404})
+    const result=await access(a,record.serverId);if(!result)return NextResponse.json({error:'Sunucu erişimi yok'},{status:403})
+    const payload:Record<string,unknown>={databaseId:record.id,databaseName:record.databaseName,databaseUser:record.databaseUser}
+    if(operation==='database-restore')payload.filename=z.string().trim().min(5).max(240).regex(/^[A-Za-z0-9_.-]+\.sql$/).parse(body.filename)
+    if(operation==='database-import')payload.path=z.string().trim().min(1).max(500).parse(body.path)
+    if(['database-restore','database-import','database-repair'].includes(operation)&&body.confirm!==true)return NextResponse.json({error:'Bu veritabanı işlemi açık onay gerektirir'},{status:400})
+    const [command]=await db.insert(agentCommands).values({userId:a.id,nodeId:record.nodeId,serverId:record.serverId,type:operation,payload,status:'queued'}).returning()
+    await db.insert(operationLogs).values({userId:a.id,serverId:record.serverId,operation,status:'queued',message:record.databaseName})
+    await db.insert(auditLog).values({userId:a.id,action:`database.${operation.replace('database-','')}`,resourceType:'managed-database',resourceId:record.id,details:{commandId:command.id}})
+    return NextResponse.json({ok:true,command},{status:202})
   }
   if(body.action==='rotate-database-password'){
     if(!manager)return NextResponse.json({error:'Forbidden'},{status:403})
