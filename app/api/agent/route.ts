@@ -199,7 +199,7 @@ export async function POST(request:NextRequest){
         }
       }
     }else if(body.type==='server-public-data'){
-      const snapshots=z.array(serverPublicSnapshotSchema).max(100).parse(body.snapshots??[])
+      const snapshots=z.array(serverPublicSnapshotSchema).max(250).parse(body.snapshots??[])
       if(snapshots.length){
         const serverRows=await db.select({id:servers.id,userId:servers.userId}).from(servers).where(and(eq(servers.nodeId,node.id),inArray(servers.id,[...new Set(snapshots.map(item=>item.serverId))])))
         const byId=new Map(serverRows.map(server=>[server.id,server]))
