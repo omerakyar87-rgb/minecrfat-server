@@ -3,7 +3,7 @@ import { and, desc, eq } from 'drizzle-orm'
 import { db, ensurePanelSchema } from '@/lib/db'
 import { lostItems, serverMetrics, serverPermissions, serverSettings, serverWebsiteData, servers, websites } from '@/lib/db/schema'
 
-const ALLOWED=new Set(['server-status','players','metrics','map','lost-items','leaderboard-kills','leaderboard-money','leaderboard-health','bans'])
+const ALLOWED=new Set(['server-status','players','metrics','map','support','store','wiki','lost-items','leaderboard-kills','leaderboard-money','leaderboard-health','leaderboard-playtime','bans'])
 const cors={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'GET,OPTIONS','Access-Control-Allow-Headers':'Content-Type,Authorization','Cache-Control':'public, max-age=5, stale-while-revalidate=15'}
 function response(data:unknown,status=200){return NextResponse.json(data,{status,headers:cors})}
 export function OPTIONS(){return new NextResponse(null,{status:204,headers:cors})}
@@ -54,14 +54,20 @@ export async function GET(request:NextRequest){
     const rows=await db.select().from(lostItems).where(eq(lostItems.serverId,server.id)).orderBy(desc(lostItems.occurredAt)).limit(12)
     return response({available:true,source,updatedAt:new Date().toISOString(),summary,items:rows.map(row=>({title:row.playerName||'Oyuncu',description:`${row.itemName} x${row.amount} · ${row.reason}`,value:row.status,image:null}))})
   }
-  if(source==='bans'||source==='leaderboard-kills'){
-    const snapshot=(await db.select().from(serverWebsiteData).where(and(eq(serverWebsiteData.serverId,server.id),eq(serverWebsiteData.source,source))).limit(1))[0]
-    if(!snapshot)return response({available:false,source,reason:'Agent henüz bu veri kaynağı için snapshot göndermedi.',summary,items:[]})
+  if(['bans','leaderboard-kills','leaderboard-money','leaderboard-health','leaderboard-playtime','support','store','wiki'].includes(source)){
+    const scopedSource=`website:${site.id}:${source}`
+    const scoped=(await db.select().from(serverWebsiteData).where(and(eq(serverWebsiteData.serverId,server.id),eq(serverWebsiteData.source,scopedSource))).limit(1))[0]
+    const snapshot=scoped??(await db.select().from(serverWebsiteData).where(and(eq(serverWebsiteData.serverId,server.id),eq(serverWebsiteData.source,source))).limit(1))[0]
+    if(!snapshot){
+      const reason=source==='support'?'Destek formu sunucuya bağlı; destek kartları için henüz içerik kaydedilmedi.':source==='store'?'Bu sunucu için mağaza verisi henüz yapılandırılmadı.':source==='wiki'?'Bu sunucu için wiki verisi henüz yapılandırılmadı.':source==='leaderboard-money'||source==='leaderboard-health'?'Bu sıralama için gerçek plugin/veri sağlayıcısı bağlı değil.':'Agent henüz bu veri kaynağı için snapshot göndermedi.'
+      return response({available:false,source,reason,summary,items:[]})
+    }
     const updatedAt=new Date(snapshot.updatedAt)
-    const fresh=Number.isFinite(updatedAt.getTime())&&Date.now()-updatedAt.getTime()<=5*60_000
+    const scopedManaged=snapshot.source===scopedSource
+    const fresh=scopedManaged||(Number.isFinite(updatedAt.getTime())&&Date.now()-updatedAt.getTime()<=5*60_000)
     const items=Array.isArray(snapshot.data?.items)?snapshot.data.items.slice(0,25):[]
-    if(!fresh)return response({available:false,source,reason:'Agent public website snapshot verisi güncel değil.',updatedAt:updatedAt.toISOString(),summary,items:[]})
-    return response({available:true,source,updatedAt:updatedAt.toISOString(),summary,items})
+    if(!fresh)return response({available:false,source,reason:'Sunucu website veri snapshotı güncel değil.',updatedAt:updatedAt.toISOString(),summary,items:[]})
+    return response({available:true,source,updatedAt:updatedAt.toISOString(),summary,managedByWebsite:scopedManaged,items})
   }
-  return response({available:false,source,reason:source==='leaderboard-money'||source==='leaderboard-health'?'Bu sıralama için gerçek ekonomi/oyuncu sağlık veri sağlayıcısı bağlı değil.':'Bu veri türü için henüz canlı plugin/veri sağlayıcısı bağlı değil.',summary,items:[]})
+  return response({available:false,source,reason:'Bu veri türü için henüz canlı plugin/veri sağlayıcısı bağlı değil.',summary,items:[]})
 }
