@@ -1,10 +1,8 @@
-import { headers } from 'next/headers'
 import { NextRequest, NextResponse } from 'next/server'
+import { getPanelActor } from '@/lib/api-auth'
 import { and, eq } from 'drizzle-orm'
-import { auth } from '@/lib/auth'
 import { db, ensurePanelSchema } from '@/lib/db'
 import { auditLog, serverPermissions, servers } from '@/lib/db/schema'
-import { resolvePanelUser } from '@/lib/db/identity'
 import { nodeDiagnosticMessage, nodeFetch } from '@/lib/node-bridge'
 
 export const runtime = 'nodejs'
@@ -12,11 +10,7 @@ export const maxDuration = 60
 
 const MAX_TEXT_SIZE = 2_000_000
 
-async function currentActor() {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) return null
-  return resolvePanelUser(session.user)
-}
+async function currentActor(){return getPanelActor()}
 
 async function authorizedServer(actor: NonNullable<Awaited<ReturnType<typeof currentActor>>>, serverId: string) {
   const server = (await db.select().from(servers).where(eq(servers.id, serverId)).limit(1))[0]
