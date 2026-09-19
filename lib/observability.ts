@@ -1,3 +1,5 @@
+import { sendEmail } from '@/lib/email'
+
 type Level='info'|'warning'|'error'|'fatal'
 type EventInput={level:Level;event:string;message:string;serverId?:string|null;requestId?:string|null;details?:Record<string,unknown>}
 
@@ -30,12 +32,18 @@ export async function operationalAlert(input:EventInput & {dedupeKey?:string;ded
   const now=Date.now(),ttl=Math.max(30_000,input.dedupeMs??300_000),last=recent.get(key)??0
   if(now-last<ttl)return {delivered:false,reason:'deduped',payload}
   recent.set(key,now)
+  let webhookDelivered=false
   try{
     const response=await fetch(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(5000),cache:'no-store'})
     if(!response.ok)throw new Error(`HTTP ${response.status}`)
-    return {delivered:true,payload}
+    webhookDelivered=true
   }catch(error){
     operationalEvent({level:'error',event:'observability.webhook.failed',message:error instanceof Error?error.message:'Alert webhook failed'})
-    return {delivered:false,reason:'delivery-failed',payload}
   }
+  const alertEmail=String(process.env.BLOCKCTRL_ALERT_EMAIL_TO||'').trim()
+  let emailDelivered=false
+  if(alertEmail){
+    try{const mail=await sendEmail({to:alertEmail.split(',').map(x=>x.trim()),subject:`[BlockCtrl] ${input.level.toUpperCase()} · ${input.event}`,text:`${input.message}\n\n${JSON.stringify(payload.details??{},null,2)}`,tag:'operational-alert'});emailDelivered=mail.sent}catch(error){operationalEvent({level:'error',event:'observability.email.failed',message:error instanceof Error?error.message:'Alert email failed'})}
+  }
+  return {delivered:webhookDelivered||emailDelivered,webhookDelivered,emailDelivered,payload}
 }
