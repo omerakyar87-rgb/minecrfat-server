@@ -195,7 +195,7 @@ export async function GET() {
   if(health.auth.status!=='ok')health.readiness.blockers.push('Supabase kimlik doğrulama ortam değişkenleri eksik veya geçersiz.')
   if(health.agent.status==='offline')health.readiness.warnings.push('Kayıtlı node var ancak çevrimiçi agent heartbeat alınamıyor.')
   if(health.agent.status==='not-configured')health.readiness.warnings.push('Henüz node/agent bağlanmamış.')
-  if(health.vercelWebsite.status!=='ok')health.readiness.warnings.push('Website yayınlama için Vercel bağlantısı hazır değil.')
+  if(health.vercelWebsite.status!=='ok')health.readiness.blockers.push('Website oluşturma/yayınlama için Vercel API bağlantısı hazır değil.')
   if(health.blobStorage.status!=='ok')health.readiness.warnings.push('Medya yüklemeleri için Vercel Blob hazır değil.')
   if(health.websiteRuntime.status!=='ok')health.readiness.warnings.push('Yayınlanan sitelerin canlı BlockCtrl köprüsü eksik.')
   if(health.alerting.status!=='ok')health.readiness.warnings.push('Operasyon alarm kanalı yapılandırılmadı.')
