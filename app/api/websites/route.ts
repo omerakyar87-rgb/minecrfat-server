@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { and, desc, eq, gt, inArray, like, or } from 'drizzle-orm'
 import { auth } from '@/lib/auth'
 import { db, ensurePanelSchema } from '@/lib/db'
-import { auditLog, serverPermissions, serverSettings, servers, websiteAuthRateLimits, websiteAuthSettings, websiteFormSubmissions, websiteMembers, websiteMemberSessions, websites } from '@/lib/db/schema'
+import { auditLog, serverPermissions, serverSettings, serverWebsiteData, servers, websiteAuthRateLimits, websiteAuthSettings, websiteFormSubmissions, websiteMembers, websiteMemberSessions, websites } from '@/lib/db/schema'
 import { resolvePanelUser } from '@/lib/db/identity'
 
 const RESERVED = new Set(['www','api','admin','dashboard','panel','support','destek','blockctrl','vercel','app','mail','status'])
