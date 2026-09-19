@@ -97,8 +97,8 @@ function statements(sql:string){
 }
 
 async function main(){
-  if(auto&&!process.env.VERCEL&&String(process.env.BLOCKCTRL_AUTO_MIGRATE||'').toLowerCase()!=='true'){
-    console.log('BlockCtrl migration auto-run skipped outside Vercel.')
+  if(auto&&String(process.env.BLOCKCTRL_AUTO_MIGRATE||'').toLowerCase()!=='true'){
+    console.log('BlockCtrl migration auto-run skipped: BLOCKCTRL_AUTO_MIGRATE is not enabled.')
     return
   }
   if(!connectionConfigured){
