@@ -158,3 +158,8 @@ Bu geçişte TS/TSX dosyaları TypeScript parse taramasından geçirildi; yeni s
 104. CSP rollout kontrollü hale getirildi. Varsayılan `Content-Security-Policy-Report-Only` korunuyor; yalnız `BLOCKCTRL_CSP_ENFORCE=true` olduğunda aynı policy zorunlu CSP header'ına dönüşüyor.
 105. Contract testleri Security Center'da native confirm geri dönüşünü, küçük sabit fontları, ortak API auth resolver'ını, CSP rollout anahtarını ve genişletilmiş E2E smoke kontrollerini kapsayacak şekilde genişletildi.
 106. Vercel/GitHub production doğrulaması tamamlanmadan branch ana dala birleştirilmeyecek; önceki Vercel denemelerinde görülen build-rate-limit uygulama build başarısı olarak kabul edilmiyor.
+
+
+107. Ortak actor resolver `getPanelActor()` server-actions, security, panel-settings, worlds, server-content, files ve backups route'larına yayıldı; route'ların mevcut RBAC/permission mantığı değiştirilmedi.
+108. Ortak actor geçişinde üç sıkıştırılmış route gövdesinde eski auth çağrısının kaldığı ara durum tespit edilip aynı branch üzerinde düzeltildi; contract testi artık bu yedi route'ta eski actor auth kalıbının geri gelmesini engelliyor.
+109. Security Center ayrıştırması sırasında bulunan JSX grid/fragment hatası production'a taşınmadan branch üzerinde tespit edilip düzeltildi; ana branch bu çalışmalar boyunca değiştirilmedi.
