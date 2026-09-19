@@ -25,6 +25,7 @@ import { useActionConfirm } from '@/components/action-confirm-dialog'
 import { SERVER_NAV, ServerDetailNavigation, type ServerNavKey } from '@/components/server-detail-navigation'
 import { ServerDetailHeader } from '@/components/server-detail-header'
 import { ServerAccessSection } from '@/components/server-access-section'
+import { ServerDetailFooter } from '@/components/server-detail-footer'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -797,7 +798,7 @@ export default function ServerPage(){
             <ServerSecurityCenter serverId={id} running={running} onNavigate={target=>setSection(target as ServerNavKey)}/>
           </>}
         </div>
-        <footer className="mx-auto flex max-w-[1540px] items-center justify-between px-5 pb-4 pt-2 text-xs text-slate-500"><span className="flex items-center gap-2 text-sky-400"><CheckCircle2 className="size-3.5"/>BLOCKCTRL sunucu durumu izleniyor. <span className="text-slate-600">|</span><span className="text-slate-500">Yalnız doğrulanmış telemetri gösterilir.</span></span><span className="flex items-center gap-2"><span className={`size-2 rounded-full ${onlineNode?'bg-cyan-400':'bg-amber-400'}`}/>{onlineNode?'Node heartbeat güncel':'Node heartbeat güncel değil'}</span></footer>
+        <ServerDetailFooter onlineNode={onlineNode}/>
       </section>
     </div>
   </main>
