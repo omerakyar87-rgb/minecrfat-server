@@ -101,3 +101,4 @@ jobs:
         run: pnpm test:e2e
         env:
           E2E_BASE_URL: ${{ env.DEPLOYMENT_URL }}
+          E2E_REQUIRE_READY: 'true'
