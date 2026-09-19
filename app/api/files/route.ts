@@ -1,12 +1,10 @@
 import JSZip from 'jszip'
 import { put } from '@vercel/blob'
-import { auth } from '@/lib/auth'
-import { headers } from 'next/headers'
 import { NextRequest, NextResponse } from 'next/server'
+import { getPanelActor } from '@/lib/api-auth'
 import { and, eq } from 'drizzle-orm'
 import { db, ensurePanelSchema } from '@/lib/db'
 import { agentCommands, serverPermissions, servers } from '@/lib/db/schema'
-import { resolvePanelUser } from '@/lib/db/identity'
 
 const categories = ['mods', 'plugins', 'config', 'worlds', 'other'] as const
 type Category = (typeof categories)[number]
