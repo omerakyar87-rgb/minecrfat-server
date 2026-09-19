@@ -1,6 +1,7 @@
 import { list } from '@vercel/blob'
 import { NextResponse } from 'next/server'
 import { pool } from '@/lib/db'
+import { operationalAlert, operationalEvent } from '@/lib/observability'
 
 
 export const runtime = 'nodejs'
@@ -153,5 +154,7 @@ export async function GET() {
   }
 
   health.responseTimeMs=Date.now()-startedAt
+  operationalEvent({level:health.status==='ok'?'info':health.status==='degraded'?'warning':'error',event:'health.check',message:`BlockCtrl health ${health.status}`,details:{responseTimeMs:health.responseTimeMs,database:health.database.status,migration:health.migration.status,agent:health.agent.status,vercelWebsite:health.vercelWebsite.status,blobStorage:health.blobStorage.status,websiteRuntime:health.websiteRuntime.status,integrations:health.integrations.status}})
+  if(health.status!=='ok')void operationalAlert({level:health.status==='error'?'error':'warning',event:'health.degraded',message:`BlockCtrl health ${health.status}`,dedupeKey:`health:${health.status}:${health.database.status}:${health.agent.status}`,dedupeMs:5*60_000,details:{responseTimeMs:health.responseTimeMs,database:health.database.status,migration:health.migration.status,agent:health.agent.status,vercelWebsite:health.vercelWebsite.status,blobStorage:health.blobStorage.status,websiteRuntime:health.websiteRuntime.status,integrations:health.integrations.status}})
   return NextResponse.json(health,{status:health.status==='error'?503:200,headers:{'Cache-Control':'no-store, max-age=0'}})
 }
