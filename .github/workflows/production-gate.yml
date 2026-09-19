@@ -34,30 +34,45 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - name: Validate required production secrets
+      - name: Validate deploy credentials
         shell: bash
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: |
           set -euo pipefail
-          for name in DATABASE_URL VERCEL_TOKEN VERCEL_ORG_ID VERCEL_PROJECT_ID; do
-            if [ -z "${!name:-}" ]; then echo "::error::Missing required secret: $name"; exit 1; fi
+          missing=0
+          for name in VERCEL_TOKEN VERCEL_ORG_ID VERCEL_PROJECT_ID; do
+            if [ -z "${!name:-}" ]; then echo "::error::Missing required deploy secret: $name"; missing=1; fi
           done
+          exit "$missing"
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Apply database migrations
-        run: pnpm db:migrate
+      - name: Verify or apply database migrations
+        shell: bash
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          HEALTH_URL: ${{ vars.BLOCKCTRL_PUBLIC_URL || vars.NEXT_PUBLIC_APP_URL }}
+        run: |
+          set -euo pipefail
+          if [ -n "${DATABASE_URL:-}" ]; then
+            pnpm db:migrate
+            exit 0
+          fi
+          if [ -z "${HEALTH_URL:-}" ]; then
+            echo "::error::DATABASE_URL secret is missing and no BLOCKCTRL_PUBLIC_URL/NEXT_PUBLIC_APP_URL variable is available for migration verification."
+            exit 1
+          fi
+          health_url="${HEALTH_URL%/}/api/health"
+          body="$(curl -fsS --retry 3 --retry-delay 2 "$health_url")"
+          node -e 'const h=JSON.parse(process.argv[1]); if(h?.database?.status!=="ok"||h?.migration?.status!=="ok"){console.error("Production database/migration is not ready.",h?.migration);process.exit(1)}; console.log("Production DB verified:",h.migration.latest)' "$body"
       - name: Quality gate
         run: pnpm check
       - name: Build panel
         run: pnpm build
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL || 'postgresql://blockctrl:blockctrl@127.0.0.1:5432/blockctrl' }}
           NEXT_PUBLIC_APP_URL: ${{ vars.NEXT_PUBLIC_APP_URL }}
           BLOCKCTRL_PUBLIC_URL: ${{ vars.BLOCKCTRL_PUBLIC_URL }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
