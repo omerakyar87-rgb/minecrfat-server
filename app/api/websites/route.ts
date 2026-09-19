@@ -383,6 +383,8 @@ export async function GET(){
     servers:availableServers,
     canCreate:canCreate(role),
     integrationConfigured:Boolean(cfg.token&&(cfg.teamId||cfg.teamSlug)),
+    hostingMode:cfg.token&&(cfg.teamId||cfg.teamSlug)?'vercel':'internal',
+    internalHosting:true,
     suffix:suffix(),
   },{headers:{'Cache-Control':'private, no-store'}})
 }
@@ -401,14 +403,16 @@ export async function POST(request:NextRequest){
     const page=builder.pages.find(item=>item.slug===requestedSlug)
     if(!page)return runtimeJson({error:'Sayfa bulunamadı.'},404)
     const mode=pageAccessMode(page)
+    const internal=body.internal===true
+    const basePath=internal?`/site/${site.slug}`:''
     if(mode!=='public'){
       const token=(request.headers.get('authorization')||'').replace(/^Bearer\s+/i,'').trim()
       const member=await runtimeMember(site.id,token)
-      if(!member)return runtimeJson({error:'Oturum gerekli.'},401)
+      if(!member)return runtimeJson({error:'Oturum gerekli.',loginPageSlug:builder.auth.loginPageSlug},401)
       if(!memberCanAccess(page,member))return runtimeJson({error:'Bu sayfaya erişim yetkiniz yok.'},403)
     }
     const configuredRuntimeBase=runtimeBase(request)
-    return new NextResponse(renderPublishedPage({name:site.name,slug:site.slug},page,builder,configuredRuntimeBase),{status:200,headers:{...runtimeCors,'Content-Type':'text/html; charset=utf-8','X-Content-Type-Options':'nosniff','Vary':'Authorization'}})
+    return new NextResponse(renderPublishedPage({name:site.name,slug:site.slug},page,builder,configuredRuntimeBase,basePath),{status:200,headers:{...runtimeCors,'Content-Type':'text/html; charset=utf-8','X-Content-Type-Options':'nosniff','Vary':'Authorization'}})
   }
 
   const a=await actor()
@@ -419,7 +423,7 @@ export async function POST(request:NextRequest){
   if(action==='create'){
     if(!canCreate(role))return NextResponse.json({error:'Website oluşturma yetkiniz yok.'},{status:403})
     const cfg=vercelConfig()
-    if(!cfg.token||(!cfg.teamId&&!cfg.teamSlug))return NextResponse.json({error:'Vercel yayın entegrasyonu eksik. VERCEL_TOKEN ve VERCEL_TEAM_ID/VERCEL_ORG_ID tanımlayın.'},{status:503})
+    const externalHosting=Boolean(cfg.token&&(cfg.teamId||cfg.teamSlug))
     const name=String(body.name||'').trim()
     const slug=cleanSlug(body.slug||name)
     const description=String(body.description||'').trim().slice(0,180)
@@ -442,6 +446,21 @@ export async function POST(request:NextRequest){
       const row=existing[0]
       if(row.userId===a.id)return NextResponse.json({ok:true,website:row,idempotent:true})
       return NextResponse.json({error:'Bu website yayın adı zaten kullanılıyor.'},{status:409})
+    }
+
+    if(!externalHosting){
+      const internalUrl=`${configuredRuntimeBase}/site/${slug}/`
+      const created=await db.transaction(async tx=>{
+        const [row]=await tx.insert(websites).values({
+          userId:a.id,serverId:serverId||null,name,slug,projectName,template,description:description||null,builderData:initialBuilder,
+          deploymentUrl:internalUrl,productionUrl:internalUrl,status:'ready',publishedAt:new Date(),
+        }).returning()
+        await syncAuthSettings(row.id,initialBuilder,tx)
+        await syncWebsiteManagedPublicData(row.id,a.id,initialBuilder,tx)
+        await tx.insert(auditLog).values({userId:a.id,action:'website.create',resourceType:'website',resourceId:row.id,details:{slug,projectName,template,hosting:'internal',serverId:serverId||null,pages:initialBuilder.pages.length}})
+        return row
+      })
+      return NextResponse.json({ok:true,website:created,hosting:'internal'},{status:201})
     }
 
     let projectId=''
@@ -550,13 +569,23 @@ export async function POST(request:NextRequest){
 
   if(action==='publish'){
     const cfg=vercelConfig()
-    if(!cfg.token||(!cfg.teamId&&!cfg.teamSlug))return NextResponse.json({error:'Vercel yayın entegrasyonu eksik.'},{status:503})
+    const externalHosting=Boolean(cfg.token&&(cfg.teamId||cfg.teamSlug)&&site.vercelProjectId)
     const builderData=await prepareBuilderData(body.builderData??site.builderData,site.name,a.id,role,site.serverId||'')
     validateAuthPages(builderData)
     const configuredRuntimeBase=runtimeBase(request)
     if(!configuredRuntimeBase)return NextResponse.json({error:'Production yayını için güvenli panel runtime URL adresi çözümlenemedi.'},{status:503})
     const runtimeOrigin=configuredRuntimeBase.replace(/\/$/,'')
-    if(!site.vercelProjectId)return NextResponse.json({error:'Website Vercel projesi bulunamadı.'},{status:409})
+    if(!externalHosting){
+      const internalUrl=`${runtimeOrigin}/site/${site.slug}/`
+      const updated=await db.transaction(async tx=>{
+        await syncAuthSettings(site.id,builderData,tx)
+        await syncWebsiteManagedPublicData(site.id,site.userId,builderData,tx)
+        const [row]=await tx.update(websites).set({serverId:builderData.binding.serverId||null,builderData,deploymentUrl:internalUrl,productionUrl:internalUrl,status:'ready',publishedAt:new Date(),lastError:null,updatedAt:new Date()}).where(eq(websites.id,site.id)).returning()
+        await tx.insert(auditLog).values({userId:a.id,action:'website.publish',resourceType:'website',resourceId:site.id,details:{hosting:'internal',serverId:builderData.binding.serverId||null,pages:builderData.pages.length}})
+        return row
+      })
+      return NextResponse.json({ok:true,website:updated,hosting:'internal'})
+    }
     try{
       await db.transaction(async tx=>{
         await syncAuthSettings(site.id,builderData,tx)
@@ -584,7 +613,12 @@ export async function POST(request:NextRequest){
   }
 
   if(action==='refresh'){
-    if(!site.deploymentId)return NextResponse.json({error:'Bu website için deployment kaydı yok.'},{status:409})
+    if(!site.deploymentId||!site.vercelProjectId){
+      const configuredRuntimeBase=runtimeBase(request)
+      const internalUrl=configuredRuntimeBase?`${configuredRuntimeBase.replace(/\/$/,'')}/site/${site.slug}/`:site.productionUrl
+      const [updated]=await db.update(websites).set({status:'ready',productionUrl:internalUrl||site.productionUrl,deploymentUrl:internalUrl||site.deploymentUrl,publishedAt:site.publishedAt||new Date(),lastError:null,updatedAt:new Date()}).where(eq(websites.id,site.id)).returning()
+      return NextResponse.json({ok:true,website:updated,hosting:'internal'})
+    }
     try{
       const deployment=await vercel(`/v13/deployments/${encodeURIComponent(site.deploymentId)}`,{method:'GET'})
       const readyState=String(deployment.readyState||deployment.state||'QUEUED').toUpperCase()
