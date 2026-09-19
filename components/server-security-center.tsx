@@ -199,7 +199,7 @@ function XrayProtectionCard({protection,analytics,running,busy,act,onNavigate}:{
   const apply=(enabled=true)=>act('xray-config',{config:{enabled,profile,engineMode,maxBlockHeight,updateRadius,hideAir,usePermission,analytics:true}})
   const quick=(p:'performance'|'balanced'|'strict')=>act('xray-config',{config:{enabled:true,profile:p,analytics:true}})
   const severityClass=(s:XrayPlayer['severity'])=>s==='high'?'text-red-300 bg-red-500/10':s==='medium'?'text-amber-300 bg-amber-500/10':s==='low'?'text-blue-300 bg-blue-500/10':'text-emerald-300 bg-emerald-500/10'
-  return <div className="space-y-3">{actionConfirm.dialog}xl:grid-cols-[.85fr_1.15fr]">
+  return <div className="space-y-3">{actionConfirm.dialog}<div className="grid gap-3 xl:grid-cols-[.85fr_1.15fr]">
     <Card title="İleri seviye X-Ray engelleme" subtitle="Paper/Purpur'da gerçek sunucu-tarafı chunk obfuscation kullanılır. Geçerli Paper motorları Mode 1 ve Mode 2'dir; güçlü profilde Mode 2 kullanılır." icon={Fingerprint}>
       <Row label="Loader" value={protection?.loader||'Bilinmiyor'}/>
       <Row label="Koruma motoru" value={supported?(protection?.provider||'Paper Anti-Xray'):'Entegrasyon gerekli'}/>
