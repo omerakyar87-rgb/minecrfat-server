@@ -17,7 +17,7 @@ import { WebsiteManager } from '@/components/website-manager'
 
 type AppRole='manager'|'admin'|'guide'|'member'
 type ServerSection='overview'|'settings'|'console'|'logs'|'players'|'software'|'files'|'worlds'|'backups'|'network'|'integrations'|'security'|'schedules'|'databases'
-type ServerRow={id:string;userId:string;nodeId:string;name:string;loader:string;mcVersion:string;loaderVersion?:string;status:string;port:number;publicHost?:string;connectionAddress?:string;memoryMb:number;installProgress:number;installError?:string;playerCount:number;itemTrackingEnabled:boolean;serverSubtitle?:string|null;coverImageUrl?:string|null;coverVideoUrl?:string|null;cardTransition?:string|null}
+type ServerRow={id:string;userId:string;nodeId:string;name:string;loader:string;mcVersion:string;loaderVersion?:string;status:string;port:number;publicHost?:string;connectionAddress?:string;memoryMb:number;installProgress:number;installError?:string;playerCount:number;maxPlayers?:number;itemTrackingEnabled:boolean;serverSubtitle?:string|null;coverImageUrl?:string|null;coverVideoUrl?:string|null;cardTransition?:string|null}
 type Permission={userId:string;serverId:string;canStart:boolean;canStop:boolean;canRestart:boolean;canConsole:boolean;canFiles:boolean;canBackup:boolean;canReset:boolean;canViewLostItems:boolean;canManageLostItems:boolean;canWebsiteData:boolean;sections?:string[]}
 type PanelData={nodes:Array<{id:string;name:string;status:string;lastHeartbeat:string|null;memoryUsedMb:number;memoryTotalMb:number;cpuPercent:number;diskUsedGb:number;diskTotalGb:number}>;servers:ServerRow[];lostItems:Array<{id:string;serverId:string;playerName:string|null;itemId:string;itemName:string;amount:number;reason:string;world:string;x:number;y:number;z:number;occurredAt:string}>;operations:Array<{id:number;serverId:string;operation:string;status:string;message:string|null;createdAt:string}>;users:Array<{id:string;name:string;email:string;role:string;approved:boolean}>;permissions:Permission[];actor:{id:string;name:string;email:string;role:string}}
 type Catalog={minecraft:string[];loaderVersions:string[]}
@@ -77,31 +77,49 @@ function ServerCard({server,permission,manager,onSelect,onEdit,command}:{server:
   const running=server.status==='running';const canStart=manager||!!permission?.canStart;const canStop=manager||!!permission?.canStop;const canRestart=manager||!!permission?.canRestart;const canEdit=manager||!!permission?.canReset
   const busyState=['queued','downloading','installing'].includes(server.status)
   const address=server.connectionAddress??`${server.publicHost??'IP bekleniyor'}:${server.port}`
-  return <Card className="group relative overflow-hidden rounded-2xl border border-sky-400/30 bg-[#071827]/92 text-slate-100 shadow-[0_22px_65px_rgba(0,0,0,.22),0_0_38px_rgba(14,165,233,.04)] backdrop-blur-xl transition hover:border-sky-400/50 hover:shadow-[0_24px_80px_rgba(0,0,0,.28),0_0_42px_rgba(14,165,233,.08)]">
-    <CardContent className="p-5 md:p-6">
-      <div className="flex flex-col gap-5 xl:flex-row xl:items-center">
-        <div className="flex min-w-0 flex-1 items-start gap-4">
-          <div className="relative size-16 shrink-0 overflow-hidden rounded-xl border border-sky-400/20 bg-[linear-gradient(145deg,#12324a,#071522)] shadow-[inset_0_0_22px_rgba(56,189,248,.08)]">
-            {server.coverVideoUrl?<video className="absolute inset-0 size-full object-cover" src={server.coverVideoUrl} autoPlay muted loop playsInline/>:server.coverImageUrl?<img className="absolute inset-0 size-full object-cover" src={server.coverImageUrl} alt=""/>:<div className="grid size-full place-items-center bg-[radial-gradient(circle_at_35%_25%,rgba(74,222,128,.24),transparent_35%),linear-gradient(145deg,#143629,#0a1824)]"><Box className="size-8 text-emerald-300"/></div>}
-          </div>
-          <div className="min-w-0 pt-0.5">
-            <div className="flex flex-wrap items-center gap-3"><h2 className="truncate text-xl font-bold tracking-[-.02em] text-white">{server.name}</h2><Badge className={running?'border border-emerald-400/30 bg-emerald-400/10 text-emerald-300 hover:bg-emerald-400/10':'border border-slate-500/25 bg-slate-500/10 text-slate-300'}>{running?'● Çalışıyor':labels[server.status]??server.status}</Badge></div>
-            <p className="mt-1.5 truncate font-mono text-sm text-sky-100/65">{server.loader} {server.mcVersion} <span className="px-1 text-sky-400/35">·</span> {address}</p>
-            {server.serverSubtitle&&<p className="mt-1 truncate text-xs text-slate-500">{server.serverSubtitle}</p>}
-          </div>
+  const playerText=server.maxPlayers&&server.maxPlayers>0?`${server.playerCount}/${server.maxPlayers}`:String(server.playerCount)
+  return <Card className="group relative overflow-hidden rounded-[22px] border border-white/10 bg-[linear-gradient(145deg,rgba(7,24,39,.98),rgba(4,17,28,.96))] text-slate-100 shadow-[0_22px_70px_rgba(0,0,0,.28)] transition duration-300 hover:-translate-y-0.5 hover:border-cyan-400/30 hover:shadow-[0_30px_90px_rgba(0,0,0,.34),0_0_45px_rgba(14,165,233,.06)]">
+    <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-cyan-300/45 to-transparent"/>
+    <CardContent className="p-0">
+      <div className="flex items-start gap-4 border-b border-white/[.06] px-5 py-5 md:px-6">
+        <div className="relative size-14 shrink-0 overflow-hidden rounded-2xl border border-white/10 bg-[#07121c] shadow-[inset_0_0_26px_rgba(56,189,248,.06)]">
+          {server.coverVideoUrl?<video className="absolute inset-0 size-full object-cover" src={server.coverVideoUrl} autoPlay muted loop playsInline/>:server.coverImageUrl?<img className="absolute inset-0 size-full object-cover" src={server.coverImageUrl} alt=""/>:<div className="grid size-full place-items-center bg-[radial-gradient(circle_at_35%_25%,rgba(74,222,128,.22),transparent_35%),linear-gradient(145deg,#143629,#07131e)]"><Box className="size-7 text-emerald-300"/></div>}
+          <span className={`absolute bottom-1 right-1 size-2.5 rounded-full border-2 border-[#071827] ${running?'bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,.75)]':'bg-slate-500'}`}/>
         </div>
-        <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-          {canStart&&<Button size="sm" className="h-10 rounded-xl border border-sky-400/45 bg-sky-500/15 px-4 text-sky-200 hover:bg-sky-500/25" onClick={()=>command(server,'start')} disabled={!['stopped','ready','crashed'].includes(server.status)}><Play className="size-4"/>Başlat</Button>}
-          {canStop&&<Button size="sm" variant="outline" className="h-10 rounded-xl border-slate-600/60 bg-[#091929]/70 px-4 text-slate-200 hover:border-sky-400/35 hover:bg-sky-400/10" onClick={()=>command(server,'stop')} disabled={!running}><Square className="size-4"/>Durdur</Button>}
-          {canRestart&&<Button size="sm" variant="outline" className="h-10 rounded-xl border-slate-600/60 bg-[#091929]/70 px-4 text-slate-200 hover:border-sky-400/35 hover:bg-sky-400/10" onClick={()=>command(server,'restart')} disabled={!running}><RefreshCw className="size-4"/>Restart</Button>}
-          {canEdit&&<Button size="sm" variant="outline" className="h-10 rounded-xl border-slate-600/60 bg-[#091929]/70 px-4 text-slate-200 hover:border-sky-400/35 hover:bg-sky-400/10" onClick={onEdit} disabled={busyState}><Pencil className="size-4"/>Düzenle</Button>}
-          {manager&&<Button size="sm" variant="outline" className="h-10 rounded-xl border-red-500/45 bg-red-500/10 px-4 text-red-300 hover:bg-red-500/20 hover:text-red-200" onClick={()=>command(server,'delete-server',true)} disabled={busyState}><Trash2 className="size-4"/>Sil</Button>}
-          <div className="mx-1 hidden h-10 w-px bg-sky-400/15 xl:block"/>
-          <Button size="sm" variant="ghost" className="h-10 rounded-xl px-4 font-semibold text-sky-300 hover:bg-sky-400/10 hover:text-sky-200" onClick={onSelect}>Yönet <ChevronRight className="size-4"/></Button>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2"><h2 className="truncate text-lg font-bold tracking-[-.02em] text-white md:text-xl">{server.name}</h2>{server.serverSubtitle&&<span className="truncate text-xs text-slate-500">· {server.serverSubtitle}</span>}</div>
+          <p className="mt-1 text-xs font-medium text-sky-200/70">Minecraft Sunucusu</p>
+        </div>
+        <div className="shrink-0 text-right">
+          <p className="text-[10px] font-semibold uppercase tracking-[.14em] text-slate-600">Oyuncular</p>
+          <div className="mt-1 flex items-center justify-end gap-2"><b className="font-mono text-sm text-white">{playerText}</b><span className={`size-2 rounded-full ${running?'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,.7)]':'bg-slate-600'}`}/></div>
         </div>
       </div>
-      {busyState&&<div className="mt-5 border-t border-sky-400/10 pt-4"><div className="mb-2 flex justify-between text-xs text-sky-100/55"><span>Kurulum</span><span>%{server.installProgress}</span></div><Progress value={server.installProgress}/></div>}
-      {server.installError&&<p className="mt-4 rounded-xl border border-red-400/20 bg-red-500/10 p-3 text-sm text-red-300">{server.installError}</p>}
+
+      <div className="px-5 py-4 md:px-6">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0">
+            <p className="truncate font-mono text-[13px] text-cyan-100/65"><span className="text-cyan-300/80">{server.loader}</span> <span className="text-slate-500">{server.mcVersion}</span><span className="px-2 text-white/15">·</span>{address}</p>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <Badge className={running?'border border-emerald-400/25 bg-emerald-400/10 text-emerald-300 hover:bg-emerald-400/10':'border border-slate-500/20 bg-slate-500/10 text-slate-300'}>{running?'● Çalışıyor':labels[server.status]??server.status}</Badge>
+              {server.loaderVersion&&<span className="rounded-full border border-white/[.06] bg-white/[.025] px-2.5 py-1 text-[10px] text-slate-500">Loader {server.loaderVersion}</span>}
+            </div>
+          </div>
+          <Button size="sm" variant="ghost" className="hidden h-9 shrink-0 rounded-xl px-3 text-cyan-300 hover:bg-cyan-400/10 hover:text-cyan-200 lg:inline-flex" onClick={onSelect}>Yönet <ChevronRight className="size-4"/></Button>
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-white/[.06] pt-4">
+          {canStart&&<Button size="sm" className="h-9 rounded-xl border border-emerald-400/25 bg-emerald-500/15 px-3 text-emerald-200 hover:bg-emerald-500/25" onClick={()=>command(server,'start')} disabled={!['stopped','ready','crashed'].includes(server.status)}><Play className="size-3.5"/>Başlat</Button>}
+          {canStop&&<Button size="sm" variant="outline" className="h-9 rounded-xl border-white/10 bg-white/[.025] px-3 text-slate-200 hover:border-white/20 hover:bg-white/[.055]" onClick={()=>command(server,'stop')} disabled={!running}><Square className="size-3.5"/>Durdur</Button>}
+          {canRestart&&<Button size="sm" variant="outline" className="h-9 rounded-xl border-white/10 bg-white/[.025] px-3 text-slate-200 hover:border-white/20 hover:bg-white/[.055]" onClick={()=>command(server,'restart')} disabled={!running}><RefreshCw className="size-3.5"/>Restart</Button>}
+          {canEdit&&<Button size="sm" variant="outline" className="h-9 rounded-xl border-white/10 bg-white/[.025] px-3 text-slate-200 hover:border-cyan-400/25 hover:bg-cyan-400/[.07]" onClick={onEdit} disabled={busyState}><Pencil className="size-3.5"/>Düzenle</Button>}
+          {manager&&<Button size="sm" variant="outline" className="h-9 rounded-xl border-red-500/20 bg-red-500/[.08] px-3 text-red-300 hover:bg-red-500/15 hover:text-red-200" onClick={()=>command(server,'delete-server',true)} disabled={busyState}><Trash2 className="size-3.5"/>Sil</Button>}
+          <Button size="sm" variant="ghost" className="ml-auto h-9 rounded-xl px-3 font-semibold text-cyan-300 hover:bg-cyan-400/10 hover:text-cyan-200 lg:hidden" onClick={onSelect}>Yönet <ChevronRight className="size-4"/></Button>
+        </div>
+
+        {busyState&&<div className="mt-4 rounded-xl border border-cyan-400/10 bg-cyan-400/[.035] p-3"><div className="mb-2 flex justify-between text-[11px] text-cyan-100/55"><span>Kurulum devam ediyor</span><span>%{server.installProgress}</span></div><Progress value={server.installProgress}/></div>}
+        {server.installError&&<p className="mt-4 rounded-xl border border-red-400/20 bg-red-500/10 p-3 text-sm text-red-300">{server.installError}</p>}
+      </div>
     </CardContent>
   </Card>
 }
