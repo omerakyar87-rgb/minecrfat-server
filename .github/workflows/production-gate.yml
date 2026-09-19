@@ -38,15 +38,12 @@ jobs:
         shell: bash
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: |
           set -euo pipefail
-          missing=0
-          for name in VERCEL_TOKEN VERCEL_ORG_ID VERCEL_PROJECT_ID; do
-            if [ -z "${!name:-}" ]; then echo "::error::Missing required deploy secret: $name"; missing=1; fi
-          done
-          exit "$missing"
+          if [ -z "${VERCEL_TOKEN:-}" ]; then
+            echo "::error::Missing required deploy secret: VERCEL_TOKEN"
+            exit 1
+          fi
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Verify or apply database migrations
@@ -84,13 +81,13 @@ jobs:
       - name: Pull Vercel production configuration
         run: pnpm dlx vercel@latest pull --yes --environment=production --token="${{ secrets.VERCEL_TOKEN }}"
         env:
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_ORG_ID: team_zEq1EFLT8wmCCnkESQPGWhTO
+          VERCEL_PROJECT_ID: prj_Hif2b4E7LVk50tinTQwEhP0jt5cm
       - name: Vercel production build
         run: pnpm dlx vercel@latest build --prod --token="${{ secrets.VERCEL_TOKEN }}"
         env:
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_ORG_ID: team_zEq1EFLT8wmCCnkESQPGWhTO
+          VERCEL_PROJECT_ID: prj_Hif2b4E7LVk50tinTQwEhP0jt5cm
       - name: Deploy prebuilt production artifact
         shell: bash
         run: |
@@ -98,8 +95,8 @@ jobs:
           url=$(pnpm dlx vercel@latest deploy --prebuilt --prod --yes --token="${{ secrets.VERCEL_TOKEN }}" | tail -n 1)
           echo "DEPLOYMENT_URL=${url}" >> "${GITHUB_ENV}"
         env:
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_ORG_ID: team_zEq1EFLT8wmCCnkESQPGWhTO
+          VERCEL_PROJECT_ID: prj_Hif2b4E7LVk50tinTQwEhP0jt5cm
       - name: Production smoke test
         run: pnpm test:e2e
         env:
