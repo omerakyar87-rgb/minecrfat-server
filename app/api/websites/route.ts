@@ -107,14 +107,14 @@ function starterHtml(name:string,description:string,template:string){
 
 type BuilderBackground={type:'color'|'gradient'|'image'|'video';color:string;gradient:string;mediaUrl:string;overlayColor:string;overlayOpacity:number;position:'center'|'top'|'bottom'|'left'|'right'}
 type BuilderItem={title:string;description:string;value?:string;image?:string;href?:string}
-type BuilderLiveData={mode:'static'|'auto'|'source';source:'server-status'|'players'|'metrics'|'map'|'lost-items'|'leaderboard-kills'|'leaderboard-money'|'leaderboard-health'|'bans'|'custom-json';serverId:string;endpoint:string;refreshSeconds:number}
+type BuilderLiveData={mode:'static'|'auto'|'source';source:'server-status'|'players'|'metrics'|'map'|'support'|'store'|'wiki'|'lost-items'|'leaderboard-kills'|'leaderboard-money'|'leaderboard-health'|'leaderboard-playtime'|'bans'|'custom-json';serverId:string;endpoint:string;refreshSeconds:number}
 type BuilderAuth={enabled:boolean;allowRegistration:boolean;registrationMode:'website'|'server'|'both'|'closed';loginMode:'email'|'minecraft'|'both';serverId:string;sessionDays:number;defaultRole:string;loginPageSlug:string;registerPageSlug:string;afterLoginPageSlug:string}
 type BuilderSection={id:string;type:string;variant:string;label:string;title:string;subtitle:string;body:string;buttonText:string;buttonHref:string;secondaryButtonText:string;secondaryButtonHref:string;items:BuilderItem[];liveData:BuilderLiveData;background:BuilderBackground;settings:{width:'boxed'|'wide'|'full';align:'left'|'center'|'right';paddingY:number;minHeight:number;placement:'flow'|'sticky-top'|'fixed-top'|'fixed-bottom';visible:boolean;rounded:number}}
 type BuilderPage={id:string;name:string;slug:string;seoTitle:string;seoDescription:string;showInNav:boolean;pageType:'standard'|'login'|'register'|'member-dashboard';requiresAuth:boolean;accessMode:'public'|'authenticated'|'assigned'|'role';allowedRoles:string[];sections:BuilderSection[]}
 type BuilderBinding={serverId:string;inheritLiveData:boolean}
 type BuilderData={version:1;theme:{primary:string;secondary:string;background:string;text:string;muted:string;fontFamily:string;radius:number};binding:BuilderBinding;auth:BuilderAuth;pages:BuilderPage[]}
 const BUILDER_TYPES=new Set(['navbar','hero','features','stats','content','gallery','map','pricing','testimonials','team','faq','contact','cta','footer','minecraft','support','banlist','leaderboard','wiki','guide','connect','store','login','register','member-dashboard'])
-const LIVE_SOURCES=new Set(['server-status','players','metrics','map','lost-items','leaderboard-kills','leaderboard-money','leaderboard-health','bans','custom-json'])
+const LIVE_SOURCES=new Set(['server-status','players','metrics','map','support','store','wiki','lost-items','leaderboard-kills','leaderboard-money','leaderboard-health','leaderboard-playtime','bans','custom-json'])
 const BUILDER_PLACEMENTS=new Set(['flow','sticky-top','fixed-top','fixed-bottom'])
 const BUILDER_WIDTHS=new Set(['boxed','wide','full'])
 const BUILDER_ALIGNS=new Set(['left','center','right'])
@@ -125,7 +125,7 @@ function safeCssGradient(value:unknown){const v=String(value??'').trim().slice(0
 function safeMediaUrl(value:unknown){const v=String(value??'').trim().slice(0,2000);if(!v)return '';try{const u=new URL(v);return u.protocol==='https:'?v:''}catch{return ''}}
 function safeHref(value:unknown){const v=String(value??'').trim().slice(0,600);if(!v)return '#';if(v.startsWith('/')||v.startsWith('#')||v.startsWith('mailto:')||v.startsWith('tel:'))return v;try{const u=new URL(v);return u.protocol==='https:'?v:'#'}catch{return '#'}}
 function safeEndpoint(value:unknown){const v=String(value??'').trim().slice(0,2000);if(!v)return '';try{const u=new URL(v);return u.protocol==='https:'?v:''}catch{return ''}}
-function defaultLiveData(type:string,variant=''):BuilderLiveData{if(type==='map')return {mode:'auto',source:'map',serverId:'',endpoint:'',refreshSeconds:30};if(type==='minecraft'||type==='stats'||type==='connect'||type==='member-dashboard')return {mode:'auto',source:'server-status',serverId:'',endpoint:'',refreshSeconds:15};if(type==='banlist')return {mode:'auto',source:'bans',serverId:'',endpoint:'',refreshSeconds:30};if(type==='leaderboard')return {mode:'auto',source:variant.includes('3')?'leaderboard-money':variant.includes('4')?'leaderboard-health':'leaderboard-kills',serverId:'',endpoint:'',refreshSeconds:30};return {mode:'static',source:'server-status',serverId:'',endpoint:'',refreshSeconds:30}}
+function defaultLiveData(type:string,variant=''):BuilderLiveData{if(type==='map')return {mode:'auto',source:'map',serverId:'',endpoint:'',refreshSeconds:30};if(type==='support')return {mode:'auto',source:'support',serverId:'',endpoint:'',refreshSeconds:30};if(type==='store')return {mode:'auto',source:'store',serverId:'',endpoint:'',refreshSeconds:60};if(type==='wiki')return {mode:'auto',source:'wiki',serverId:'',endpoint:'',refreshSeconds:60};if(type==='minecraft'||type==='stats'||type==='connect'||type==='member-dashboard')return {mode:'auto',source:'server-status',serverId:'',endpoint:'',refreshSeconds:15};if(type==='banlist')return {mode:'auto',source:'bans',serverId:'',endpoint:'',refreshSeconds:30};if(type==='leaderboard')return {mode:'auto',source:variant.includes('3')?'leaderboard-money':variant.includes('4')?'leaderboard-health':variant.includes('5')?'leaderboard-playtime':'leaderboard-kills',serverId:'',endpoint:'',refreshSeconds:30};return {mode:'static',source:'server-status',serverId:'',endpoint:'',refreshSeconds:30}}
 function normalizeBuilderData(input:unknown,siteName='Website'):BuilderData{
   const root=input&&typeof input==='object'&&!Array.isArray(input)?input as Record<string,unknown>:{}
   const themeRaw=root.theme&&typeof root.theme==='object'&&!Array.isArray(root.theme)?root.theme as Record<string,unknown>:{}
@@ -210,6 +210,27 @@ async function prepareBuilderData(input:unknown,siteName:string,userId:string,ro
 async function syncAuthSettings(websiteId:string,builder:BuilderData,executor:any=db){
   const auth=builder.auth
   await executor.insert(websiteAuthSettings).values({websiteId,registrationMode:auth.registrationMode,loginMode:auth.loginMode,serverId:auth.serverId||builder.binding.serverId||null,sessionDays:auth.sessionDays,defaultRole:auth.defaultRole,serverBridgeEnabled:auth.registrationMode==='server'||auth.registrationMode==='both',updatedAt:new Date()}).onConflictDoUpdate({target:websiteAuthSettings.websiteId,set:{registrationMode:auth.registrationMode,loginMode:auth.loginMode,serverId:auth.serverId||builder.binding.serverId||null,sessionDays:auth.sessionDays,defaultRole:auth.defaultRole,serverBridgeEnabled:auth.registrationMode==='server'||auth.registrationMode==='both',updatedAt:new Date()}})
+}
+const WEBSITE_MANAGED_PUBLIC_SOURCES=new Set<BuilderLiveData['source']>(['support','store','wiki'])
+function websitePublicSourceKey(websiteId:string,source:string){return `website:${websiteId}:${source}`}
+async function syncWebsiteManagedPublicData(websiteId:string,userId:string,builder:BuilderData,executor:any=db){
+  const grouped=new Map<string,{serverId:string;source:BuilderLiveData['source'];items:Array<{title:string;description:string;value:string;image?:string|null;href?:string|null}>}>()
+  for(const page of builder.pages)for(const section of page.sections){
+    if(section.liveData.mode==='static'||!WEBSITE_MANAGED_PUBLIC_SOURCES.has(section.liveData.source))continue
+    const serverId=section.liveData.serverId||builder.binding.serverId
+    if(!serverId)continue
+    const key=`${serverId}|${section.liveData.source}`
+    const group=grouped.get(key)||{serverId,source:section.liveData.source,items:[]}
+    for(const item of section.items){
+      if(group.items.length>=25)break
+      const href=safeHref(item.href)
+      group.items.push({title:textValue(item.title,80),description:textValue(item.description,500),value:textValue(item.value,120),image:safeMediaUrl(item.image)||null,href:href==='#'?null:href})
+    }
+    grouped.set(key,group)
+  }
+  for(const group of grouped.values()){
+    await executor.insert(serverWebsiteData).values({userId,serverId:group.serverId,source:websitePublicSourceKey(websiteId,group.source),data:{items:group.items},updatedAt:new Date()}).onConflictDoUpdate({target:[serverWebsiteData.serverId,serverWebsiteData.source],set:{userId,data:{items:group.items},updatedAt:new Date()}})
+  }
 }
 function validateAuthPages(builder:BuilderData){
   if(!builder.auth.enabled)return
@@ -438,6 +459,7 @@ export async function POST(request:NextRequest){
           productionUrl,status:STATUS_MAP[readyState]||'queued',
           publishedAt:readyState==='READY'?new Date():null,
         }).returning()
+        await syncWebsiteManagedPublicData(row.id,a.id,initialBuilder,tx)
         await tx.insert(auditLog).values({userId:a.id,action:'website.create',resourceType:'website',resourceId:row.id,details:{slug,projectName,template,deploymentId,serverId:serverId||null,pages:initialBuilder.pages.length,liveSections:initialBuilder.pages.reduce((sum,page)=>sum+page.sections.filter(section=>section.liveData.mode!=='static').length,0)}})
         return row
       })
@@ -470,6 +492,7 @@ export async function POST(request:NextRequest){
     }
     const updated=await db.transaction(async tx=>{
       await syncAuthSettings(site.id,builder,tx)
+      await syncWebsiteManagedPublicData(site.id,site.userId,builder,tx)
       const [row]=await tx.update(websites).set({serverId:serverId||null,builderData:builder,updatedAt:new Date(),lastError:null}).where(eq(websites.id,site.id)).returning()
       await tx.insert(auditLog).values({userId:a.id,action:'website.server.bind',resourceType:'website',resourceId:site.id,details:{from:oldServerId||null,to:serverId||null}})
       return row
@@ -507,6 +530,7 @@ export async function POST(request:NextRequest){
     validateAuthPages(builderData)
     const updated=await db.transaction(async tx=>{
       await syncAuthSettings(site.id,builderData,tx)
+      await syncWebsiteManagedPublicData(site.id,site.userId,builderData,tx)
       const [row]=await tx.update(websites).set({serverId:builderData.binding.serverId||null,builderData,updatedAt:new Date(),lastError:null}).where(eq(websites.id,site.id)).returning()
       await tx.insert(auditLog).values({userId:a.id,action:'website.builder.save',resourceType:'website',resourceId:site.id,details:{serverId:builderData.binding.serverId||null,pages:builderData.pages.length,sections:builderData.pages.reduce((sum,page)=>sum+page.sections.length,0)}})
       return row
@@ -526,6 +550,7 @@ export async function POST(request:NextRequest){
     try{
       await db.transaction(async tx=>{
         await syncAuthSettings(site.id,builderData,tx)
+        await syncWebsiteManagedPublicData(site.id,site.userId,builderData,tx)
         await tx.update(websites).set({serverId:builderData.binding.serverId||null,builderData,status:'building',lastError:null,updatedAt:new Date()}).where(eq(websites.id,site.id))
       })
       const deployment=await vercel('/v13/deployments',{method:'POST',body:JSON.stringify({
