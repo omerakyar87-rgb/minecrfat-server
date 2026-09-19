@@ -1,4 +1,6 @@
-import { createHash, randomBytes, randomUUID } from 'node:crypto'
+import { createHash, createSign, randomBytes, randomUUID } from 'node:crypto'
+import { lookup, resolveSrv } from 'node:dns/promises'
+import { createConnection } from 'node:net'
 import { headers } from 'next/headers'
 import { NextRequest, NextResponse } from 'next/server'
 import { and, desc, eq, inArray, lt, ne, or } from 'drizzle-orm'
@@ -60,6 +62,61 @@ function panelBaseUrl(request:NextRequest){
   return request.nextUrl.origin.replace(/\/$/,'')
 }
 
+function cleanNetworkHost(value:string){
+  const raw=value.trim().replace(/^https?:\/\//i,'').split('/')[0]
+  if(raw.startsWith('['))return raw.slice(1,raw.indexOf(']'))
+  const parts=raw.split(':');return parts.length===2?parts[0]:raw
+}
+async function tcpReachability(host:string,port:number,timeoutMs=4500){
+  const started=Date.now()
+  return new Promise<{reachable:boolean;latencyMs:number|null;error:string|null}>(resolve=>{
+    let done=false;const finish=(value:{reachable:boolean;latencyMs:number|null;error:string|null})=>{if(done)return;done=true;socket.destroy();resolve(value)}
+    const socket=createConnection({host,port})
+    const timer=setTimeout(()=>finish({reachable:false,latencyMs:null,error:'TCP bağlantı zaman aşımı'}),timeoutMs)
+    socket.once('connect',()=>{clearTimeout(timer);finish({reachable:true,latencyMs:Math.max(0,Date.now()-started),error:null})})
+    socket.once('error',error=>{clearTimeout(timer);finish({reachable:false,latencyMs:null,error:error.message.slice(0,240)})})
+  })
+}
+type OciConfig={region:string;tenancy:string;user:string;fingerprint:string;privateKey:string;nsgId:string;writeEnabled:boolean}
+function ociConfig(nodeId:string):OciConfig|null{
+  const region=String(process.env.OCI_REGION??'').trim(),tenancy=String(process.env.OCI_TENANCY_OCID??'').trim(),user=String(process.env.OCI_USER_OCID??'').trim(),fingerprint=String(process.env.OCI_FINGERPRINT??'').trim()
+  const encoded=String(process.env.OCI_PRIVATE_KEY_B64??'').trim(),raw=String(process.env.OCI_PRIVATE_KEY??'').replace(/\\n/g,'\n').trim(),privateKey=encoded?Buffer.from(encoded,'base64').toString('utf8'):raw
+  let mapped='';try{const map=JSON.parse(String(process.env.OCI_NODE_NSGS??'{}')) as Record<string,string>;mapped=String(map[nodeId]??'').trim()}catch{}
+  const nsgId=mapped||String(process.env.OCI_NSG_OCID??'').trim()
+  if(!region||!tenancy||!user||!fingerprint||!privateKey||!nsgId)return null
+  return {region,tenancy,user,fingerprint,privateKey,nsgId,writeEnabled:String(process.env.OCI_NSG_WRITE_ENABLED??'false').toLowerCase()==='true'}
+}
+async function ociRequest(config:OciConfig,method:'GET'|'POST',path:string,body?:Record<string,unknown>){
+  const host=`iaas.${config.region}.oraclecloud.com`,date=new Date().toUTCString(),bodyText=body?JSON.stringify(body):''
+  const headerNames=['(request-target)','host','date'];const lines=[`(request-target): ${method.toLowerCase()} ${path}`,`host: ${host}`,`date: ${date}`]
+  const requestHeaders:Record<string,string>={host,date,accept:'application/json'}
+  if(body){const digest=createHash('sha256').update(bodyText).digest('base64');headerNames.push('x-content-sha256','content-type','content-length');lines.push(`x-content-sha256: ${digest}`,'content-type: application/json',`content-length: ${Buffer.byteLength(bodyText)}`);requestHeaders['x-content-sha256']=digest;requestHeaders['content-type']='application/json';requestHeaders['content-length']=String(Buffer.byteLength(bodyText))}
+  const signer=createSign('RSA-SHA256');signer.update(lines.join('\n'));signer.end();const signature=signer.sign(config.privateKey,'base64')
+  requestHeaders.authorization=`Signature version="1",keyId="${config.tenancy}/${config.user}/${config.fingerprint}",algorithm="rsa-sha256",headers="${headerNames.join(' ')}",signature="${signature}"`
+  const response=await fetch(`https://${host}${path}`,{method,headers:requestHeaders,body:body?bodyText:undefined,cache:'no-store',signal:AbortSignal.timeout(8000)})
+  const text=await response.text();let data:any=null;try{data=text?JSON.parse(text):null}catch{data={raw:text.slice(0,1000)}}
+  if(!response.ok)throw new Error(`OCI API HTTP ${response.status}: ${String(data?.message??data?.code??'request failed').slice(0,240)}`)
+  return {data,requestId:response.headers.get('opc-request-id')}
+}
+function ociTcpRuleCovers(rule:any,port:number){const range=rule?.tcpOptions?.destinationPortRange;const min=Number(range?.min??-1),max=Number(range?.max??-1);return rule?.direction==='INGRESS'&&String(rule?.protocol)==='6'&&rule?.isValid!==false&&min<=port&&max>=port}
+async function ociNsgStatus(nodeId:string,port:number){
+  const config=ociConfig(nodeId);if(!config)return{status:'not-connected',configured:false,writeEnabled:false,portAllowed:null,detail:'OCI NSG API için region, kullanıcı/tenancy OCID, fingerprint, signing key ve NSG OCID yapılandırılmalı.'}
+  try{const path=`/20160918/networkSecurityGroups/${encodeURIComponent(config.nsgId)}/securityRules?direction=INGRESS&limit=1000`;const {data,requestId}=await ociRequest(config,'GET',path);const rules=Array.isArray(data)?data:[];const matching=rules.filter(rule=>ociTcpRuleCovers(rule,port));return{status:'connected',configured:true,writeEnabled:config.writeEnabled,portAllowed:matching.length>0,ingressRules:rules.length,matchingRules:matching.map(rule=>({id:rule.id??null,source:rule.source??null,description:rule.description??null,isStateless:Boolean(rule.isStateless)})).slice(0,10),requestId,nsg:`…${config.nsgId.slice(-12)}`,detail:matching.length?`OCI NSG Minecraft TCP ${port} için ingress kuralı içeriyor.`:`OCI NSG bağlı ancak TCP ${port} ingress kuralı bulunamadı.`}}catch(error){return{status:'error',configured:true,writeEnabled:config.writeEnabled,portAllowed:null,detail:error instanceof Error?error.message:'OCI NSG sorgusu başarısız'}}
+}
+async function ociEnsureMinecraftPort(nodeId:string,port:number,cidr:string){
+  const config=ociConfig(nodeId);if(!config)throw new Error('OCI NSG yapılandırması eksik');if(!config.writeEnabled)throw new Error('OCI NSG yazma işlemleri kapalı. OCI_NSG_WRITE_ENABLED=true olmadan kural değiştirilemez.')
+  if(!/^((?:\d{1,3}\.){3}\d{1,3})\/(?:[0-9]|[12][0-9]|3[0-2])$/.test(cidr)&&cidr!=='0.0.0.0/0')throw new Error('Geçersiz IPv4 CIDR')
+  const status=await ociNsgStatus(nodeId,port);if(status.status==='connected'&&status.portAllowed)return{changed:false,status}
+  const body={securityRules:[{direction:'INGRESS',protocol:'6',source:cidr,sourceType:'CIDR_BLOCK',isStateless:false,tcpOptions:{destinationPortRange:{min:port,max:port}},description:`BlockCtrl Minecraft TCP ${port}`}]} as Record<string,unknown>
+  const path=`/20160918/networkSecurityGroups/${encodeURIComponent(config.nsgId)}/actions/addSecurityRules`;const result=await ociRequest(config,'POST',path,body);return{changed:true,requestId:result.requestId,status:await ociNsgStatus(nodeId,port)}
+}
+async function externalNetworkDiagnostics(host:string,port:number,nodeId:string){
+  const dns=await lookup(host,{all:true,verbatim:true}).then(rows=>rows.map(row=>({address:row.address,family:row.family}))).catch(()=>[] as Array<{address:string;family:number}>)
+  const srv=await resolveSrv(`_minecraft._tcp.${host}`).then(rows=>rows.sort((a,b)=>a.priority-b.priority||b.weight-a.weight).map(row=>({name:row.name,port:row.port,priority:row.priority,weight:row.weight}))).catch(()=>[] as Array<{name:string;port:number;priority:number;weight:number}>)
+  const targetHost=srv[0]?.name||host;const targetPort=srv[0]?.port||port
+  const [tcp,oracleNsg]=await Promise.all([tcpReachability(targetHost,targetPort),ociNsgStatus(nodeId,port)])
+  return {checkedAt:new Date().toISOString(),requested:{host,port},dns,srv,effectiveTarget:{host:targetHost,port:targetPort,viaSrv:srv.length>0},tcp,oracleNsg}
+}
 
 function nextScheduleAt(input:{cadence:string;timeOfDay?:string|null;weekday?:number|null;intervalMinutes?:number|null;timezoneOffsetMinutes?:number|null}, from=new Date()){
   const cadence=input.cadence
@@ -144,7 +201,7 @@ async function getPanel(request:NextRequest) {
     const maySeeLostItems=result.fullAccess||result.isOwner||!!result.permission?.canViewLostItems||!!result.permission?.canManageLostItems
     const maySeeSchedules=result.fullAccess||result.sections.includes('schedules')
     const maySeeDatabases=result.fullAccess||result.sections.includes('databases')
-    const [nodeRows,worldRows,logRows,operationRows,lostItemRows,serverPermissionRows,memberRows,scheduleRows,databaseRows,sftpRows]=await Promise.all([
+    const [nodeRows,worldRows,logRows,operationRows,lostItemRows,serverPermissionRows,memberRows,scheduleRows,databaseRows,sftpRows,databaseCommandRows]=await Promise.all([
       db.select({id:nodes.id,name:nodes.name,status:nodes.status,lastHeartbeat:nodes.lastHeartbeat,cpuPercent:nodes.cpuPercent,memoryUsedMb:nodes.memoryUsedMb,memoryTotalMb:nodes.memoryTotalMb,diskUsedGb:nodes.diskUsedGb,diskTotalGb:nodes.diskTotalGb}).from(nodes).where(eq(nodes.id,result.server.nodeId)).limit(1),
       maySeeWorlds?db.select().from(worlds).where(eq(worlds.serverId,requestedServerId)).orderBy(desc(worlds.createdAt)):Promise.resolve([]),
       maySeeLogs?db.select({id:consoleLogs.id,serverId:consoleLogs.serverId,line:consoleLogs.line,createdAt:consoleLogs.createdAt}).from(consoleLogs).where(eq(consoleLogs.serverId,requestedServerId)).orderBy(desc(consoleLogs.createdAt)).limit(200):Promise.resolve([]),
@@ -154,17 +211,20 @@ async function getPanel(request:NextRequest) {
       mayManageAccess?db.select({id:user.id,name:user.name,email:user.email,role:user.role,approved:user.approved}).from(user).where(eq(user.approved,true)).orderBy(desc(user.createdAt)):Promise.resolve([]),
       maySeeSchedules?db.select().from(serverSchedules).where(eq(serverSchedules.serverId,requestedServerId)).orderBy(desc(serverSchedules.createdAt)):Promise.resolve([]),
       maySeeDatabases?db.select().from(managedDatabases).where(eq(managedDatabases.serverId,requestedServerId)).orderBy(desc(managedDatabases.createdAt)):Promise.resolve([]),
-      result.fullAccess?db.select({id:serverSftp.id,serverId:serverSftp.serverId,nodeId:serverSftp.nodeId,username:serverSftp.username,port:serverSftp.port,rootPath:serverSftp.rootPath,status:serverSftp.status,lastError:serverSftp.lastError,lastTestAt:serverSftp.lastTestAt,passwordRotatedAt:serverSftp.passwordRotatedAt,disabledAt:serverSftp.disabledAt,createdAt:serverSftp.createdAt,updatedAt:serverSftp.updatedAt}).from(serverSftp).where(eq(serverSftp.serverId,requestedServerId)).limit(1):Promise.resolve([])
+      result.fullAccess?db.select({id:serverSftp.id,serverId:serverSftp.serverId,nodeId:serverSftp.nodeId,username:serverSftp.username,port:serverSftp.port,rootPath:serverSftp.rootPath,status:serverSftp.status,lastError:serverSftp.lastError,lastTestAt:serverSftp.lastTestAt,passwordRotatedAt:serverSftp.passwordRotatedAt,disabledAt:serverSftp.disabledAt,createdAt:serverSftp.createdAt,updatedAt:serverSftp.updatedAt}).from(serverSftp).where(eq(serverSftp.serverId,requestedServerId)).limit(1):Promise.resolve([]),
+      maySeeDatabases?db.select().from(agentCommands).where(and(eq(agentCommands.serverId,requestedServerId),inArray(agentCommands.type,['database-status','database-backup','database-export','database-optimize','database-repair','database-restore','database-import']))).orderBy(desc(agentCommands.createdAt)).limit(120):Promise.resolve([])
     ])
     const restoreActorIds=[...new Set(lostItemRows.map(row=>row.restoredByUserId).filter((value): value is string=>typeof value==='string'&&value.length>0))]
     const restoreActors=restoreActorIds.length?await db.select({id:user.id,name:user.name}).from(user).where(inArray(user.id,restoreActorIds)):[]
     const restoreNameById=new Map(restoreActors.map(member=>[member.id,member.name]))
     const lostItemsWithRestoreActor=lostItemRows.map(row=>({...row,restoredByName:row.restoredByUserId?restoreNameById.get(row.restoredByUserId)??null:null}))
+    let nodeBase='';try{nodeBase=getNodeConfig(result.server.nodeId).baseUrl}catch{}
+    const databasesWithRuntime=databaseRows.map(database=>{const related=databaseCommandRows.filter(command=>String((command.payload as Record<string,unknown>|null)?.databaseId??'')===database.id);const completed=related.filter(command=>command.status==='completed');const statusCommand=completed.find(command=>command.type==='database-status');const backupCommand=completed.find(command=>command.type==='database-backup'||command.type==='database-export');const latestCommand=related[0]??null;const backupResult=(backupCommand?.result&&typeof backupCommand.result==='object'?backupCommand.result:{}) as Record<string,unknown>;const token=String(backupResult.downloadToken??'');return{...database,telemetry:statusCommand?.result??null,lastBackup:backupCommand?{...backupResult,downloadUrl:nodeBase&&token?`${nodeBase}/public/download/${encodeURIComponent(token)}`:undefined}:null,lastMaintenance:latestCommand?{id:latestCommand.id,type:latestCommand.type,status:latestCommand.status,result:latestCommand.result??null,createdAt:latestCommand.createdAt}:null}})
     return NextResponse.json({
       nodes:nodeRows,servers:[{...compactServer,directBridge,connectivity:connectivityState(nodeRows[0]??{status:'offline',lastHeartbeat:null},directBridge.online?undefined:directBridge.error)}],worlds:worldRows,mods:[],backups:[],logs:logRows.slice().reverse(),
       users:memberRows.filter(member=>member.id!==a.id),audits:[],lostItems:lostItemsWithRestoreActor,operations:operationRows,
       permissions:serverPermissionRows,currentPermission:result.permission,allowedSections:result.sections,serverAccess:{isOwner:result.isOwner,isManager:result.isManager,fullAccess:result.fullAccess},
-      schedules:scheduleRows,databases:databaseRows,sftp:sftpRows[0]??null,
+      schedules:scheduleRows,databases:databasesWithRuntime,sftp:sftpRows[0]??null,
 actor:{id:a.id,name:a.name,email:a.email,role:normalizeRole(a.role)},nodeConnectivity:directBridge
     },{headers:{'Cache-Control':'private, no-store'}})
   }
@@ -295,6 +355,26 @@ async function postPanel(request:NextRequest) {
     return NextResponse.json({ok:true})
   }
 
+  if(body.action==='network-diagnostics'){
+    const serverId=z.string().uuid().parse(body.serverId)
+    const result=await access(a,serverId)
+    if(!result)return NextResponse.json({error:'Sunucu bulunamadı'},{status:404})
+    if(!result.fullAccess&&!result.isOwner&&!result.sections.includes('network'))return NextResponse.json({error:'Ağ teşhisi için yetkiniz yok'},{status:403})
+    const host=cleanNetworkHost(publicHostForNode(result.server.nodeId))
+    if(!host||host==='Public IP bekleniyor')return NextResponse.json({error:'Node için doğrulanabilir public host/IP bulunamadı'},{status:409})
+    const diagnostics=await externalNetworkDiagnostics(host,result.server.port,result.server.nodeId)
+    await db.insert(auditLog).values({userId:a.id,action:'server.network.diagnostics',resourceType:'server',resourceId:serverId,details:{host,port:result.server.port,reachable:diagnostics.tcp.reachable,latencyMs:diagnostics.tcp.latencyMs,srv:diagnostics.srv.length}})
+    return NextResponse.json({ok:true,diagnostics},{headers:{'Cache-Control':'private, no-store'}})
+  }
+
+  if(body.action==='oci-nsg-ensure-port'){
+    if(!manager)return NextResponse.json({error:'OCI NSG kuralı değiştirmek için Yönetici yetkisi gerekir'},{status:403})
+    const serverId=z.string().uuid().parse(body.serverId);const result=await access(a,serverId);if(!result)return NextResponse.json({error:'Sunucu bulunamadı'},{status:404})
+    const cidr=z.string().trim().max(64).parse(body.cidr??'0.0.0.0/0');const oci=await ociEnsureMinecraftPort(result.server.nodeId,result.server.port,cidr)
+    await db.insert(auditLog).values({userId:a.id,action:'server.network.oci-nsg.ensure-port',resourceType:'server',resourceId:serverId,details:{port:result.server.port,cidr,changed:oci.changed,requestId:oci.requestId??null}})
+    return NextResponse.json({ok:true,oci},{headers:{'Cache-Control':'private, no-store'}})
+  }
+
   if(body.action==='create-schedule'){
     if(!manager)return NextResponse.json({error:'Zamanlama oluşturmak için Yönetici yetkisi gerekir'},{status:403})
     const serverId=z.string().uuid().parse(body.serverId)
@@ -342,6 +422,22 @@ async function postPanel(request:NextRequest) {
     await db.insert(agentCommands).values({userId:a.id,nodeId:result.server.nodeId,serverId,type:'database-create',payload:{databaseId:record.id,databaseName,databaseUser}})
     await db.insert(operationLogs).values({userId:a.id,serverId,operation:'database-create',status:'queued'})
     return NextResponse.json({database:record},{status:202})
+  }
+  if(body.action==='database-action'){
+    if(!manager)return NextResponse.json({error:'Veritabanı bakım işlemleri için Yönetici yetkisi gerekir'},{status:403})
+    const databaseId=z.string().uuid().parse(body.databaseId)
+    const operation=z.enum(['database-status','database-backup','database-export','database-optimize','database-repair','database-restore','database-import']).parse(body.operation)
+    const record=(await db.select().from(managedDatabases).where(eq(managedDatabases.id,databaseId)).limit(1))[0]
+    if(!record)return NextResponse.json({error:'Veritabanı kaydı bulunamadı'},{status:404})
+    const result=await access(a,record.serverId);if(!result)return NextResponse.json({error:'Sunucu erişimi yok'},{status:403})
+    const payload:Record<string,unknown>={databaseId:record.id,databaseName:record.databaseName,databaseUser:record.databaseUser}
+    if(operation==='database-restore')payload.filename=z.string().trim().min(5).max(240).regex(/^[A-Za-z0-9_.-]+\.sql$/).parse(body.filename)
+    if(operation==='database-import')payload.path=z.string().trim().min(1).max(500).parse(body.path)
+    if(['database-restore','database-import','database-repair'].includes(operation)&&body.confirm!==true)return NextResponse.json({error:'Bu veritabanı işlemi açık onay gerektirir'},{status:400})
+    const [command]=await db.insert(agentCommands).values({userId:a.id,nodeId:record.nodeId,serverId:record.serverId,type:operation,payload,status:'queued'}).returning()
+    await db.insert(operationLogs).values({userId:a.id,serverId:record.serverId,operation,status:'queued',message:record.databaseName})
+    await db.insert(auditLog).values({userId:a.id,action:`database.${operation.replace('database-','')}`,resourceType:'managed-database',resourceId:record.id,details:{commandId:command.id}})
+    return NextResponse.json({ok:true,command},{status:202})
   }
   if(body.action==='rotate-database-password'){
     if(!manager)return NextResponse.json({error:'Forbidden'},{status:403})
