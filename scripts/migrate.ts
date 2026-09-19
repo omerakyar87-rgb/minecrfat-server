@@ -91,6 +91,10 @@ function statements(sql:string){
 }
 
 async function main(){
+  if(auto&&!process.env.VERCEL&&String(process.env.BLOCKCTRL_AUTO_MIGRATE||'').toLowerCase()!=='true'){
+    console.log('BlockCtrl migration auto-run skipped outside Vercel.')
+    return
+  }
   if(!connectionConfigured){
     if(auto){console.log('BlockCtrl migration auto-run skipped: database connection is not configured.');return}
     throw new Error('DATABASE_URL, POSTGRES_URL or NEON_DATABASE_URL is required.')
