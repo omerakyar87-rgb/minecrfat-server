@@ -868,13 +868,12 @@ function startDownloadBridge(){const port=Number(process.env.AGENT_DOWNLOAD_PORT
 }).listen(port,host)}
 function normalizeLossItem(serverId:string,input:Record<string,unknown>){const amount=Math.max(1,Math.min(100000,Math.trunc(Number(input.amount)||1)));const coord=(value:unknown)=>Math.trunc(Number.isFinite(Number(value))?Number(value):0);const text=(value:unknown,max:number,fallback='')=>String(value??fallback).trim().slice(0,max);const metadata=input.metadata&&typeof input.metadata==='object'&&!Array.isArray(input.metadata)?input.metadata:{};return{eventId:text(input.eventId,100,randomUUID())||randomUUID(),serverId,playerUuid:input.playerUuid?text(input.playerUuid,40):null,playerName:input.playerName?text(input.playerName,40):null,itemId:text(input.itemId,150,'minecraft:air'),itemName:text(input.itemName,200,text(input.itemId,150,'minecraft:air')),amount,reason:text(input.reason,40,'unknown'),world:text(input.world,100,'minecraft:overworld'),x:coord(input.x),y:coord(input.y),z:coord(input.z),metadata,occurredAt:input.occurredAt?String(input.occurredAt):new Date().toISOString()}}
 async function provisionWebsiteAccount(serverId:string,payload:Record<string,unknown>){
-  if(!SITE_SERVER_BRIDGE_KEY)throw new Error('BLOCKCTRL_SITE_SERVER_BRIDGE_KEY is not configured on the agent')
   const minecraftUsername=String(payload.minecraftUsername??'').trim().slice(0,32)
   const playerUuid=String(payload.playerUuid??'').trim().slice(0,64)
   const password=String(payload.password??'')
   const email=String(payload.email??'').trim().toLowerCase().slice(0,180)
   if(!/^[A-Za-z0-9_]{3,32}$/.test(minecraftUsername)||password.length<8)throw new Error('Invalid website registration payload')
-  const response=await fetch(`${PANEL_URL}/api/site-auth`,{method:'POST',headers:{'content-type':'application/json','x-blockctrl-server-bridge':SITE_SERVER_BRIDGE_KEY},body:JSON.stringify({action:'server-provision',serverId,minecraftUsername,playerUuid,name:minecraftUsername,password,email})})
+  const response=await fetch(`${PANEL_URL}/api/site-auth`,{method:'POST',headers:{'content-type':'application/json',authorization:`Bearer ${NODE_TOKEN}`,'x-node-id':NODE_ID!,...(SITE_SERVER_BRIDGE_KEY?{'x-blockctrl-server-bridge':SITE_SERVER_BRIDGE_KEY}:{})},body:JSON.stringify({action:'server-provision',serverId,minecraftUsername,playerUuid,name:minecraftUsername,password,email})})
   const text=await response.text()
   let data:Record<string,unknown>={}
   try{data=text?JSON.parse(text) as Record<string,unknown>:{} }catch{data={}}
