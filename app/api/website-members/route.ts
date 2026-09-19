@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { and, desc, eq, ilike } from 'drizzle-orm'
 import { auth } from '@/lib/auth'
 import { db, ensurePanelSchema } from '@/lib/db'
-import { websiteMembers, websiteMemberSessions, websites } from '@/lib/db/schema'
+import { serverPermissions, servers, websiteMembers, websiteMemberSessions, websites } from '@/lib/db/schema'
 import { resolvePanelUser } from '@/lib/db/identity'
 const scrypt=promisify(scryptCallback)
 function normalizeRole(role:unknown){const value=String(role??'').toLowerCase();return value==='manager'||value==='admin'||value==='guide'||value==='member'?value:'member'}
@@ -20,7 +20,17 @@ export async function POST(request:NextRequest){
   if(action==='status'){const status=String(body.status||'active');if(!['active','blocked'].includes(status))return NextResponse.json({error:'Geçersiz durum.'},{status:400});const [updated]=await db.update(websiteMembers).set({status,updatedAt:new Date()}).where(and(eq(websiteMembers.id,id),eq(websiteMembers.websiteId,websiteId))).returning({id:websiteMembers.id,status:websiteMembers.status});return NextResponse.json({ok:true,member:updated})}
   if(action==='access'){const role=cleanRole(body.role),allowedPages=cleanPages(body.allowedPages);const [updated]=await db.update(websiteMembers).set({role,allowedPages,updatedAt:new Date()}).where(and(eq(websiteMembers.id,id),eq(websiteMembers.websiteId,websiteId))).returning({id:websiteMembers.id,role:websiteMembers.role,allowedPages:websiteMembers.allowedPages});if(!updated)return NextResponse.json({error:'Üye bulunamadı.'},{status:404});return NextResponse.json({ok:true,member:updated})}
   if(action==='create'){
-    const name=String(body.name||'').trim().slice(0,80),email=String(body.email||'').trim().toLowerCase().slice(0,180),minecraftUsername=String(body.minecraftUsername||'').trim().slice(0,32),password=String(body.password||''),serverId=String(body.serverId||'')||null,authSource=String(body.authSource||'panel')==='server'?'server':'panel',role=cleanRole(body.role),allowedPages=cleanPages(body.allowedPages)
+    const name=String(body.name||'').trim().slice(0,80),email=String(body.email||'').trim().toLowerCase().slice(0,180),minecraftUsername=String(body.minecraftUsername||'').trim().slice(0,32),password=String(body.password||''),requestedServerId=String(body.serverId||x.site.serverId||''),authSource=String(body.authSource||'panel')==='server'?'server':'panel',role=cleanRole(body.role),allowedPages=cleanPages(body.allowedPages)
+    let serverId:string|null=requestedServerId||null
+    if(serverId){
+      const server=(await db.select({id:servers.id,userId:servers.userId}).from(servers).where(eq(servers.id,serverId)).limit(1))[0]
+      if(!server)return NextResponse.json({error:'Seçilen Minecraft sunucusu bulunamadı.'},{status:404})
+      if(normalizeRole(x.a.role)!=='manager'&&server.userId!==x.a.id){
+        const grant=(await db.select({id:serverPermissions.id}).from(serverPermissions).where(and(eq(serverPermissions.userId,x.a.id),eq(serverPermissions.serverId,serverId),eq(serverPermissions.canWebsiteData,true))).limit(1))[0]
+        if(!grant)return NextResponse.json({error:'Bu sunucunun website verilerini kullanma yetkiniz yok.'},{status:403})
+      }
+    }
+    if(authSource==='server'&&!serverId)return NextResponse.json({error:'Minecraft sunucusu kaynaklı üyelik için website ana sunucusu veya erişilebilir bir sunucu seçilmelidir.'},{status:400})
     if(name.length<2||password.length<8||(!email&&!minecraftUsername))return NextResponse.json({error:'Ad, en az bir giriş kimliği ve en az 8 karakter şifre gerekli.'},{status:400})
     if(email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return NextResponse.json({error:'E-posta geçersiz.'},{status:400})
     if(minecraftUsername&&!/^[A-Za-z0-9_]{3,32}$/.test(minecraftUsername))return NextResponse.json({error:'Minecraft kullanıcı adı geçersiz.'},{status:400})
