@@ -29,6 +29,12 @@ function suffix(){
   const value=cleanSlug(process.env.BLOCKCTRL_WEBSITE_PROJECT_SUFFIX||'blockctrl')
   return value||'blockctrl'
 }
+function runtimeBase(request?:NextRequest){
+  const explicit=String(process.env.BLOCKCTRL_PUBLIC_URL||process.env.NEXT_PUBLIC_APP_URL||'').trim()
+  const vercelHost=String(process.env.VERCEL_PROJECT_PRODUCTION_URL||process.env.VERCEL_URL||'').trim()
+  const candidate=explicit||(vercelHost?'https://'+vercelHost:'')||request?.nextUrl.origin||''
+  try{const url=new URL(candidate);return url.protocol==='https:'?url.origin:''}catch{return ''}
+}
 function vercelConfig(){
   return {
     token:process.env.VERCEL_TOKEN||'',
@@ -397,7 +403,7 @@ export async function POST(request:NextRequest){
       if(!member)return runtimeJson({error:'Oturum gerekli.'},401)
       if(!memberCanAccess(page,member))return runtimeJson({error:'Bu sayfaya erişim yetkiniz yok.'},403)
     }
-    const configuredRuntimeBase=String(process.env.BLOCKCTRL_PUBLIC_URL||request.nextUrl.origin).trim().replace(/\/$/,'')
+    const configuredRuntimeBase=runtimeBase(request)
     return new NextResponse(renderPublishedPage({name:site.name,slug:site.slug},page,builder,configuredRuntimeBase),{status:200,headers:{...runtimeCors,'Content-Type':'text/html; charset=utf-8','X-Content-Type-Options':'nosniff','Vary':'Authorization'}})
   }
 
@@ -424,7 +430,7 @@ export async function POST(request:NextRequest){
     initialBuilder.binding.serverId=serverId
     if(!initialBuilder.auth.serverId&&serverId)initialBuilder.auth.serverId=serverId
     const hasLiveSections=initialBuilder.pages.some(page=>page.sections.some(section=>section.liveData.mode!=='static'&&section.liveData.source!=='custom-json'))
-    const configuredRuntimeBase=String(process.env.BLOCKCTRL_PUBLIC_URL||'').trim().replace(/\/$/,'')
+    const configuredRuntimeBase=runtimeBase(request)
     if(hasLiveSections&&!configuredRuntimeBase)return NextResponse.json({error:'Canlı sunucu verisi kullanan website yayınları için BLOCKCTRL_PUBLIC_URL zorunludur.'},{status:503})
     const projectName=`${slug}-${suffix()}`
     const existing=await db.select().from(websites).where(or(eq(websites.slug,slug),eq(websites.projectName,projectName))).limit(1)
@@ -543,7 +549,7 @@ export async function POST(request:NextRequest){
     if(!cfg.token||(!cfg.teamId&&!cfg.teamSlug))return NextResponse.json({error:'Vercel yayın entegrasyonu eksik.'},{status:503})
     const builderData=await prepareBuilderData(body.builderData??site.builderData,site.name,a.id,role,site.serverId||'')
     validateAuthPages(builderData)
-    const configuredRuntimeBase=String(process.env.BLOCKCTRL_PUBLIC_URL||'').trim()
+    const configuredRuntimeBase=runtimeBase(request)
     if(!configuredRuntimeBase)return NextResponse.json({error:'BLOCKCTRL_PUBLIC_URL production yayını için zorunludur.'},{status:503})
     const runtimeBase=configuredRuntimeBase.replace(/\/$/,'')
     if(!site.vercelProjectId)return NextResponse.json({error:'Website Vercel projesi bulunamadı.'},{status:409})
