@@ -1,10 +1,8 @@
-import { headers } from 'next/headers'
 import { NextRequest, NextResponse } from 'next/server'
+import { getPanelActor } from '@/lib/api-auth'
 import { and, desc, eq } from 'drizzle-orm'
-import { auth } from '@/lib/auth'
 import { db, ensurePanelSchema } from '@/lib/db'
 import { agentCommands, auditLog, serverPermissions, serverSettings, servers } from '@/lib/db/schema'
-import { resolvePanelUser } from '@/lib/db/identity'
 import { getNodeConfig } from '@/lib/node-bridge'
 
 const SAFE_ACTIONS = new Set([
@@ -24,7 +22,7 @@ const ACTION_AGENT_TYPE:Record<string,string>={'login-security-status':'security
 const IMPLEMENTED_AGENT_ACTIONS=new Set(['file-inventory','bulk-download','security-scan','port-scan','file-integrity','logs-export','crash-reports','agent-logs','server-startup-logs','software-compatibility','addon-scan','anticheat-status','sftp-test','sftp-disable','sftp-enable','sftp-session-list','sftp-session-terminate','create-folder','move-file','delete-file','read-file','write-file','database-backup','database-restore','database-export','database-import','database-optimize','database-repair','backup-verify','backup-copy'])
 
 const DANGEROUS = new Set(['file-delete','file-write','file-bulk-delete','delete-quarantine','database-restore','database-import','database-repair','player-action','sftp-disable','sftp-session-terminate'])
-async function actor(){const session=await auth.api.getSession({headers:await headers()});if(!session?.user)return null;return resolvePanelUser(session.user)}
+async function actor(){return getPanelActor()}
 async function access(serverId:string,a:NonNullable<Awaited<ReturnType<typeof actor>>>) { const server=(await db.select().from(servers).where(eq(servers.id,serverId)).limit(1))[0]; if(!server)return null; if(a.role==='manager'||server.userId===a.id)return {server,manager:true,permission:null}; const permission=(await db.select().from(serverPermissions).where(and(eq(serverPermissions.serverId,serverId),eq(serverPermissions.userId,a.id))).limit(1))[0]; return permission?{server,manager:false,permission}:null }
 function permissionSections(x:NonNullable<Awaited<ReturnType<typeof access>>>){return Array.isArray(x.permission?.sections)?x.permission.sections.map(String):[]}
 function canReadAction(x:NonNullable<Awaited<ReturnType<typeof access>>>,action:string){if(x.manager)return true;const sections=permissionSections(x);if(action.startsWith('player'))return sections.includes('players')||!!x.permission?.canConsole;if(action.includes('backup'))return sections.includes('backups')||!!x.permission?.canBackup;if(action.includes('database'))return sections.includes('databases');if(action.includes('schedule'))return sections.includes('schedules');if(action.includes('log')||action.includes('crash'))return sections.includes('logs')||sections.includes('console');if(action.includes('security')||action.includes('firewall')||action.includes('anticheat')||action.includes('quarantine')||action.startsWith('scan-')||action==='port-scan')return sections.includes('security');if(action.includes('addon'))return sections.includes('software')||!!x.permission?.canFiles;if(action.includes('file')||action.includes('upload')||action.includes('sftp')||action==='bulk-download')return sections.includes('files')||!!x.permission?.canFiles;return sections.includes('overview')}
