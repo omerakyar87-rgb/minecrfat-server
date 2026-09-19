@@ -8,7 +8,7 @@ import {
   Database, Download, Eye, FileText, Folder, Gamepad2, Globe2, HardDrive, HeartPulse, Info, KeyRound,
   LifeBuoy, Menu, MoreHorizontal, Network, Package, Pencil, Play, Plus, RefreshCw, RotateCcw, Save, Search, Send,
   Server as ServerIcon, Settings2, Shield, ShieldCheck, Signal, Square, Terminal, Trash2, UploadCloud,
-  UserPlus, Users, Wifi, Wrench, X, Zap
+  UserPlus, Users, Wifi, Wrench, X
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ServerFilesManager } from '@/components/server-files-manager'
