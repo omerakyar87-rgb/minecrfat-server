@@ -4,7 +4,9 @@ import { createPostgresPool } from '../lib/db/postgres'
 
 const migrationsDir=path.join(process.cwd(),'migrations')
 const auto=process.argv.includes('--auto')
-const migrationDatabaseUrl=process.env.MIGRATION_DATABASE_URL||process.env.DATABASE_URL_UNPOOLED||process.env.DATABASE_URL||process.env.POSTGRES_URL||process.env.NEON_DATABASE_URL\nconst connectionConfigured=Boolean(migrationDatabaseUrl)\nconst pool=createPostgresPool(migrationDatabaseUrl?{connectionString:migrationDatabaseUrl}:{})
+const migrationDatabaseUrl=process.env.MIGRATION_DATABASE_URL||process.env.DATABASE_URL_UNPOOLED||process.env.DATABASE_URL||process.env.POSTGRES_URL||process.env.NEON_DATABASE_URL
+const connectionConfigured=Boolean(migrationDatabaseUrl)
+const pool=createPostgresPool(migrationDatabaseUrl?{connectionString:migrationDatabaseUrl}:{})
 
 type DbClient={query:(sql:string,params?:unknown[])=>Promise<{rows:any[]}>}
 
