@@ -96,7 +96,7 @@ export default function ServerPage(){
   const server=data?.servers.find(s=>s.id===id); const node=data?.nodes?.find(n=>n.id===server?.nodeId)
   const manager=data?.serverAccess?.isManager===true; const fullAccess=data?.serverAccess?.fullAccess===true; const permission=data?.currentPermission??undefined
   const allowedSections=useMemo(()=>data?.allowedSections??(fullAccess?SERVER_NAV.map(([key])=>key):[]),[data?.allowedSections,fullAccess])
-  const visibleNav=useMemo(()=>nav.filter(([key])=>{if(key==='support')return true;if(key==='lost-items')return fullAccess||data?.serverAccess?.isOwner===true||!!permission?.canViewLostItems||!!permission?.canManageLostItems;if(key==='sftp')return manager;if(key==='security'||key==='access')return fullAccess||allowedSections.includes(key);if(key==='bulk-download')return fullAccess||allowedSections.includes('files');return fullAccess||allowedSections.includes(key)}),[allowedSections,data?.serverAccess?.isOwner,fullAccess,manager,permission?.canManageLostItems,permission?.canViewLostItems])
+  const visibleNav=useMemo(()=>SERVER_NAV.filter(([key])=>{if(key==='support')return true;if(key==='lost-items')return fullAccess||data?.serverAccess?.isOwner===true||!!permission?.canViewLostItems||!!permission?.canManageLostItems;if(key==='sftp')return manager;if(key==='security'||key==='access')return fullAccess||allowedSections.includes(key);if(key==='bulk-download')return fullAccess||allowedSections.includes('files');return fullAccess||allowedSections.includes(key)}),[allowedSections,data?.serverAccess?.isOwner,fullAccess,manager,permission?.canManageLostItems,permission?.canViewLostItems])
   const {data:backupData,error:backupError,mutate:mutateBackups}=useSWR<{backups:BackupRow[]}>(allowedSections.includes('backups')?`/api/backups?serverId=${id}`:null,fetcher,{refreshInterval:visiblePoll(7000),revalidateOnFocus:true})
   const {data:settingsSnapshot}=useSWR<SettingsSnapshot>(`/api/panel-settings?serverId=${id}`,fetcher,{refreshInterval:visiblePoll(15000),revalidateOnFocus:true})
   const {data:securitySnapshot}=useSWR<SecuritySnapshot>((fullAccess||allowedSections.includes('security'))?`/api/security?serverId=${id}`:null,fetcher,{refreshInterval:visiblePoll(20000),revalidateOnFocus:true})
@@ -424,27 +424,7 @@ export default function ServerPage(){
               loader={server.loader}
               running={running}
               canEdit={canReset}
-              availableSections={allowedSections}
-              summary={{
-                serverName:server.name,
-                mcVersion:server.mcVersion,
-                loaderVersion:server.loaderVersion,
-                playerCount:displayedPlayerCount,
-                maxPlayers:actualMaxPlayers,
-                memoryUsedMb:processMemoryUsed,
-                memoryLimitMb:processMemoryLimit,
-                cpuPercent:processCpu,
-                uptimeText,
-                connectionAddress,
-                nodeName:node?.name,
-                nodeDiskUsedGb:onlineNode?node?.diskUsedGb:null,
-                nodeDiskTotalGb:onlineNode?node?.diskTotalGb:null,
-              }}
               onNavigate={target=>{if(visibleNav.some(([key])=>key===target))setSection(target as ServerNavKey)}}
-              onStop={()=>command('stop')}
-              onRestart={()=>command('restart')}
-              onConsole={()=>setSection('console')}
-              onBackup={canBackup?()=>backupAction('backup',{kind:'full',label:'settings-manual'}):undefined}
             />
           </>}
 
@@ -649,7 +629,6 @@ export default function ServerPage(){
               busy={busy}
               canBackup={canBackup}
               canManage={canReset}
-              canFiles={canFiles}
               worlds={data?.worlds??[]}
               lastBackupAt={lastBackup?.createdAt??null}
               onBackup={async world=>{await backupAction('backup',{kind:'world',label:world})}}
@@ -733,7 +712,7 @@ export default function ServerPage(){
                       <LostItemDetailRow icon={ShieldCheck} label="Durum" value={lostItemStatusLabel(selectedLostItem.status)} sub={selectedLostItem.status==='restore_failed'?'Geri verme başarısız oldu':selectedLostItem.status==='restore_sent'?'Komut gönderildi; doğrulama alınamadı':selectedLostItem.status==='restore_queued'?'Agent kuyruğunda':selectedLostItem.status==='restored'?'Minecraft çıktısıyla doğrulandı':'Henüz geri verilmedi'}/>
                       {selectedLostItem.restoreRequestedAt&&<LostItemDetailRow icon={RotateCcw} label="Geri Verme İsteği" value={new Date(selectedLostItem.restoreRequestedAt).toLocaleString('tr-TR')} sub={selectedLostItem.status==='restore_queued'?'Agent kuyruğunda':selectedLostItem.status==='restore_sent'?'Komut gönderildi; doğrulama alınamadı':undefined}/>} 
                       {selectedLostItem.restoredAt&&<LostItemDetailRow icon={CheckCircle2} label="Geri Verilme Zamanı" value={new Date(selectedLostItem.restoredAt).toLocaleString('tr-TR')}/>} 
-                      {selectedLostItem.restoredAt&&<LostItemDetailRow icon={Users} label="Geri Veren" value={selectedLostItem.restoredByName??(selectedLostItem.restoredByUserId===data?.actor?.id?data.actor.name:(data?.users?.find(member=>member.id===selectedLostItem.restoredByUserId)?.name??'Yetkili'))}/>} 
+                      {selectedLostItem.restoredAt&&<LostItemDetailRow icon={Users} label="Geri Veren" value={selectedLostItem.restoredByName??(selectedLostItem.restoredByUserId===data?.actor?.id?(data?.actor?.name??'Yetkili'):(data?.users?.find(member=>member.id===selectedLostItem.restoredByUserId)?.name??'Yetkili'))}/>} 
                     </div>
                     {selectedLostItem.restoreError&&<div className="rounded-lg border border-red-500/25 bg-red-500/[.06] p-3 text-xs leading-4 text-red-200"><AlertTriangle className="mr-1 inline size-3.5"/>{selectedLostItem.restoreError}</div>}
                     {selectedLostItem.status==='restore_sent'&&<div className="rounded-lg border border-amber-500/25 bg-amber-500/[.06] p-3 text-xs leading-4 text-amber-100">Minecraft komutu sunucuya gönderildi ancak başarı satırı agent tarafından doğrulanamadı. Tekrar vermek eşyanın iki kez verilmesine yol açabileceği için otomatik tekrar kapalıdır.</div>}
