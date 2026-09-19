@@ -431,7 +431,7 @@ export async function POST(request:NextRequest){
     if(!initialBuilder.auth.serverId&&serverId)initialBuilder.auth.serverId=serverId
     const hasLiveSections=initialBuilder.pages.some(page=>page.sections.some(section=>section.liveData.mode!=='static'&&section.liveData.source!=='custom-json'))
     const configuredRuntimeBase=runtimeBase(request)
-    if(hasLiveSections&&!configuredRuntimeBase)return NextResponse.json({error:'Canlı sunucu verisi kullanan website yayınları için BLOCKCTRL_PUBLIC_URL zorunludur.'},{status:503})
+    if(hasLiveSections&&!configuredRuntimeBase)return NextResponse.json({error:'Canlı sunucu verisi için güvenli panel runtime URL'si çözümlenemedi.'},{status:503})
     const projectName=`${slug}-${suffix()}`
     const existing=await db.select().from(websites).where(or(eq(websites.slug,slug),eq(websites.projectName,projectName))).limit(1)
     if(existing.length){
@@ -550,7 +550,7 @@ export async function POST(request:NextRequest){
     const builderData=await prepareBuilderData(body.builderData??site.builderData,site.name,a.id,role,site.serverId||'')
     validateAuthPages(builderData)
     const configuredRuntimeBase=runtimeBase(request)
-    if(!configuredRuntimeBase)return NextResponse.json({error:'BLOCKCTRL_PUBLIC_URL production yayını için zorunludur.'},{status:503})
+    if(!configuredRuntimeBase)return NextResponse.json({error:'Production yayını için güvenli panel runtime URL'si çözümlenemedi.'},{status:503})
     const runtimeBase=configuredRuntimeBase.replace(/\/$/,'')
     if(!site.vercelProjectId)return NextResponse.json({error:'Website Vercel projesi bulunamadı.'},{status:409})
     try{
