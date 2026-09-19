@@ -88,7 +88,8 @@ export function WebsiteManager({createOpen,onCreateOpenChange}:{createOpen:boole
   const projectName=useMemo(()=>`${normalizeSlug(slug||name)||'website'}-${suffix}`,[slug,name,suffix])
   const address=`https://${projectName}.vercel.app`
 
-  useEffect(()=>{if(createOpen){setMessage('');setName('');setSlug('');setDescription('');setTemplate('blank');setServerId(data?.servers?.[0]?.id??'')}},[createOpen,data?.servers])
+  useEffect(()=>{if(createOpen){setMessage('');setName('');setSlug('');setDescription('');setTemplate('blank');setServerId(data?.servers?.[0]?.id??'')}},[createOpen])
+  useEffect(()=>{if(createOpen&&!serverId&&data?.servers?.[0]?.id)setServerId(data.servers[0].id)},[createOpen,serverId,data?.servers])
 
   async function createWebsite(){
     const cleanName=name.trim()
