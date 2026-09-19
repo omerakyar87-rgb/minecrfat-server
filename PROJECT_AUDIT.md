@@ -125,3 +125,24 @@ Bu geçişte TS/TSX dosyaları TypeScript parse taramasından geçirildi; yeni s
 78. Günlükler ekranına gerçek `crash-reports/*.txt` kayıtlarını inceleme ve tam log arşivi oluşturma/indirme akışı eklendi. Agent log arşivini kısa ömürlü indirme tokenıyla sunuyor ve geçici arşivi token yaşam döngüsüyle temizliyor.
 79. `server-actions` cevaplarında `logs-export` sonuçları da güvenli indirme URL'si alıyor; crash report ve log export işlemleri mevcut RBAC kapsamını koruyor.
 80. Bu geçişte değiştirilen TS/TSX dosyaları TypeScript `--noResolve` sözdizimi taramasından geçirildi; yeni TS1xxx parse/syntax hatası görülmedi. Drive'a yazılan kritik dosyalar tekrar okunarak market, destek, ağ teşhisi, log export, agent hash doğrulaması ve ortam değişkeni marker'ları doğrulandı. Tam bağımlılık çözümlemeli `pnpm check/build`, gerçek node/VPS ve production uçtan uca testi ayrıca yapılmalıdır.
+
+## Production Hardening / P0–P3 — 19 Eylül 2026
+
+81. Protected website pages statik deploy içine özel sayfa HTML'i gömmüyor; yalnız doğrulama shell'i yayınlanıyor. Gerçek sayfa render'ı backend runtime-page akışında session + authenticated/role/assigned kontrolünden sonra yapılıyor ve private, no-store dönüyor.
+82. Website auth CORS'u wildcard yerine site deployment/production origin allowlist'i kullanıyor; rate-limit verileri PostgreSQL üzerinde tutuluyor.
+83. Panel auth güvenlik görünümü Better Auth kalıntısından çıkarıldı. Supabase MFA assurance/factor durumu ve Supabase session güvenlik işlemleri kullanılıyor; diğer oturumları kapatma signOut scope=others ile yapılıyor.
+84. CSP Report-Only header'ı ve /api/csp-report endpoint'i eklendi. CSP raporları bounded olarak loglanıyor; mevcut uygulamayı kırmadan policy gözlemlenebiliyor.
+85. Agent brute-force, bağlantı burst ve isteğe bağlı IP reputation koruması Güvenlik Merkezi capability durumuna bağlandı. UFW helper süreli IP deny/allow ve connection rate-limit uygular.
+86. OCI Request Signing, NSG read diagnostics ve yalnız OCI_NSG_WRITE_ENABLED=true iken kontrollü Minecraft ingress ekleme akışı mevcut; yapılandırma yoksa UI açıkça not-connected gösterir.
+87. Structured observability eklendi. /api/health sonuçları yapılandırılmış log olayı üretir; degraded/error sonuçlar dedupe edilmiş webhook ve isteğe bağlı Resend e-posta alarmına aktarılabilir.
+88. Transactional e-posta için Resend HTTP provider eklendi. RESEND_API_KEY / EMAIL_FROM yoksa sistem gönderim yapılmış gibi davranmaz.
+89. Sunucu detay ekranında 9px/10px metinler kaldırıldı, kritik grid taşmaları responsive hale getirildi ve görünmeyen browser sekmesinde SWR polling durduruluyor.
+90. Native confirm/prompt sunucu ana ekranından kaldırıldı; ortak ActionConfirmDialog yazılı onay destekliyor. ServerFeatureActions da aynı modalı kullanıyor.
+91. 19 sekmeli sunucu navigasyonu components/server-detail-navigation.tsx içine ayrıldı ve Sunucu / İçerik / Veri & otomasyon / Yönetim / Sistem gruplarına bölündü.
+92. Drive kökündeki geçici _patch_stage klasörü doğrulanmış güncel kaynakların gerisinde kaldığı için temizlendi; _archive rollback geçmişi olarak bilinçli şekilde korundu.
+93. Agent'ın ürettiği bans ve leaderboard-kills snapshot'ları public site-runtime route'una bağlandı. 5 dakikadan eski snapshot kullanılmıyor; leaderboard-money/health gerçek provider olmadığı için unavailable kalıyor.
+94. server-actions ile agent capability uyuşmazlığı düzeltildi: gerçek uygulanmış DB backup/restore/export/import/optimize/repair aksiyonları açıldı. Backup verify/copy agent'a eklendi.
+95. Backup işlemleri server-scoped hale getirildi. Restore/delete/verify/copy bir arşivin ilgili serverId dosya prefix'ine ait olduğunu doğruluyor; cross-server backup restore/delete engelleniyor.
+96. Generic ServerFeatureActions kendi capability tahminini bıraktı; /api/server-actions tarafından dönen gerçek supportedActions listesine göre buton açıyor. Seçili databaseId gerektiren duplicate generic DB kartı kaldırıldı.
+97. Regression contract testleri protected pages, path traversal, grouped navigation, native confirm/prompt yokluğu, website public snapshot provider'ları, backup server scope ve gerçek agent action gate'lerini kapsayacak şekilde genişletildi.
+98. Git/Vercel production branch hazırlığı blockctrl/p0-hardening-20260919 üzerinde yapılıyor. Vercel'in son doğrulama denemeleri uygulama build hatası yerine hesap build-rate-limit nedeniyle çalıştırılamadı; bu nedenle tam pnpm check && pnpm build && pnpm agent:build sonucu henüz doğrulanmış sayılmamalıdır.
