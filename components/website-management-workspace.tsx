@@ -94,7 +94,7 @@ export function WebsiteManagementWorkspace({open,site,onClose,onOpenBuilder,onCh
     try{
       const payload=await parseJson<{selectedServerId:string|null;servers:AuthServer[]}>(await fetch(`/api/website-data-sources?websiteId=${encodeURIComponent(current.id)}`,{cache:'no-store'}))
       const rows=payload.servers||[];setAuthServers(rows)
-      const selected=rows.find(row=>row.id===(current.serverId||payload.selectedServerId||builder?.binding.serverId))||rows[0];if(selected)setNewMember(value=>value.serverId?value:{...value,serverId:selected.id})
+      const selected=rows.find(row=>row.id===(payload.selectedServerId||current.serverId||builder?.binding.serverId))||rows[0];if(selected)setNewMember(value=>value.serverId?value:{...value,serverId:selected.id})
       setMapUrl(selected?.map?.url??'')
       const provider=selected?.map?.provider;setMapProvider(provider==='dynmap'||provider==='custom'||provider==='bluemap'?provider:'bluemap')
     }catch(error){setMessage(error instanceof Error?error.message:'Sunucu bağlantıları alınamadı.')}
