@@ -266,7 +266,7 @@ export async function POST(request:NextRequest){
             if(body.ok&&command.type==='database-delete')await db.delete(managedDatabases).where(eq(managedDatabases.id,databaseId))
             else{
               const result=(body.result??{}) as Record<string,unknown>
-              await db.update(managedDatabases).set({status:body.ok?'ready':'failed',credentialsPath:body.ok?String(result.credentialsPath??'')||null:undefined,lastError:body.ok?null:String(result.error??'Veritabanı işlemi başarısız').slice(0,1000),updatedAt:new Date()}).where(eq(managedDatabases.id,databaseId))
+              await db.update(managedDatabases).set({status:body.ok?'ready':'failed',credentialsPath:body.ok&&['database-create','database-rotate-password'].includes(command.type)?String(result.credentialsPath??'')||undefined:undefined,lastError:body.ok?null:String(result.error??'Veritabanı işlemi başarısız').slice(0,1000),updatedAt:new Date()}).where(eq(managedDatabases.id,databaseId))
             }
           }
         }
