@@ -4,11 +4,11 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import useSWR from 'swr'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import {
-  Activity, AlertTriangle, ArrowLeft, Ban, Box, CheckCircle2, ChevronRight, Clock3, Copy, Cpu, Crown,
+  Activity, AlertTriangle, ArrowLeft, Ban, Box, CheckCircle2, ChevronRight, Clock3, Copy, Cpu,
   Database, Download, Eye, FileText, Folder, Globe2, HardDrive, HeartPulse, Info, KeyRound,
   LifeBuoy, Network, Package, Pencil, Play, Plus, RefreshCw, RotateCcw, Save, Search, Send,
   Server as ServerIcon, Settings2, Shield, ShieldCheck, Signal, Square, Terminal, Trash2, UploadCloud,
-Users, Wifi, Wrench, X
+  Users, Wifi, Wrench, X
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ServerFilesManager } from '@/components/server-files-manager'
