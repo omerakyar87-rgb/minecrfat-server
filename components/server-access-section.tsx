@@ -1,5 +1,6 @@
 'use client'
 
+import type { ComponentType, ReactNode } from 'react'
 import { Folder, Gamepad2, Info, MoreHorizontal, RotateCcw, Search, Settings2, Terminal, Trash2, UserPlus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
@@ -8,8 +9,8 @@ type Permission={userId:string;canConsole:boolean;canFiles:boolean;canBackup:boo
 
 function RoleBadge({role}:{role:string}){const manager=role==='manager';const admin=role==='admin';return <span className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-semibold ${manager?'border-amber-500/40 bg-amber-500/10 text-amber-300':admin?'border-blue-500/40 bg-blue-500/10 text-blue-300':'border-sky-500/35 bg-sky-500/10 text-sky-300'}`}>{role}</span>}
 function MiniValue({label,value,good}:{label:string;value:string;good?:boolean}){return <div className="min-w-0"><p className="text-xs text-slate-500">{label}</p><p className={`mt-1 truncate text-xs font-medium ${good?'text-sky-300':'text-slate-200'}`}>{value}</p></div>}
-function PermissionDisplay({icon:Icon,label,sub,enabled}:{icon:React.ComponentType<{className?:string}>;label:string;sub:string;enabled:boolean}){return <div className="flex items-center gap-3 rounded-lg border border-[#1f3851] bg-black/10 px-3 py-2"><Icon className="size-4 text-slate-300"/><div className="min-w-0 flex-1"><p className="text-xs font-medium">{label}</p><p className="text-xs text-slate-500">{sub}</p></div><span className={`relative h-5 w-9 rounded-full ${enabled?'bg-sky-500':'bg-slate-700'}`}><span className={`absolute top-0.5 size-4 rounded-full bg-white ${enabled?'left-[18px]':'left-0.5'}`}/></span></div>}
-function Card({title,subtitle,action,children}:{title:string;subtitle:string;action?:React.ReactNode;children:React.ReactNode}){return <section className="rounded-2xl border border-[#1f3851] bg-[#0b1826] p-4"><div className="mb-4 flex items-start justify-between gap-3"><div><h3 className="text-sm font-semibold text-white">{title}</h3><p className="mt-1 text-xs text-slate-500">{subtitle}</p></div>{action}</div>{children}</section>}
+function PermissionDisplay({icon:Icon,label,sub,enabled}:{icon:ComponentType<{className?:string}>;label:string;sub:string;enabled:boolean}){return <div className="flex items-center gap-3 rounded-lg border border-[#1f3851] bg-black/10 px-3 py-2"><Icon className="size-4 text-slate-300"/><div className="min-w-0 flex-1"><p className="text-xs font-medium">{label}</p><p className="text-xs text-slate-500">{sub}</p></div><span className={`relative h-5 w-9 rounded-full ${enabled?'bg-sky-500':'bg-slate-700'}`}><span className={`absolute top-0.5 size-4 rounded-full bg-white ${enabled?'left-[18px]':'left-0.5'}`}/></span></div>}
+function Card({title,subtitle,action,children}:{title:string;subtitle:string;action?:ReactNode;children:ReactNode}){return <section className="rounded-2xl border border-[#1f3851] bg-[#0b1826] p-4"><div className="mb-4 flex items-start justify-between gap-3"><div><h3 className="text-sm font-semibold text-white">{title}</h3><p className="mt-1 text-xs text-slate-500">{subtitle}</p></div>{action}</div>{children}</section>}
 function Empty({children}:{children:string}){return <div className="rounded-lg border border-dashed border-[#203a55] bg-black/10 p-6 text-center text-xs text-slate-500">{children}</div>}
 
 export function ServerAccessSection({
