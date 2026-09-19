@@ -8,7 +8,7 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 
-const EXPECTED_MIGRATION = '0015_server_players'
+const EXPECTED_MIGRATION = '0016_website_server_binding'
 
 
 type CheckStatus='unknown'|'ok'|'error'|'outdated'|'offline'|'not-configured'
