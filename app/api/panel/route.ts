@@ -1,4 +1,6 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
+import { lookup, resolveSrv } from 'node:dns/promises'
+import { createConnection } from 'node:net'
 import { headers } from 'next/headers'
 import { NextRequest, NextResponse } from 'next/server'
 import { and, desc, eq, inArray, lt, ne, or } from 'drizzle-orm'
@@ -60,6 +62,28 @@ function panelBaseUrl(request:NextRequest){
   return request.nextUrl.origin.replace(/\/$/,'')
 }
 
+function cleanNetworkHost(value:string){
+  const raw=value.trim().replace(/^https?:\/\//i,'').split('/')[0]
+  if(raw.startsWith('['))return raw.slice(1,raw.indexOf(']'))
+  const parts=raw.split(':');return parts.length===2?parts[0]:raw
+}
+async function tcpReachability(host:string,port:number,timeoutMs=4500){
+  const started=Date.now()
+  return new Promise<{reachable:boolean;latencyMs:number|null;error:string|null}>(resolve=>{
+    let done=false;const finish=(value:{reachable:boolean;latencyMs:number|null;error:string|null})=>{if(done)return;done=true;socket.destroy();resolve(value)}
+    const socket=createConnection({host,port})
+    const timer=setTimeout(()=>finish({reachable:false,latencyMs:null,error:'TCP bağlantı zaman aşımı'}),timeoutMs)
+    socket.once('connect',()=>{clearTimeout(timer);finish({reachable:true,latencyMs:Math.max(0,Date.now()-started),error:null})})
+    socket.once('error',error=>{clearTimeout(timer);finish({reachable:false,latencyMs:null,error:error.message.slice(0,240)})})
+  })
+}
+async function externalNetworkDiagnostics(host:string,port:number){
+  const dns=await lookup(host,{all:true,verbatim:true}).then(rows=>rows.map(row=>({address:row.address,family:row.family}))).catch(()=>[] as Array<{address:string;family:number}>)
+  const srv=await resolveSrv(`_minecraft._tcp.${host}`).then(rows=>rows.sort((a,b)=>a.priority-b.priority||b.weight-a.weight).map(row=>({name:row.name,port:row.port,priority:row.priority,weight:row.weight}))).catch(()=>[] as Array<{name:string;port:number;priority:number;weight:number}>)
+  const targetHost=srv[0]?.name||host;const targetPort=srv[0]?.port||port
+  const tcp=await tcpReachability(targetHost,targetPort)
+  return {checkedAt:new Date().toISOString(),requested:{host,port},dns,srv,effectiveTarget:{host:targetHost,port:targetPort,viaSrv:srv.length>0},tcp,oracleNsg:{status:'not-connected',detail:'OCI control-plane/NSG API bağlantısı yapılandırılmadı. Dış TCP testi, etkin erişilebilirliği bağımsız olarak doğrular.'}}
+}
 
 function nextScheduleAt(input:{cadence:string;timeOfDay?:string|null;weekday?:number|null;intervalMinutes?:number|null;timezoneOffsetMinutes?:number|null}, from=new Date()){
   const cadence=input.cadence
@@ -293,6 +317,18 @@ async function postPanel(request:NextRequest) {
     if(!server)return NextResponse.json({error:'Sunucu bulunamadı'},{status:404})
     await db.update(servers).set({name,updatedAt:new Date()}).where(eq(servers.id,serverId))
     return NextResponse.json({ok:true})
+  }
+
+  if(body.action==='network-diagnostics'){
+    const serverId=z.string().uuid().parse(body.serverId)
+    const result=await access(a,serverId)
+    if(!result)return NextResponse.json({error:'Sunucu bulunamadı'},{status:404})
+    if(!result.fullAccess&&!result.isOwner&&!result.sections.includes('network'))return NextResponse.json({error:'Ağ teşhisi için yetkiniz yok'},{status:403})
+    const host=cleanNetworkHost(publicHostForNode(result.server.nodeId))
+    if(!host||host==='Public IP bekleniyor')return NextResponse.json({error:'Node için doğrulanabilir public host/IP bulunamadı'},{status:409})
+    const diagnostics=await externalNetworkDiagnostics(host,result.server.port)
+    await db.insert(auditLog).values({userId:a.id,action:'server.network.diagnostics',resourceType:'server',resourceId:serverId,details:{host,port:result.server.port,reachable:diagnostics.tcp.reachable,latencyMs:diagnostics.tcp.latencyMs,srv:diagnostics.srv.length}})
+    return NextResponse.json({ok:true,diagnostics},{headers:{'Cache-Control':'private, no-store'}})
   }
 
   if(body.action==='create-schedule'){
