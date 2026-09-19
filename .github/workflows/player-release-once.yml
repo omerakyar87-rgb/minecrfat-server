@@ -26,36 +26,19 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - name: Validate required production secrets
+      - name: Validate Vercel deployment secrets
         shell: bash
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: |
           set -euo pipefail
-          for name in DATABASE_URL VERCEL_TOKEN VERCEL_ORG_ID VERCEL_PROJECT_ID; do
+          for name in VERCEL_TOKEN VERCEL_ORG_ID VERCEL_PROJECT_ID; do
             if [ -z "${!name:-}" ]; then echo "::error::Missing required secret: $name"; exit 1; fi
           done
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Apply database migrations
-        run: pnpm db:migrate
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      - name: Quality gate
-        run: pnpm check
-      - name: Build panel
-        run: pnpm build
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          NEXT_PUBLIC_APP_URL: ${{ vars.NEXT_PUBLIC_APP_URL }}
-          BLOCKCTRL_PUBLIC_URL: ${{ vars.BLOCKCTRL_PUBLIC_URL }}
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
-      - name: Build agent
-        run: pnpm agent:build
       - name: Install Vercel CLI
         run: pnpm dlx vercel@latest --version
       - name: Pull Vercel production configuration
@@ -63,6 +46,30 @@ jobs:
         env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      - name: Apply database migrations
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source .vercel/.env.production.local
+          set +a
+          if [ -z "${DATABASE_URL:-}" ] && [ -z "${POSTGRES_URL:-}" ] && [ -z "${NEON_DATABASE_URL:-}" ]; then
+            echo "::error::Vercel production environment does not contain DATABASE_URL/POSTGRES_URL/NEON_DATABASE_URL"
+            exit 1
+          fi
+          pnpm db:migrate
+      - name: Quality gate
+        run: pnpm check
+      - name: Build panel
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source .vercel/.env.production.local
+          set +a
+          pnpm build
+      - name: Build agent
+        run: pnpm agent:build
       - name: Vercel production build
         run: pnpm dlx vercel@latest build --prod --token="${{ secrets.VERCEL_TOKEN }}"
         env:
