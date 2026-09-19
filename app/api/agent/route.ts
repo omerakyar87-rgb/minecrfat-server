@@ -13,10 +13,21 @@ const serverPublicSnapshotSchema=z.object({serverId:z.string().uuid(),source:z.e
 const alertMetricKeys=new Set(['cpuPercent','memoryUsedMb','memoryTotalMb','diskUsedGb','diskTotalGb','tps','mspt','players','uptimeSeconds'])
 const playerPresenceSchema=z.object({serverId:z.string().uuid(),playerName:z.string().trim().regex(/^[A-Za-z0-9_]{1,16}$/),playerUuid:z.string().max(40).nullable().optional(),event:z.enum(['join','leave']),occurredAt:z.coerce.date().optional()})
 const playerListSchema=z.object({serverId:z.string().uuid(),names:z.array(z.string().trim().regex(/^[A-Za-z0-9_]{1,16}$/)).max(500),playerCount:z.number().int().min(0).max(5000).optional(),maxPlayers:z.number().int().min(0).max(5000).optional(),observedAt:z.coerce.date().optional()})
+let playerStorageCheckedAt=0
+let playerStorageCached=false
+async function playerStorageReady(){
+  if(Date.now()-playerStorageCheckedAt<15_000)return playerStorageCached
+  try{
+    const result=await pool.query<{table_name:string|null}>(`SELECT to_regclass('public.server_players')::text AS table_name`)
+    playerStorageCached=Boolean(result.rows[0]?.table_name)
+  }catch{playerStorageCached=false}
+  playerStorageCheckedAt=Date.now()
+  return playerStorageCached
+}
 async function serverForNode(serverId:string,nodeId:string){return (await db.select({id:servers.id,userId:servers.userId}).from(servers).where(and(eq(servers.id,serverId),eq(servers.nodeId,nodeId))).limit(1))[0]??null}
 function sessionSeconds(start:Date|null|undefined,end:Date){return start?Math.max(0,Math.min(31_536_000,Math.floor((end.getTime()-start.getTime())/1000))):0}
 async function persistPlayerPresence(nodeId:string,input:z.infer<typeof playerPresenceSchema>){
-  const server=await serverForNode(input.serverId,nodeId);if(!server)return
+  const server=await serverForNode(input.serverId,nodeId);if(!server||!(await playerStorageReady()))return
   const at=input.occurredAt??new Date();const key=input.playerName.toLowerCase();const existing=(await db.select().from(serverPlayers).where(and(eq(serverPlayers.serverId,server.id),eq(serverPlayers.playerNameKey,key))).limit(1))[0]
   if(input.event==='join'){
     if(existing)await db.update(serverPlayers).set({playerName:input.playerName,playerUuid:input.playerUuid??existing.playerUuid,isOnline:true,lastSeenAt:at,lastJoinAt:existing.isOnline?(existing.lastJoinAt??at):at,sessionStartedAt:existing.sessionStartedAt??at,lastSyncAt:at,updatedAt:new Date()}).where(eq(serverPlayers.id,existing.id))
@@ -28,13 +39,15 @@ async function persistPlayerPresence(nodeId:string,input:z.infer<typeof playerPr
 }
 async function persistPlayerList(nodeId:string,input:z.infer<typeof playerListSchema>){
   const server=await serverForNode(input.serverId,nodeId);if(!server)return
+  if(input.playerCount!==undefined)await db.update(servers).set({playerCount:input.playerCount,updatedAt:new Date()}).where(eq(servers.id,server.id))
+  if(!(await playerStorageReady()))return
   const at=input.observedAt??new Date();const uniqueNames=[...new Map(input.names.map(name=>[name.toLowerCase(),name])).values()];const onlineKeys=new Set(uniqueNames.map(name=>name.toLowerCase()))
   const existing=await db.select().from(serverPlayers).where(eq(serverPlayers.serverId,server.id));const byKey=new Map(existing.map(row=>[row.playerNameKey,row]))
   for(const name of uniqueNames){const key=name.toLowerCase();const row=byKey.get(key);if(row){await db.update(serverPlayers).set({playerName:name,isOnline:true,lastSeenAt:at,lastJoinAt:row.isOnline?(row.lastJoinAt??at):at,sessionStartedAt:row.sessionStartedAt??at,lastSyncAt:at,updatedAt:new Date()}).where(eq(serverPlayers.id,row.id))}else await db.insert(serverPlayers).values({userId:server.userId,serverId:server.id,playerName:name,playerNameKey:key,firstSeenAt:at,lastSeenAt:at,lastJoinAt:at,sessionStartedAt:at,isOnline:true,lastSyncAt:at})}
   for(const row of existing){if(!row.isOnline||onlineKeys.has(row.playerNameKey))continue;const added=sessionSeconds(row.sessionStartedAt,at);await db.update(serverPlayers).set({isOnline:false,lastSeenAt:at,lastLeaveAt:at,sessionStartedAt:null,totalPlaySeconds:row.totalPlaySeconds+added,lastSyncAt:at,updatedAt:new Date()}).where(eq(serverPlayers.id,row.id))}
-  if(input.playerCount!==undefined)await db.update(servers).set({playerCount:input.playerCount,updatedAt:new Date()}).where(eq(servers.id,server.id))
 }
 async function closePlayerSessions(serverId:string,at=new Date()){
+  if(!(await playerStorageReady()))return
   const rows=await db.select().from(serverPlayers).where(and(eq(serverPlayers.serverId,serverId),eq(serverPlayers.isOnline,true)))
   for(const row of rows){const added=sessionSeconds(row.sessionStartedAt,at);await db.update(serverPlayers).set({isOnline:false,lastSeenAt:at,lastLeaveAt:at,sessionStartedAt:null,totalPlaySeconds:row.totalPlaySeconds+added,lastSyncAt:at,updatedAt:new Date()}).where(eq(serverPlayers.id,row.id))}
 }
