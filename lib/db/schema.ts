@@ -10,6 +10,7 @@ export const servers = pgTable('servers', { id: uuid('id').primaryKey().defaultR
 export const websites = pgTable('websites', {
   id: uuid('id').primaryKey().defaultRandom(),
   userId: text('userId').notNull(),
+  serverId: uuid('serverId'),
   name: text('name').notNull(),
   slug: text('slug').notNull().unique(),
   projectName: text('projectName').notNull().unique(),
@@ -72,6 +73,7 @@ export const websiteMemberSessions = pgTable('website_member_sessions', {
 export const websiteFormSubmissions = pgTable('website_form_submissions', {
   id: uuid('id').primaryKey().defaultRandom(),
   websiteId: uuid('websiteId').notNull().references(() => websites.id, { onDelete: 'cascade' }),
+  serverId: uuid('serverId'),
   memberId: uuid('memberId').references(() => websiteMembers.id, { onDelete: 'set null' }),
   formType: text('formType').notNull().default('contact'),
   pageSlug: text('pageSlug').notNull().default(''),
