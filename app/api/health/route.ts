@@ -8,7 +8,7 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 
-const EXPECTED_MIGRATION = '0016_website_server_binding'
+const EXPECTED_MIGRATION = '0017_panel_media_fallback'
 
 
 type CheckStatus='unknown'|'ok'|'error'|'outdated'|'offline'|'not-configured'
@@ -28,7 +28,7 @@ export async function GET() {
     agent:{status:'unknown' as CheckStatus,totalNodes:0,onlineNodes:0,latestHeartbeat:null as string|null,error:null as string|null},
     auth:{status:'unknown' as CheckStatus,supabaseUrlConfigured:false,publishableKeyConfigured:false,error:null as string|null},
     vercelWebsite:{status:'unknown' as CheckStatus,mode:'internal' as 'internal'|'vercel',latencyMs:null as number|null,teamConfigured:false,externalConfigured:false,error:null as string|null},
-    blobStorage:{status:'unknown' as CheckStatus,latencyMs:null as number|null,error:null as string|null},
+    blobStorage:{status:'unknown' as CheckStatus,mode:'database-fallback' as 'blob'|'database-fallback',latencyMs:null as number|null,fallbackMaxBytes:Number(process.env.BLOCKCTRL_DB_MEDIA_MAX_BYTES)||3*1024*1024,error:null as string|null},
     websiteRuntime:{status:'unknown' as CheckStatus,publicUrlConfigured:false,serverBridgeConfigured:false,error:null as string|null},
     security:{status:'unknown' as CheckStatus,cspMode:'report-only' as 'enforced'|'report-only',environment:String(process.env.VERCEL_ENV||process.env.NODE_ENV||'unknown'),error:null as string|null},
     alerting:{status:'unknown' as CheckStatus,webhookConfigured:false,emailConfigured:false,error:null as string|null},
@@ -127,19 +127,23 @@ export async function GET() {
 
   const blobToken=process.env.BLOB_READ_WRITE_TOKEN||''
   if(!blobToken){
-    health.blobStorage.status='not-configured'
-    health.blobStorage.error='BLOB_READ_WRITE_TOKEN is not configured'
-    markDegraded(health)
+    health.blobStorage.status=health.database.status==='ok'&&health.migration.status==='ok'?'ok':'not-configured'
+    health.blobStorage.mode='database-fallback'
+    health.blobStorage.error=health.blobStorage.status==='ok'?null:'DB medya fallback henüz hazır değil.'
   }else{
     try{
       const blobStarted=Date.now()
       await list({limit:1,token:blobToken})
       health.blobStorage.latencyMs=Date.now()-blobStarted
       health.blobStorage.status='ok'
+      health.blobStorage.mode='blob'
     }catch(error){
-      health.blobStorage.status='error'
-      health.blobStorage.error=errorMessage(error,'Blob storage unavailable')
-      markDegraded(health)
+      health.blobStorage.status=health.database.status==='ok'&&health.migration.status==='ok'?'ok':'error'
+      health.blobStorage.mode='database-fallback'
+      health.blobStorage.error=health.blobStorage.status==='ok'
+        ?'Blob kullanılamıyor; PostgreSQL medya fallback aktif. '+errorMessage(error,'Blob unavailable')
+        :errorMessage(error,'Blob storage unavailable')
+      if(health.blobStorage.status==='error')markDegraded(health)
     }
   }
 
@@ -198,7 +202,8 @@ export async function GET() {
   if(health.auth.status!=='ok')health.readiness.blockers.push('Supabase kimlik doğrulama ortam değişkenleri eksik veya geçersiz.')
   if(health.agent.status==='offline')health.readiness.warnings.push('Kayıtlı node var ancak çevrimiçi agent heartbeat alınamıyor.')
   if(health.agent.status==='not-configured')health.readiness.warnings.push('Henüz node/agent bağlanmamış.')
-  if(health.blobStorage.status!=='ok')health.readiness.warnings.push('Medya yüklemeleri için Vercel Blob hazır değil.')
+  if(health.blobStorage.status!=='ok')health.readiness.warnings.push('Medya depolama hazır değil.')
+  if(health.blobStorage.status==='ok'&&health.blobStorage.mode==='database-fallback')health.readiness.warnings.push('Vercel Blob bağlı değil; küçük/orta medya için PostgreSQL fallback aktif. Büyük dosyalar için object storage önerilir.')
   if(health.websiteRuntime.status!=='ok')health.readiness.warnings.push('Yayınlanan sitelerin canlı BlockCtrl köprüsü eksik.')
   if(health.alerting.status!=='ok')health.readiness.warnings.push('Operasyon alarm kanalı yapılandırılmadı.')
   if(health.integrations.encryptionConfigured===false)health.readiness.warnings.push('Secret kullanan entegrasyonlar için INTEGRATION_ENCRYPTION_KEY eksik.')
