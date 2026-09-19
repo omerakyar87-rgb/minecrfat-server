@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { and, desc, eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { getPanelActor } from '@/lib/api-auth'
-import { db, ensurePanelSchema } from '@/lib/db'
+import { db, ensurePanelSchema, pool } from '@/lib/db'
 import { auditLog, nodes, serverPermissions, serverPlayers, servers } from '@/lib/db/schema'
 import { nodeDiagnosticMessage, nodeFetch } from '@/lib/node-bridge'
 
@@ -54,6 +54,17 @@ async function access(serverId:string,current:NonNullable<Awaited<ReturnType<typ
 }
 function nodeFresh(node:{status:string;lastHeartbeat:Date|null}|undefined){return !!node&&node.status==='online'&&!!node.lastHeartbeat&&Date.now()-node.lastHeartbeat.getTime()<90_000}
 function noStore(data:unknown,status=200){return NextResponse.json(data,{status,headers:{'Cache-Control':'private, no-store'}})}
+let playerStorageCheckedAt=0
+let playerStorageCached=false
+async function playerStorageReady(){
+  if(Date.now()-playerStorageCheckedAt<15_000)return playerStorageCached
+  try{
+    const result=await pool.query<{table_name:string|null}>(`SELECT to_regclass('public.server_players')::text AS table_name`)
+    playerStorageCached=Boolean(result.rows[0]?.table_name)
+  }catch{playerStorageCached=false}
+  playerStorageCheckedAt=Date.now()
+  return playerStorageCached
+}
 function parseDate(value:unknown){if(!value)return null;const d=new Date(String(value));return Number.isNaN(d.getTime())?null:d}
 function sessionSeconds(start:Date|null|undefined,end:Date){return start?Math.max(0,Math.min(31_536_000,Math.floor((end.getTime()-start.getTime())/1000))):0}
 function cleanRuntimePlayer(input:unknown):RuntimePlayer|null{
@@ -102,6 +113,27 @@ async function syncSnapshot(server:{id:string;userId:string},snapshot:RuntimeSna
 async function fetchRuntime(server:{id:string;nodeId:string;userId:string}){
   return await directJson(server.nodeId,`/internal/players/status?serverId=${encodeURIComponent(server.id)}`) as RuntimeSnapshot
 }
+function transientPlayers(snapshot:RuntimeSnapshot|null){
+  const at=parseDate(snapshot?.syncedAt)??new Date()
+  return (Array.isArray(snapshot?.players)?snapshot!.players!:[]).map(cleanRuntimePlayer).filter((row):row is RuntimePlayer=>!!row).map(player=>({
+    id:`runtime:${player.playerName.toLowerCase()}`,
+    playerUuid:player.playerUuid??null,
+    playerName:player.playerName,
+    firstSeenAt:null,
+    lastSeenAt:player.isOnline?at.toISOString():null,
+    lastJoinAt:player.isOnline?at.toISOString():null,
+    lastLeaveAt:null,
+    sessionStartedAt:player.isOnline?at.toISOString():null,
+    totalPlaySeconds:0,
+    isOnline:player.isOnline===true,
+    isOp:player.isOp===true,
+    whitelisted:player.whitelisted===true,
+    banned:player.banned===true,
+    banReason:player.banReason??null,
+    banExpiresAt:player.banExpiresAt??null,
+    lastSyncAt:at.toISOString(),
+  }))
+}
 function presentRow(row:typeof serverPlayers.$inferSelect){
   const now=new Date();const current=row.isOnline?sessionSeconds(row.sessionStartedAt,now):0
   return{...row,totalPlaySeconds:row.totalPlaySeconds+current}
@@ -111,8 +143,23 @@ export async function GET(request:NextRequest){
   await ensurePanelSchema();const current=await actor();if(!current)return noStore({error:'Unauthorized'},401);if(!current.approved)return noStore({error:'Approval required'},403)
   const serverId=request.nextUrl.searchParams.get('serverId')??'';const x=await access(serverId,current);if(!x?.canRead)return noStore({error:'Oyuncular bölümüne erişiminiz yok'},403)
   const node=(await db.select({status:nodes.status,lastHeartbeat:nodes.lastHeartbeat}).from(nodes).where(eq(nodes.id,x.server.nodeId)).limit(1))[0]
+  const storageReady=await playerStorageReady()
   let runtime:RuntimeSnapshot|null=null;let runtimeError:string|null=null
   const refresh=request.nextUrl.searchParams.get('refresh')==='1'
+
+  if(!storageReady){
+    if(nodeFresh(node)){
+      try{runtime=await fetchRuntime(x.server)}catch(error){runtimeError=nodeDiagnosticMessage(error)}
+    }else runtimeError='Node çevrimdışı veya heartbeat güncel değil.'
+    const players=transientPlayers(runtime)
+    const migrationMessage='Kalıcı oyuncu geçmişi için 0015_server_players migrationı henüz uygulanmamış.'
+    return noStore({
+      players,
+      summary:{total:players.length,online:players.filter(row=>row.isOnline).length,banned:players.filter(row=>row.banned).length,ops:players.filter(row=>row.isOp).length,whitelisted:players.filter(row=>row.whitelisted).length,lastSyncAt:runtime?.syncedAt??null,maxPlayers:runtime?.maxPlayers??null,whitelistEnabled:runtime?.whitelistEnabled??null},
+      nodeOnline:nodeFresh(node),runtimeSynced:!!runtime,runtimeError:[migrationMessage,runtimeError].filter(Boolean).join(' '),canManage:x.canManage,storageReady:false,expectedMigration:'0015_server_players',
+    })
+  }
+
   const count=(await db.select({id:serverPlayers.id}).from(serverPlayers).where(eq(serverPlayers.serverId,serverId)).limit(1)).length
   if(nodeFresh(node)&&(refresh||count===0)){
     try{runtime=await fetchRuntime(x.server);await syncSnapshot(x.server,runtime)}catch(error){runtimeError=nodeDiagnosticMessage(error)}
@@ -122,18 +169,18 @@ export async function GET(request:NextRequest){
   return noStore({
     players,
     summary:{total:players.length,online:players.filter(row=>row.isOnline).length,banned:players.filter(row=>row.banned).length,ops:players.filter(row=>row.isOp).length,whitelisted:players.filter(row=>row.whitelisted).length,lastSyncAt:latestSync?.toISOString()??runtime?.syncedAt??null,maxPlayers:runtime?.maxPlayers??null,whitelistEnabled:runtime?.whitelistEnabled??null},
-    nodeOnline:nodeFresh(node),runtimeSynced:!!runtime,runtimeError,canManage:x.canManage,
+    nodeOnline:nodeFresh(node),runtimeSynced:!!runtime,runtimeError,canManage:x.canManage,storageReady:true,expectedMigration:'0015_server_players',
   })
 }
-
 export async function POST(request:NextRequest){
   await ensurePanelSchema();const current=await actor();if(!current)return noStore({error:'Unauthorized'},401);if(!current.approved)return noStore({error:'Approval required'},403)
   const input=actionSchema.safeParse(await request.json().catch(()=>({})));if(!input.success)return noStore({error:'Geçersiz oyuncu işlemi'},400)
   const x=await access(input.data.serverId,current);if(!x?.canRead)return noStore({error:'Oyuncular bölümüne erişiminiz yok'},403)
   const node=(await db.select({status:nodes.status,lastHeartbeat:nodes.lastHeartbeat}).from(nodes).where(eq(nodes.id,x.server.nodeId)).limit(1))[0]
+  const storageReady=await playerStorageReady()
   if(!nodeFresh(node))return noStore({error:'Node çevrimdışı veya agent heartbeat güncel değil.'},409)
   if(input.data.action==='refresh'){
-    try{const runtime=await fetchRuntime(x.server);await syncSnapshot(x.server,runtime);return noStore({ok:true,message:`Oyuncu verileri sunucudan yenilendi${runtime.onlineVerified===false?' (canlı isim listesi doğrulanamadı)':''}.`,runtime})}
+    try{const runtime=await fetchRuntime(x.server);if(storageReady)await syncSnapshot(x.server,runtime);return noStore({ok:true,message:storageReady?`Oyuncu verileri sunucudan yenilendi${runtime.onlineVerified===false?' (canlı isim listesi doğrulanamadı)':''}.`:'Canlı oyuncu verileri alındı; kalıcı geçmiş 0015_server_players migrationı sonrasında kaydedilecek.',runtime,storageReady})}
     catch(error){return noStore({error:`Oyuncu verileri yenilenemedi: ${nodeDiagnosticMessage(error)}`},503)}
   }
   if(!x.canManage)return noStore({error:'Oyuncu yönetme yetkiniz yok'},403)
@@ -142,6 +189,7 @@ export async function POST(request:NextRequest){
   try{
     await directJson(x.server.nodeId,'/internal/players/action',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({serverId:x.server.id,action:input.data.action,playerName:input.data.playerName,message:input.data.message?.trim(),reason:input.data.reason?.trim()})})
   }catch(error){return noStore({error:`Oyuncu işlemi uygulanamadı: ${nodeDiagnosticMessage(error)}`},503)}
+  if(!storageReady){await db.insert(auditLog).values({userId:current.id,action:`player.${input.data.action}`,resourceType:'player',resourceId:`${x.server.id}:${input.data.playerName}`,details:{serverId:x.server.id,playerName:input.data.playerName,reason:input.data.reason?.trim()||null,messageLength:input.data.message?.length??0,storageReady:false}});return noStore({ok:true,message:'Oyuncu işlemi uygulandı. Kalıcı oyuncu geçmişi 0015_server_players migrationı sonrasında kaydedilecek.',storageReady:false})}
   const key=input.data.playerName.toLowerCase();const existing=(await db.select().from(serverPlayers).where(and(eq(serverPlayers.serverId,x.server.id),eq(serverPlayers.playerNameKey,key))).limit(1))[0];const patch:Partial<typeof serverPlayers.$inferInsert>={lastSyncAt:new Date(),updatedAt:new Date()}
   if(input.data.action==='whitelist-add')patch.whitelisted=true
   if(input.data.action==='whitelist-remove')patch.whitelisted=false
