@@ -31,6 +31,6 @@ export async function POST(request:NextRequest){
   if(!message&&formType!=='newsletter')return response({error:'Mesaj alanı boş olamaz.'},400)
   const payload=body.payload&&typeof body.payload==='object'&&!Array.isArray(body.payload)?body.payload as Record<string,unknown>:{}
   if(JSON.stringify(payload).length>12_000)return response({error:'Form ek verisi çok büyük.'},413)
-  const [created]=await db.insert(websiteFormSubmissions).values({websiteId:site.id,memberId,formType,pageSlug,senderName:senderName||null,senderEmail:senderEmail||null,subject:subject||null,message,payload}).returning({id:websiteFormSubmissions.id,createdAt:websiteFormSubmissions.createdAt})
+  const [created]=await db.insert(websiteFormSubmissions).values({websiteId:site.id,serverId:site.serverId||null,memberId,formType,pageSlug,senderName:senderName||null,senderEmail:senderEmail||null,subject:subject||null,message,payload}).returning({id:websiteFormSubmissions.id,createdAt:websiteFormSubmissions.createdAt})
   return response({ok:true,submission:created},201)
 }
