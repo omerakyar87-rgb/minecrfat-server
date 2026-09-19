@@ -9,11 +9,14 @@
     "lint": "eslint .",
     "db:migrate": "tsx scripts/migrate.ts",
     "typecheck": "tsc --noEmit",
-    "check": "pnpm lint && pnpm typecheck && pnpm test:contracts",
+    "check": "pnpm lint && pnpm typecheck && pnpm test",
     "agent:dev": "pnpm --dir agent dev",
     "agent:build": "pnpm --dir agent build",
     "agent:start": "pnpm --dir agent start",
-    "test:contracts": "node scripts/check-contracts.mjs"
+    "test:contracts": "node scripts/check-contracts.mjs",
+    "test:unit": "vitest run",
+    "test:e2e": "playwright test",
+    "test": "pnpm test:contracts && pnpm test:unit"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
@@ -52,7 +55,9 @@
     "tailwindcss": "^4.3.3",
     "tsx": "^4.23.12",
     "typescript": "5.7.3",
-    "typescript-eslint": "^8.70.0"
+    "typescript-eslint": "^8.70.0",
+    "@playwright/test": "^1.55.0",
+    "vitest": "^3.2.4"
   },
   "pnpm": {
     "overrides": {
