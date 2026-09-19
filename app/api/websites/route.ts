@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { and, desc, eq, gt, inArray, or } from 'drizzle-orm'
 import { auth } from '@/lib/auth'
 import { db, ensurePanelSchema } from '@/lib/db'
-import { auditLog, serverPermissions, servers, websiteAuthRateLimits, websiteAuthSettings, websiteFormSubmissions, websiteMembers, websiteMemberSessions, websites } from '@/lib/db/schema'
+import { auditLog, serverPermissions, serverSettings, servers, websiteAuthRateLimits, websiteAuthSettings, websiteFormSubmissions, websiteMembers, websiteMemberSessions, websites } from '@/lib/db/schema'
 import { resolvePanelUser } from '@/lib/db/identity'
 
 const RESERVED = new Set(['www','api','admin','dashboard','panel','support','destek','blockctrl','vercel','app','mail','status'])
@@ -107,13 +107,14 @@ function starterHtml(name:string,description:string,template:string){
 
 type BuilderBackground={type:'color'|'gradient'|'image'|'video';color:string;gradient:string;mediaUrl:string;overlayColor:string;overlayOpacity:number;position:'center'|'top'|'bottom'|'left'|'right'}
 type BuilderItem={title:string;description:string;value?:string;image?:string;href?:string}
-type BuilderLiveData={mode:'static'|'auto'|'source';source:'server-status'|'players'|'metrics'|'lost-items'|'leaderboard-kills'|'leaderboard-money'|'leaderboard-health'|'bans'|'custom-json';serverId:string;endpoint:string;refreshSeconds:number}
+type BuilderLiveData={mode:'static'|'auto'|'source';source:'server-status'|'players'|'metrics'|'map'|'lost-items'|'leaderboard-kills'|'leaderboard-money'|'leaderboard-health'|'bans'|'custom-json';serverId:string;endpoint:string;refreshSeconds:number}
 type BuilderAuth={enabled:boolean;allowRegistration:boolean;registrationMode:'website'|'server'|'both'|'closed';loginMode:'email'|'minecraft'|'both';serverId:string;sessionDays:number;defaultRole:string;loginPageSlug:string;registerPageSlug:string;afterLoginPageSlug:string}
 type BuilderSection={id:string;type:string;variant:string;label:string;title:string;subtitle:string;body:string;buttonText:string;buttonHref:string;secondaryButtonText:string;secondaryButtonHref:string;items:BuilderItem[];liveData:BuilderLiveData;background:BuilderBackground;settings:{width:'boxed'|'wide'|'full';align:'left'|'center'|'right';paddingY:number;minHeight:number;placement:'flow'|'sticky-top'|'fixed-top'|'fixed-bottom';visible:boolean;rounded:number}}
 type BuilderPage={id:string;name:string;slug:string;seoTitle:string;seoDescription:string;showInNav:boolean;pageType:'standard'|'login'|'register'|'member-dashboard';requiresAuth:boolean;accessMode:'public'|'authenticated'|'assigned'|'role';allowedRoles:string[];sections:BuilderSection[]}
-type BuilderData={version:1;theme:{primary:string;secondary:string;background:string;text:string;muted:string;fontFamily:string;radius:number};auth:BuilderAuth;pages:BuilderPage[]}
+type BuilderBinding={serverId:string;inheritLiveData:boolean}
+type BuilderData={version:1;theme:{primary:string;secondary:string;background:string;text:string;muted:string;fontFamily:string;radius:number};binding:BuilderBinding;auth:BuilderAuth;pages:BuilderPage[]}
 const BUILDER_TYPES=new Set(['navbar','hero','features','stats','content','gallery','map','pricing','testimonials','team','faq','contact','cta','footer','minecraft','support','banlist','leaderboard','wiki','guide','connect','store','login','register','member-dashboard'])
-const LIVE_SOURCES=new Set(['server-status','players','metrics','lost-items','leaderboard-kills','leaderboard-money','leaderboard-health','bans','custom-json'])
+const LIVE_SOURCES=new Set(['server-status','players','metrics','map','lost-items','leaderboard-kills','leaderboard-money','leaderboard-health','bans','custom-json'])
 const BUILDER_PLACEMENTS=new Set(['flow','sticky-top','fixed-top','fixed-bottom'])
 const BUILDER_WIDTHS=new Set(['boxed','wide','full'])
 const BUILDER_ALIGNS=new Set(['left','center','right'])
@@ -124,11 +125,13 @@ function safeCssGradient(value:unknown){const v=String(value??'').trim().slice(0
 function safeMediaUrl(value:unknown){const v=String(value??'').trim().slice(0,2000);if(!v)return '';try{const u=new URL(v);return u.protocol==='https:'?v:''}catch{return ''}}
 function safeHref(value:unknown){const v=String(value??'').trim().slice(0,600);if(!v)return '#';if(v.startsWith('/')||v.startsWith('#')||v.startsWith('mailto:')||v.startsWith('tel:'))return v;try{const u=new URL(v);return u.protocol==='https:'?v:'#'}catch{return '#'}}
 function safeEndpoint(value:unknown){const v=String(value??'').trim().slice(0,2000);if(!v)return '';try{const u=new URL(v);return u.protocol==='https:'?v:''}catch{return ''}}
-function defaultLiveData(type:string,variant=''):BuilderLiveData{if(type==='minecraft'||type==='stats'||type==='connect'||type==='member-dashboard')return {mode:'auto',source:'server-status',serverId:'',endpoint:'',refreshSeconds:15};if(type==='banlist')return {mode:'auto',source:'bans',serverId:'',endpoint:'',refreshSeconds:30};if(type==='leaderboard')return {mode:'auto',source:variant.includes('3')?'leaderboard-money':variant.includes('4')?'leaderboard-health':'leaderboard-kills',serverId:'',endpoint:'',refreshSeconds:30};return {mode:'static',source:'server-status',serverId:'',endpoint:'',refreshSeconds:30}}
+function defaultLiveData(type:string,variant=''):BuilderLiveData{if(type==='map')return {mode:'auto',source:'map',serverId:'',endpoint:'',refreshSeconds:30};if(type==='minecraft'||type==='stats'||type==='connect'||type==='member-dashboard')return {mode:'auto',source:'server-status',serverId:'',endpoint:'',refreshSeconds:15};if(type==='banlist')return {mode:'auto',source:'bans',serverId:'',endpoint:'',refreshSeconds:30};if(type==='leaderboard')return {mode:'auto',source:variant.includes('3')?'leaderboard-money':variant.includes('4')?'leaderboard-health':'leaderboard-kills',serverId:'',endpoint:'',refreshSeconds:30};return {mode:'static',source:'server-status',serverId:'',endpoint:'',refreshSeconds:30}}
 function normalizeBuilderData(input:unknown,siteName='Website'):BuilderData{
   const root=input&&typeof input==='object'&&!Array.isArray(input)?input as Record<string,unknown>:{}
   const themeRaw=root.theme&&typeof root.theme==='object'&&!Array.isArray(root.theme)?root.theme as Record<string,unknown>:{}
   const theme={primary:safeColor(themeRaw.primary,'#0ea5e9'),secondary:safeColor(themeRaw.secondary,'#7c3aed'),background:safeColor(themeRaw.background,'#030b13'),text:safeColor(themeRaw.text,'#f4f9ff'),muted:safeColor(themeRaw.muted,'#91a9bb'),fontFamily:textValue(themeRaw.fontFamily,160)||'Inter, ui-sans-serif, system-ui, sans-serif',radius:numberValue(themeRaw.radius,0,40,18)}
+  const bindingRaw=root.binding&&typeof root.binding==='object'&&!Array.isArray(root.binding)?root.binding as Record<string,unknown>:{}
+  const binding:BuilderBinding={serverId:textValue(bindingRaw.serverId,80),inheritLiveData:bindingRaw.inheritLiveData!==false}
   const authRaw=root.auth&&typeof root.auth==='object'&&!Array.isArray(root.auth)?root.auth as Record<string,unknown>:{}
   const registrationMode=['website','server','both','closed'].includes(String(authRaw.registrationMode))?String(authRaw.registrationMode) as BuilderAuth['registrationMode']:(authRaw.allowRegistration===false?'closed':'website')
   const loginMode=['email','minecraft','both'].includes(String(authRaw.loginMode))?String(authRaw.loginMode) as BuilderAuth['loginMode']:'email'
@@ -169,7 +172,7 @@ function normalizeBuilderData(input:unknown,siteName='Website'):BuilderData{
   }
   if(!pages.length)pages.push({id:crypto.randomUUID(),name:'Ana Sayfa',slug:'',seoTitle:siteName,seoDescription:'',showInNav:true,pageType:'standard',requiresAuth:false,accessMode:'public',allowedRoles:[],sections:[]})
   if(!pages.some(page=>page.slug===''))pages[0].slug=''
-  return {version:1,theme,auth,pages}
+  return {version:1,theme,binding,auth,pages}
 }
 async function accessibleServerIds(userId:string,role:string){
   if(role==='manager')return (await db.select({id:servers.id}).from(servers)).map(row=>row.id)
@@ -177,16 +180,36 @@ async function accessibleServerIds(userId:string,role:string){
   const grants=await db.select({serverId:serverPermissions.serverId}).from(serverPermissions).where(and(eq(serverPermissions.userId,userId),eq(serverPermissions.canWebsiteData,true)))
   return [...new Set([...own.map(row=>row.id),...grants.map(row=>row.serverId)])]
 }
-async function prepareBuilderData(input:unknown,siteName:string,userId:string,role:string){
+async function accessibleServerRows(userId:string,role:string){
+  const ids=await accessibleServerIds(userId,role)
+  if(!ids.length)return []
+  const rows=await db.select().from(servers).where(inArray(servers.id,ids))
+  return Promise.all(rows.map(async server=>{
+    const settings=(await db.select({settings:serverSettings.settings}).from(serverSettings).where(eq(serverSettings.serverId,server.id)).limit(1))[0]
+    const raw=(settings?.settings||{}) as Record<string,unknown>
+    const mapUrl=safeEndpoint(raw.websiteMapUrl||raw.bluemapUrl||raw.dynmapUrl)
+    const mapProvider=['bluemap','dynmap','custom'].includes(String(raw.websiteMapProvider))?String(raw.websiteMapProvider):mapUrl?'custom':''
+    return {id:server.id,name:server.name,status:server.status,playerCount:server.playerCount,mcVersion:server.mcVersion,loader:server.loader,owned:server.userId===userId||role==='manager',canWebsiteData:true,map:{configured:Boolean(mapUrl),url:mapUrl||null,provider:mapProvider||null}}
+  }))
+}
+async function prepareBuilderData(input:unknown,siteName:string,userId:string,role:string,preferredServerId=''){
   const builder=normalizeBuilderData(input,siteName)
-  const allowed=await accessibleServerIds(userId,role);const allowedSet=new Set(allowed);const fallback=allowed[0]||''
+  const allowed=await accessibleServerIds(userId,role);const allowedSet=new Set(allowed)
+  const requested=allowedSet.has(preferredServerId)?preferredServerId:''
+  if(builder.binding.serverId&&!allowedSet.has(builder.binding.serverId))builder.binding.serverId=''
+  if(!builder.binding.serverId)builder.binding.serverId=requested||allowed[0]||''
   if(builder.auth.serverId&&!allowedSet.has(builder.auth.serverId))builder.auth.serverId=''
-  for(const page of builder.pages)for(const section of page.sections){if(section.liveData.mode==='static'||section.liveData.source==='custom-json')continue;if(section.liveData.serverId&&!allowedSet.has(section.liveData.serverId))section.liveData.serverId='';if(!section.liveData.serverId&&fallback)section.liveData.serverId=fallback}
+  if(!builder.auth.serverId&&builder.binding.serverId)builder.auth.serverId=builder.binding.serverId
+  for(const page of builder.pages)for(const section of page.sections){
+    if(section.liveData.mode==='static'||section.liveData.source==='custom-json')continue
+    if(section.liveData.serverId&&!allowedSet.has(section.liveData.serverId))section.liveData.serverId=''
+    if(!section.liveData.serverId&&builder.binding.serverId)section.liveData.serverId=builder.binding.serverId
+  }
   return builder
 }
 async function syncAuthSettings(websiteId:string,builder:BuilderData,executor:any=db){
   const auth=builder.auth
-  await executor.insert(websiteAuthSettings).values({websiteId,registrationMode:auth.registrationMode,loginMode:auth.loginMode,serverId:auth.serverId||null,sessionDays:auth.sessionDays,defaultRole:auth.defaultRole,serverBridgeEnabled:auth.registrationMode==='server'||auth.registrationMode==='both',updatedAt:new Date()}).onConflictDoUpdate({target:websiteAuthSettings.websiteId,set:{registrationMode:auth.registrationMode,loginMode:auth.loginMode,serverId:auth.serverId||null,sessionDays:auth.sessionDays,defaultRole:auth.defaultRole,serverBridgeEnabled:auth.registrationMode==='server'||auth.registrationMode==='both',updatedAt:new Date()}})
+  await executor.insert(websiteAuthSettings).values({websiteId,registrationMode:auth.registrationMode,loginMode:auth.loginMode,serverId:auth.serverId||builder.binding.serverId||null,sessionDays:auth.sessionDays,defaultRole:auth.defaultRole,serverBridgeEnabled:auth.registrationMode==='server'||auth.registrationMode==='both',updatedAt:new Date()}).onConflictDoUpdate({target:websiteAuthSettings.websiteId,set:{registrationMode:auth.registrationMode,loginMode:auth.loginMode,serverId:auth.serverId||builder.binding.serverId||null,sessionDays:auth.sessionDays,defaultRole:auth.defaultRole,serverBridgeEnabled:auth.registrationMode==='server'||auth.registrationMode==='both',updatedAt:new Date()}})
 }
 function validateAuthPages(builder:BuilderData){
   if(!builder.auth.enabled)return
@@ -321,8 +344,10 @@ export async function GET(){
       rows=[...byId.values()].sort((a,b)=>new Date(b.createdAt).getTime()-new Date(a.createdAt).getTime())
     }
   }
+  const availableServers=await accessibleServerRows(a.id,role)
   return NextResponse.json({
     websites:rows,
+    servers:availableServers,
     canCreate:canCreate(role),
     integrationConfigured:Boolean(cfg.token&&(cfg.teamId||cfg.teamSlug)),
     suffix:suffix(),
@@ -366,6 +391,10 @@ export async function POST(request:NextRequest){
     const slug=cleanSlug(body.slug||name)
     const description=String(body.description||'').trim().slice(0,180)
     const template=['blank','landing','minecraft','community','corporate','portfolio','shop','minimal'].includes(String(body.template))?String(body.template):'minecraft'
+    const allowedServers=await accessibleServerIds(a.id,role)
+    const requestedServerId=String(body.serverId||'')
+    const serverId=requestedServerId?(allowedServers.includes(requestedServerId)?requestedServerId:''):allowedServers[0]||''
+    if(requestedServerId&&!serverId)return NextResponse.json({error:'Bu sunucunun website verilerini kullanma yetkiniz yok.'},{status:403})
     if(name.length<2||name.length>80)return NextResponse.json({error:'Website adı 2-80 karakter olmalı.'},{status:400})
     if(slug.length<3||slug.length>40||RESERVED.has(slug))return NextResponse.json({error:'Yayın adı 3-40 karakter olmalı ve ayrılmış bir ad kullanmamalı.'},{status:400})
     const projectName=`${slug}-${suffix()}`
@@ -395,13 +424,13 @@ export async function POST(request:NextRequest){
       const productionUrl=projectId?await resolveVercelAlias(projectId,projectName):null
       const created=await db.transaction(async tx=>{
         const [row]=await tx.insert(websites).values({
-          userId:a.id,name,slug,projectName,template,description:description||null,
+          userId:a.id,serverId:serverId||null,name,slug,projectName,template,description:description||null,
           vercelProjectId:projectId||null,deploymentId:deploymentId||null,
           deploymentUrl:deploymentHost?`https://${deploymentHost}`:null,
           productionUrl,status:STATUS_MAP[readyState]||'queued',
           publishedAt:readyState==='READY'?new Date():null,
         }).returning()
-        await tx.insert(auditLog).values({userId:a.id,action:'website.create',resourceType:'website',resourceId:row.id,details:{slug,projectName,template,deploymentId}})
+        await tx.insert(auditLog).values({userId:a.id,action:'website.create',resourceType:'website',resourceId:row.id,details:{slug,projectName,template,deploymentId,serverId:serverId||null}})
         return row
       })
       return NextResponse.json({ok:true,website:created},{status:201})
@@ -419,6 +448,43 @@ export async function POST(request:NextRequest){
   if(!site)return NextResponse.json({error:'Website bulunamadı.'},{status:404})
   if(role!=='manager'&&site.userId!==a.id)return NextResponse.json({error:'Bu website üzerinde yetkiniz yok.'},{status:403})
 
+  if(action==='set-server'){
+    const serverId=String(body.serverId||'')
+    const allowed=await accessibleServerIds(a.id,role)
+    if(serverId&&!allowed.includes(serverId))return NextResponse.json({error:'Bu sunucunun website verilerini kullanma yetkiniz yok.'},{status:403})
+    const builder=await prepareBuilderData(site.builderData,site.name,a.id,role,serverId)
+    const oldServerId=site.serverId||builder.binding.serverId
+    builder.binding.serverId=serverId
+    if(builder.auth.serverId===oldServerId||!builder.auth.serverId)builder.auth.serverId=serverId
+    for(const page of builder.pages)for(const section of page.sections){
+      if(section.liveData.mode==='static'||section.liveData.source==='custom-json')continue
+      if(!section.liveData.serverId||section.liveData.serverId===oldServerId)section.liveData.serverId=serverId
+    }
+    const updated=await db.transaction(async tx=>{
+      await syncAuthSettings(site.id,builder,tx)
+      const [row]=await tx.update(websites).set({serverId:serverId||null,builderData:builder,updatedAt:new Date(),lastError:null}).where(eq(websites.id,site.id)).returning()
+      await tx.insert(auditLog).values({userId:a.id,action:'website.server.bind',resourceType:'website',resourceId:site.id,details:{from:oldServerId||null,to:serverId||null}})
+      return row
+    })
+    return NextResponse.json({ok:true,website:updated})
+  }
+
+  if(action==='update-server-map'){
+    const serverId=String(body.serverId||site.serverId||'')
+    const server=(await db.select().from(servers).where(eq(servers.id,serverId)).limit(1))[0]
+    if(!server)return NextResponse.json({error:'Sunucu bulunamadı.'},{status:404})
+    if(role!=='manager'&&server.userId!==a.id)return NextResponse.json({error:'Harita bağlantısını yalnız sunucu sahibi veya yönetici değiştirebilir.'},{status:403})
+    const mapUrl=safeEndpoint(body.mapUrl)
+    const provider=['bluemap','dynmap','custom'].includes(String(body.provider))?String(body.provider):'custom'
+    if(String(body.mapUrl||'').trim()&&!mapUrl)return NextResponse.json({error:'Harita adresi geçerli bir HTTPS URL olmalı.'},{status:400})
+    const existing=(await db.select().from(serverSettings).where(eq(serverSettings.serverId,serverId)).limit(1))[0]
+    const settings={...((existing?.settings||{}) as Record<string,string|number|boolean>),websiteMapUrl:mapUrl,websiteMapProvider:provider}
+    if(existing)await db.update(serverSettings).set({settings,updatedBy:a.id,updatedAt:new Date()}).where(eq(serverSettings.id,existing.id))
+    else await db.insert(serverSettings).values({serverId,userId:server.userId,settings,capabilities:[],updatedBy:a.id})
+    await db.insert(auditLog).values({userId:a.id,action:'website.map.configure',resourceType:'server',resourceId:serverId,details:{provider,configured:Boolean(mapUrl)}})
+    return NextResponse.json({ok:true,map:{serverId,provider,url:mapUrl||null,configured:Boolean(mapUrl)}})
+  }
+
   if(action==='update-metadata'){
     const name=String(body.name||'').trim()
     const description=String(body.description||'').trim().slice(0,180)
@@ -429,7 +495,7 @@ export async function POST(request:NextRequest){
   }
 
   if(action==='save-builder'){
-    const builderData=await prepareBuilderData(body.builderData,site.name,a.id,role)
+    const builderData=await prepareBuilderData(body.builderData,site.name,a.id,role,site.serverId||'')
     validateAuthPages(builderData)
     const updated=await db.transaction(async tx=>{
       await syncAuthSettings(site.id,builderData,tx)
@@ -443,7 +509,7 @@ export async function POST(request:NextRequest){
   if(action==='publish'){
     const cfg=vercelConfig()
     if(!cfg.token||(!cfg.teamId&&!cfg.teamSlug))return NextResponse.json({error:'Vercel yayın entegrasyonu eksik.'},{status:503})
-    const builderData=await prepareBuilderData(body.builderData??site.builderData,site.name,a.id,role)
+    const builderData=await prepareBuilderData(body.builderData??site.builderData,site.name,a.id,role,site.serverId||'')
     validateAuthPages(builderData)
     const configuredRuntimeBase=String(process.env.BLOCKCTRL_PUBLIC_URL||'').trim()
     if(!configuredRuntimeBase)return NextResponse.json({error:'BLOCKCTRL_PUBLIC_URL production yayını için zorunludur.'},{status:503})
