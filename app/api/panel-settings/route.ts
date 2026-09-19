@@ -1,10 +1,8 @@
-import { headers } from 'next/headers'
 import { NextRequest, NextResponse } from 'next/server'
+import { getPanelActor } from '@/lib/api-auth'
 import { and, desc, eq } from 'drizzle-orm'
-import { auth } from '@/lib/auth'
 import { db, ensurePanelSchema } from '@/lib/db'
 import { agentCommands, auditLog, nodes, serverPermissions, serverSettings, servers } from '@/lib/db/schema'
-import { resolvePanelUser } from '@/lib/db/identity'
 import { nodeDiagnosticMessage, nodeFetch } from '@/lib/node-bridge'
 
 const LIVE_CAPABILITIES = ['properties', 'port', 'panel-metadata', 'runtime-memory', 'logs', 'console-diagnostics', 'file-browser', 'bulk-download', 'firewall']
@@ -135,11 +133,7 @@ function nodeIsFresh(lastHeartbeat: Date | null | undefined, status: string | nu
 }
 const SETTINGS_OFFLINE_STATUSES = new Set(['stopped', 'crashed', 'ready', 'failed'])
 
-async function actor() {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) return null
-  return resolvePanelUser(session.user)
-}
+async function actor(){return getPanelActor()}
 
 async function access(serverId: string, a: NonNullable<Awaited<ReturnType<typeof actor>>>) {
   const server = (await db.select().from(servers).where(eq(servers.id, serverId)).limit(1))[0]
