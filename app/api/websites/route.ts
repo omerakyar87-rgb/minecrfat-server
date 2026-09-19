@@ -199,7 +199,6 @@ async function prepareBuilderData(input:unknown,siteName:string,userId:string,ro
   if(builder.binding.serverId&&!allowedSet.has(builder.binding.serverId))builder.binding.serverId=''
   if(!builder.binding.serverId)builder.binding.serverId=requested||allowed[0]||''
   if(builder.auth.serverId&&!allowedSet.has(builder.auth.serverId))builder.auth.serverId=''
-  if(!builder.auth.serverId&&builder.binding.serverId)builder.auth.serverId=builder.binding.serverId
   for(const page of builder.pages)for(const section of page.sections){
     if(section.liveData.mode==='static'||section.liveData.source==='custom-json')continue
     if(section.liveData.serverId&&!allowedSet.has(section.liveData.serverId))section.liveData.serverId=''
@@ -486,7 +485,7 @@ export async function POST(request:NextRequest){
     const builder=await prepareBuilderData(site.builderData,site.name,a.id,role,serverId)
     const oldServerId=site.serverId||builder.binding.serverId
     builder.binding.serverId=serverId
-    if(builder.auth.serverId===oldServerId||!builder.auth.serverId)builder.auth.serverId=serverId
+    if(builder.auth.serverId===oldServerId||!builder.auth.serverId)builder.auth.serverId=''
     for(const page of builder.pages)for(const section of page.sections){
       if(section.liveData.mode==='static'||section.liveData.source==='custom-json')continue
       if(!section.liveData.serverId||section.liveData.serverId===oldServerId)section.liveData.serverId=''
