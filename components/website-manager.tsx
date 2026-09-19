@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { WebsiteBuilder, type WebsiteBuilderData, type BuilderWebsite } from '@/components/website-builder'
+import { WebsiteBuilder, defaultBuilderData, type WebsiteBuilderData, type BuilderWebsite } from '@/components/website-builder'
 import { WebsiteManagementWorkspace, type WebsiteManagementSite } from '@/components/website-management-workspace'
 import { useActionConfirm } from '@/components/action-confirm-dialog'
 
@@ -98,7 +98,7 @@ export function WebsiteManager({createOpen,onCreateOpenChange}:{createOpen:boole
     if(cleanSlug.length<3){setMessage('Yayın adresi en az 3 karakter olmalı.');return}
     setBusy(true);setMessage('')
     try{
-      const payload=await json<{website:WebsiteRow}>(await fetch('/api/websites',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'create',name:cleanName,slug:cleanSlug,description:description.trim(),template,serverId})}))
+      const payload=await json<{website:WebsiteRow}>(await fetch('/api/websites',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'create',name:cleanName,slug:cleanSlug,description:description.trim(),template,serverId,builderData:defaultBuilderData(cleanName,template,serverId)})}))
       await mutate()
       onCreateOpenChange(false)
       if(payload.website)setEditingSite(payload.website)
