@@ -193,7 +193,7 @@ function templateSections(template:string):BuilderSection[]{
   if(template==='community')return [add('navbar',1),add('hero',4),add('minecraft',3),add('testimonials',1),add('team',1),add('contact',0),add('footer',3)]
   if(template==='support-page')return [add('navbar',0),add('hero',3),add('support',0),add('faq',0),add('contact',0),add('cta',1),add('footer',0)]
   if(template==='banned-page')return [add('navbar',1),add('hero',3),add('banlist',0),add('support',2),add('faq',0),add('footer',1)]
-  if(template==='ranking-page')return [add('navbar',0),add('hero',4),add('leaderboard',0),add('leaderboard',1),add('leaderboard',2),add('leaderboard',3),add('stats',3),add('footer',2)]
+  if(template==='ranking-page')return [add('navbar',0),add('hero',4),add('leaderboard',0),add('leaderboard',1),add('leaderboard',2),add('leaderboard',3),add('leaderboard',4),add('stats',3),add('footer',2)]
   if(template==='wiki-page')return [add('navbar',3),add('hero',3),add('wiki',0),add('wiki',1),add('faq',1),add('footer',1)]
   if(template==='guide-page')return [add('navbar',3),add('hero',3),add('guide',0),add('guide',1),add('connect',0),add('faq',0),add('footer',1)]
   if(template==='connect-page')return [add('navbar',0),add('hero',2),add('connect',0),add('guide',0),add('faq',0),add('support',3),add('footer',0)]
