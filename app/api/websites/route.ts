@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { headers } from 'next/headers'
 import { del, list } from '@vercel/blob'
 import { NextRequest, NextResponse } from 'next/server'
-import { and, desc, eq, gt, inArray, or } from 'drizzle-orm'
+import { and, desc, eq, gt, inArray, like, or } from 'drizzle-orm'
 import { auth } from '@/lib/auth'
 import { db, ensurePanelSchema } from '@/lib/db'
 import { auditLog, serverPermissions, serverSettings, servers, websiteAuthRateLimits, websiteAuthSettings, websiteFormSubmissions, websiteMembers, websiteMemberSessions, websites } from '@/lib/db/schema'
@@ -216,7 +216,7 @@ function websitePublicSourceKey(websiteId:string,source:string){return `website:
 async function syncWebsiteManagedPublicData(websiteId:string,userId:string,builder:BuilderData,executor:any=db){
   const grouped=new Map<string,{serverId:string;source:BuilderLiveData['source'];items:Array<{title:string;description:string;value:string;image?:string|null;href?:string|null}>}>()
   for(const page of builder.pages)for(const section of page.sections){
-    if(section.liveData.mode==='static'||!WEBSITE_MANAGED_PUBLIC_SOURCES.has(section.liveData.source))continue
+    if(section.liveData.mode!=='auto'||!WEBSITE_MANAGED_PUBLIC_SOURCES.has(section.liveData.source))continue
     const serverId=section.liveData.serverId||builder.binding.serverId
     if(!serverId)continue
     const key=`${serverId}|${section.liveData.source}`
@@ -228,6 +228,7 @@ async function syncWebsiteManagedPublicData(websiteId:string,userId:string,build
     }
     grouped.set(key,group)
   }
+  await executor.delete(serverWebsiteData).where(like(serverWebsiteData.source,websitePublicSourceKey(websiteId,'%')))
   for(const group of grouped.values()){
     await executor.insert(serverWebsiteData).values({userId,serverId:group.serverId,source:websitePublicSourceKey(websiteId,group.source),data:{items:group.items},updatedAt:new Date()}).onConflictDoUpdate({target:[serverWebsiteData.serverId,serverWebsiteData.source],set:{userId,data:{items:group.items},updatedAt:new Date()}})
   }
@@ -603,6 +604,7 @@ export async function POST(request:NextRequest){
         await tx.delete(websiteAuthRateLimits).where(eq(websiteAuthRateLimits.websiteId,site.id))
         await tx.delete(websiteMembers).where(eq(websiteMembers.websiteId,site.id))
         await tx.delete(websiteAuthSettings).where(eq(websiteAuthSettings.websiteId,site.id))
+        await tx.delete(serverWebsiteData).where(like(serverWebsiteData.source,websitePublicSourceKey(site.id,'%')))
         await tx.delete(websites).where(eq(websites.id,site.id))
         await tx.insert(auditLog).values({userId:a.id,action:'website.delete',resourceType:'website',resourceId:site.id,details:{projectName:site.projectName,cleanup:'website-runtime-data',blobDeleted:blobCleanup.deleted,blobCleanupError:blobCleanup.error}})
       })
