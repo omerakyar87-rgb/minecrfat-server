@@ -3,14 +3,14 @@ import { promisify } from 'util'
 import { NextRequest, NextResponse } from 'next/server'
 import { and, eq, gt, ilike, or } from 'drizzle-orm'
 import { db, ensurePanelSchema, pool } from '@/lib/db'
-import { websiteAuthSettings, websiteMembers, websiteMemberSessions, websites } from '@/lib/db/schema'
+import { nodes, servers, websiteAuthSettings, websiteMembers, websiteMemberSessions, websites } from '@/lib/db/schema'
 
 
 const scrypt=promisify(scryptCallback)
 type Config={enabled:boolean;allowRegistration:boolean;registrationMode:'website'|'server'|'both'|'closed';loginMode:'email'|'minecraft'|'both';serverId:string;sessionDays:number;defaultRole:string;serverBridgeEnabled:boolean;loginPageSlug:string;registerPageSlug:string;afterLoginPageSlug:string}
 function originOf(value:unknown){try{return new URL(String(value||'')).origin}catch{return ''}}
-function allowedOrigins(site:any){const values=[site?.productionUrl,site?.deploymentUrl,site?.projectName?`https://${site.projectName}.vercel.app`:'',process.env.BLOCKCTRL_PUBLIC_URL,process.env.NEXT_PUBLIC_APP_URL];return new Set(values.map(originOf).filter(Boolean))}
-function corsFor(request:NextRequest,site:any){const origin=originOf(request.headers.get('origin'));const headers:Record<string,string>={'Access-Control-Allow-Methods':'GET,POST,OPTIONS','Access-Control-Allow-Headers':'Content-Type,Authorization,X-BlockCtrl-Server-Bridge','Cache-Control':'no-store','Vary':'Origin'};if(origin&&allowedOrigins(site).has(origin))headers['Access-Control-Allow-Origin']=origin;return headers}
+function allowedOrigins(site:any){const vercelUrl=process.env.VERCEL_PROJECT_PRODUCTION_URL||process.env.VERCEL_URL;const values=[site?.productionUrl,site?.deploymentUrl,site?.projectName?`https://${site.projectName}.vercel.app`:'',process.env.BLOCKCTRL_PUBLIC_URL,process.env.NEXT_PUBLIC_APP_URL,vercelUrl?`https://${vercelUrl}`:''];return new Set(values.map(originOf).filter(Boolean))}
+function corsFor(request:NextRequest,site:any){const origin=originOf(request.headers.get('origin'));const headers:Record<string,string>={'Access-Control-Allow-Methods':'GET,POST,OPTIONS','Access-Control-Allow-Headers':'Content-Type,Authorization,X-BlockCtrl-Server-Bridge,X-Node-Id','Cache-Control':'no-store','Vary':'Origin'};if(origin&&allowedOrigins(site).has(origin))headers['Access-Control-Allow-Origin']=origin;return headers}
 function response(request:NextRequest,site:any,data:unknown,status=200,extraHeaders:Record<string,string>={}){return NextResponse.json(data,{status,headers:{...corsFor(request,site),...extraHeaders}})}
 export async function OPTIONS(request:NextRequest){await ensurePanelSchema();const slug=String(request.nextUrl.searchParams.get('site')||'');const site=slug?await getSite(slug):undefined;return new NextResponse(null,{status:204,headers:corsFor(request,site)})}
 function tokenHash(token:string){return createHash('sha256').update(token).digest('hex')}
@@ -42,7 +42,19 @@ async function getSiteForProvision(slug:string,serverId:string){
 function builderConfig(site:any){const data=site?.builderData&&typeof site.builderData==='object'?site.builderData as any:{};const cfg=data.auth&&typeof data.auth==='object'?data.auth:{};const binding=data.binding&&typeof data.binding==='object'?data.binding:{};const registrationMode=['website','server','both','closed'].includes(String(cfg.registrationMode))?cfg.registrationMode:(cfg.allowRegistration===false?'closed':'website');const loginMode=['email','minecraft','both'].includes(String(cfg.loginMode))?cfg.loginMode:'email';return {enabled:cfg.enabled===true,allowRegistration:registrationMode==='website'||registrationMode==='both',registrationMode,loginMode,serverId:String(cfg.serverId||binding.serverId||site?.serverId||''),sessionDays:Math.max(1,Math.min(90,Number(cfg.sessionDays)||30)),defaultRole:String(cfg.defaultRole||'member'),serverBridgeEnabled:registrationMode==='server'||registrationMode==='both',loginPageSlug:String(cfg.loginPageSlug||'giris'),registerPageSlug:String(cfg.registerPageSlug||'kayit'),afterLoginPageSlug:String(cfg.afterLoginPageSlug||'hesabim')} as Config}
 async function authConfig(site:any):Promise<Config>{const fallback=builderConfig(site);const row=(await db.select().from(websiteAuthSettings).where(eq(websiteAuthSettings.websiteId,site.id)).limit(1))[0];if(!row)return fallback;return {...fallback,registrationMode:row.registrationMode as Config['registrationMode'],loginMode:row.loginMode as Config['loginMode'],serverId:row.serverId||'',sessionDays:row.sessionDays,defaultRole:row.defaultRole,serverBridgeEnabled:row.serverBridgeEnabled,allowRegistration:row.registrationMode==='website'||row.registrationMode==='both'}}
 function publicMember(member:any){return {id:member.id,name:member.name,email:member.email||'',minecraftUsername:member.minecraftUsername,playerUuid:member.playerUuid,serverId:member.serverId,authSource:member.authSource,role:member.role||'member',allowedPages:Array.isArray(member.allowedPages)?member.allowedPages:[],status:member.status,lastLoginAt:member.lastLoginAt,createdAt:member.createdAt}}
-function bridgeAllowed(request:NextRequest){const expected=process.env.BLOCKCTRL_SITE_SERVER_BRIDGE_KEY||'';const supplied=request.headers.get('x-blockctrl-server-bridge')||'';if(!expected||!supplied)return false;const a=Buffer.from(createHash('sha256').update(expected).digest('hex'));const b=Buffer.from(createHash('sha256').update(supplied).digest('hex'));return a.length===b.length&&timingSafeEqual(a,b)}
+function legacyBridgeAllowed(request:NextRequest){const expected=process.env.BLOCKCTRL_SITE_SERVER_BRIDGE_KEY||'';const supplied=request.headers.get('x-blockctrl-server-bridge')||'';if(!expected||!supplied)return false;const a=Buffer.from(createHash('sha256').update(expected).digest('hex'));const b=Buffer.from(createHash('sha256').update(supplied).digest('hex'));return a.length===b.length&&timingSafeEqual(a,b)}
+async function nodeBridgeAllowed(request:NextRequest,serverId:string){
+  const nodeId=String(request.headers.get('x-node-id')||'')
+  const token=String(request.headers.get('authorization')||'').replace(/^Bearer\s+/i,'').trim()
+  if(!nodeId||!token||!serverId)return false
+  const node=(await db.select({id:nodes.id,agentTokenHash:nodes.agentTokenHash}).from(nodes).where(eq(nodes.id,nodeId)).limit(1))[0]
+  if(!node)return false
+  const actual=Buffer.from(createHash('sha256').update(token).digest('hex'))
+  const expected=Buffer.from(node.agentTokenHash)
+  if(actual.length!==expected.length||!timingSafeEqual(actual,expected))return false
+  const server=(await db.select({id:servers.id}).from(servers).where(and(eq(servers.id,serverId),eq(servers.nodeId,node.id))).limit(1))[0]
+  return Boolean(server)
+}
 async function createSession(request:NextRequest,siteId:string,memberId:string,cfg:Config){const token=randomBytes(32).toString('base64url');const ip=(request.headers.get('x-forwarded-for')||'').split(',')[0].trim().slice(0,80)||null;const userAgent=(request.headers.get('user-agent')||'').slice(0,500)||null;await db.insert(websiteMemberSessions).values({websiteId:siteId,memberId,tokenHash:tokenHash(token),ipAddress:ip,userAgent,lastSeenAt:new Date(),expiresAt:new Date(Date.now()+cfg.sessionDays*24*60*60*1000)});return token}
 async function findMemberForLogin(siteId:string,identifier:string,mode:Config['loginMode']){if(mode==='email')return (await db.select().from(websiteMembers).where(and(eq(websiteMembers.websiteId,siteId),ilike(websiteMembers.email,identifier))).limit(1))[0];if(mode==='minecraft')return (await db.select().from(websiteMembers).where(and(eq(websiteMembers.websiteId,siteId),ilike(websiteMembers.minecraftUsername,identifier))).limit(1))[0];return (await db.select().from(websiteMembers).where(and(eq(websiteMembers.websiteId,siteId),or(ilike(websiteMembers.email,identifier),ilike(websiteMembers.minecraftUsername,identifier)))).limit(1))[0]}
 
@@ -77,8 +89,9 @@ export async function POST(request:NextRequest){
   }
   if(action==='server-provision'){
     if(!(cfg.registrationMode==='server'||cfg.registrationMode==='both')||!cfg.serverBridgeEnabled)return response(request,site,{error:'Sunucu üzerinden kayıt bu website için kapalı.'},403)
-    if(!bridgeAllowed(request))return response(request,site,{error:'Sunucu bridge doğrulaması başarısız.'},401)
-    const serverId=String(body.serverId||''),minecraftUsername=String(body.minecraftUsername||'').trim().slice(0,32),playerUuid=String(body.playerUuid||'').trim().slice(0,64),email=String(body.email||'').trim().toLowerCase().slice(0,180),name=String(body.name||minecraftUsername).trim().slice(0,80),password=String(body.password||'')
+    const serverId=String(body.serverId||'')
+    if(!(legacyBridgeAllowed(request)||await nodeBridgeAllowed(request,serverId)))return response(request,site,{error:'Sunucu bridge doğrulaması başarısız.'},401)
+    const minecraftUsername=String(body.minecraftUsername||'').trim().slice(0,32),playerUuid=String(body.playerUuid||'').trim().slice(0,64),email=String(body.email||'').trim().toLowerCase().slice(0,180),name=String(body.name||minecraftUsername).trim().slice(0,80),password=String(body.password||'')
     if(!cfg.serverId||serverId!==cfg.serverId)return response(request,site,{error:'Bu sunucu website kayıt kaynağı olarak seçilmemiş.'},403)
     if(!/^[A-Za-z0-9_]{3,32}$/.test(minecraftUsername)||password.length<8)return response(request,site,{error:'Minecraft kullanıcı adı ve en az 8 karakter şifre gerekli.'},400)
     const provisionLimit=await consumeRateLimit(site.id,'server-provision',`${serverId}:${minecraftUsername}`,12,60*60*1000);if(!provisionLimit.allowed)return rateLimited(request,site,provisionLimit)
