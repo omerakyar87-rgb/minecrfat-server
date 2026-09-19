@@ -1,10 +1,8 @@
-import { headers } from 'next/headers'
 import { NextRequest, NextResponse } from 'next/server'
+import { getPanelActor } from '@/lib/api-auth'
 import { and, desc, eq, inArray } from 'drizzle-orm'
-import { auth } from '@/lib/auth'
 import { db, ensurePanelSchema, pool } from '@/lib/db'
 import { agentCommands, auditLog, serverPermissions, serverSftp, servers } from '@/lib/db/schema'
-import { resolvePanelUser } from '@/lib/db/identity'
 import { nodeFetch } from '@/lib/node-bridge'
 
 export const runtime='nodejs'
@@ -16,7 +14,7 @@ type Finding={severity:'critical'|'high'|'medium'|'low'|'info';source:string;tit
 const DEFAULT_CONFIG={activePolicy:null,notifications:{panel:true,discord:false,email:false},xray:{enabled:true,profile:'balanced',engineMode:2,maxBlockHeight:64,updateRadius:2,hideAir:false,usePermission:false,analytics:true,sensitivity:'normal',minSampleMinutes:10},antiCheat:{enabled:true,profile:'balanced',falsePositiveThreshold:3,violationLevel:10,action:'warn',checks:{speed:true,fly:true,reach:true,killaura:true,aimassist:true,autoclicker:true,fastplace:true,fastbreak:true,nofall:true,jesus:true,step:true,timer:true,xray:true,inventorymove:true,scaffold:true,blink:true,phase:true,noslow:true,velocity:true,criticals:true,rotations:true,packet:true,invalidmovement:true,teleport:true,elytra:true,boatfly:true,fastbow:true,fastheal:true,fastuse:true,noswing:true,sprint:true,sneak:true,badpackets:true,nuker:true,ghosthand:true,blockreach:true,entityreach:true,inventoryclick:true,groundspoof:true,timerbalance:true,crashclient:true}}}
 const PROFILES=['standard','strict','public','private','cracked','custom'] as const
 
-async function currentActor(){const s=await auth.api.getSession({headers:await headers()});if(!s?.user)return null;return resolvePanelUser(s.user)}
+async function currentActor(){return getPanelActor()}
 async function serverFor(actor:Actor,serverId:string){const row=(await db.select().from(servers).where(eq(servers.id,serverId)).limit(1))[0];if(!row||row.status==='deleted')return null;const role=String(actor.role??'member').toLowerCase();if(role==='manager'||role==='owner')return row;const permission=(await db.select().from(serverPermissions).where(and(eq(serverPermissions.serverId,serverId),eq(serverPermissions.userId,actor.id))).limit(1))[0];const sections=Array.isArray(permission?.sections)?permission.sections.map(String):[];return sections.includes('security')?row:null}
 async function nodeJson(nodeId:string,path:string,init:RequestInit={}){const r=await nodeFetch(nodeId,path,init);const text=await r.text();let data:any={};try{data=text?JSON.parse(text):{}}catch{data={error:text.slice(0,500)}}if(!r.ok){const e=new Error(String(data.error||`Node güvenlik işlemi başarısız (HTTP ${r.status})`));(e as any).status=r.status;throw e}return data}
 async function getState(serverId:string,userId:string){await pool.query(`INSERT INTO server_security ("serverId","userId",config) VALUES ($1,$2,$3::jsonb) ON CONFLICT ("serverId") DO NOTHING`,[serverId,userId,JSON.stringify(DEFAULT_CONFIG)]);const q=await pool.query(`SELECT * FROM server_security WHERE "serverId"=$1 LIMIT 1`,[serverId]);return q.rows[0] as {serverId:string;config:any;lastSnapshot:any;lastScanAt:Date|null;lastScanStatus:string|null;updatedAt:Date}}
