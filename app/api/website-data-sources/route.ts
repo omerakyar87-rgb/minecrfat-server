@@ -1,6 +1,6 @@
 import { headers } from 'next/headers'
 import { NextRequest, NextResponse } from 'next/server'
-import { desc, eq, inArray, or } from 'drizzle-orm'
+import { and, desc, eq, inArray, or } from 'drizzle-orm'
 import { auth } from '@/lib/auth'
 import { db, ensurePanelSchema } from '@/lib/db'
 import { serverMetrics, serverPermissions, serverSettings, serverWebsiteData, servers, websites } from '@/lib/db/schema'
@@ -21,7 +21,7 @@ export async function GET(request:NextRequest){
   if(role!=='manager'&&site.userId!==a.id)return NextResponse.json({error:'Bu website üzerinde yetkiniz yok.'},{status:403})
   let rows=role==='manager'?await db.select().from(servers):await db.select().from(servers).where(eq(servers.userId,a.id))
   if(role!=='manager'){
-    const grants=await db.select({serverId:serverPermissions.serverId}).from(serverPermissions).where(eq(serverPermissions.userId,a.id))
+    const grants=await db.select({serverId:serverPermissions.serverId}).from(serverPermissions).where(and(eq(serverPermissions.userId,a.id),eq(serverPermissions.canWebsiteData,true)))
     const ids=grants.map(x=>x.serverId)
     if(ids.length){const shared=await db.select().from(servers).where(inArray(servers.id,ids));const map=new Map(rows.map(x=>[x.id,x]));for(const row of shared)map.set(row.id,row);rows=[...map.values()]}
   }
@@ -32,9 +32,12 @@ export async function GET(request:NextRequest){
     const hostname=String(raw.hostname||raw.srvRecord||'').trim()
     const publicRows=await db.select({source:serverWebsiteData.source,updatedAt:serverWebsiteData.updatedAt}).from(serverWebsiteData).where(eq(serverWebsiteData.serverId,server.id))
     const publicSources=new Set(publicRows.filter(row=>Date.now()-new Date(row.updatedAt).getTime()<=5*60_000).map(row=>row.source))
-    return {id:server.id,name:server.name,status:server.status,playerCount:server.playerCount,mcVersion:server.mcVersion,loader:server.loader,port:server.port,address:hostname||null,itemTrackingEnabled:server.itemTrackingEnabled,metrics:metric?{cpuPercent:metric.cpuPercent,memoryUsedMb:metric.memoryUsedMb,memoryTotalMb:metric.memoryTotalMb,tps:metric.tps,mspt:metric.mspt,players:metric.players,uptimeSeconds:metric.uptimeSeconds}:null,nativeSources:{serverStatus:true,players:true,metrics:true,lostItems:server.itemTrackingEnabled,leaderboards:publicSources.has('leaderboard-kills'),leaderboardKills:publicSources.has('leaderboard-kills'),bans:publicSources.has('bans')}}
+    const mapCandidate=String(raw.websiteMapUrl||raw.bluemapUrl||raw.dynmapUrl||'').trim()
+    let mapUrl:string|null=null;try{const parsed=new URL(mapCandidate);if(parsed.protocol==='https:')mapUrl=parsed.toString()}catch{}
+    const mapProvider=['bluemap','dynmap','custom'].includes(String(raw.websiteMapProvider))?String(raw.websiteMapProvider):mapUrl?'custom':null
+    return {id:server.id,name:server.name,status:server.status,playerCount:server.playerCount,mcVersion:server.mcVersion,loader:server.loader,port:server.port,address:hostname||null,itemTrackingEnabled:server.itemTrackingEnabled,owned:role==='manager'||server.userId===a.id,canConfigureMap:role==='manager'||server.userId===a.id,map:{configured:Boolean(mapUrl),url:mapUrl,provider:mapProvider},metrics:metric?{cpuPercent:metric.cpuPercent,memoryUsedMb:metric.memoryUsedMb,memoryTotalMb:metric.memoryTotalMb,tps:metric.tps,mspt:metric.mspt,players:metric.players,uptimeSeconds:metric.uptimeSeconds}:null,nativeSources:{serverStatus:true,players:true,metrics:true,map:Boolean(mapUrl),lostItems:server.itemTrackingEnabled,leaderboards:publicSources.has('leaderboard-kills'),leaderboardKills:publicSources.has('leaderboard-kills'),bans:publicSources.has('bans')}}
   }))
-  return NextResponse.json({websiteId:site.id,servers:mapped,sourceTypes:[
-    {id:'server-status',label:'Sunucu Durumu',native:true},{id:'players',label:'Çevrimiçi Oyuncu',native:true},{id:'metrics',label:'Performans / TPS',native:true},{id:'lost-items',label:'Kayıp Eşya',native:true},{id:'leaderboard-kills',label:'Kill Sıralaması · Agent',native:true},{id:'leaderboard-money',label:'Para Sıralaması',native:false},{id:'leaderboard-health',label:'Can / Seviye Sıralaması',native:false},{id:'bans',label:'Banlı Oyuncular · Agent',native:true},{id:'custom-json',label:'Özel JSON API',native:false},
+  return NextResponse.json({websiteId:site.id,selectedServerId:site.serverId||null,servers:mapped,sourceTypes:[
+    {id:'server-status',label:'Sunucu Durumu',native:true},{id:'players',label:'Çevrimiçi Oyuncu',native:true},{id:'metrics',label:'Performans / TPS',native:true},{id:'map',label:'Dünya Haritası · BlueMap/Dynmap',native:true},{id:'lost-items',label:'Kayıp Eşya',native:true},{id:'leaderboard-kills',label:'Kill Sıralaması · Agent',native:true},{id:'leaderboard-money',label:'Para Sıralaması',native:false},{id:'leaderboard-health',label:'Can / Seviye Sıralaması',native:false},{id:'bans',label:'Banlı Oyuncular · Agent',native:true},{id:'custom-json',label:'Özel JSON API',native:false},
   ]},{headers:{'Cache-Control':'private, no-store'}})
 }
