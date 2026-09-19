@@ -39,6 +39,8 @@ type WebsitesResponse = {
   servers: WebsiteServerOption[]
   canCreate:boolean
   integrationConfigured:boolean
+  hostingMode:'vercel'|'internal'
+  internalHosting:boolean
   suffix:string
 }
 
@@ -86,7 +88,7 @@ export function WebsiteManager({createOpen,onCreateOpenChange}:{createOpen:boole
   const actionConfirm=useActionConfirm()
   const suffix=data?.suffix||'blockctrl'
   const projectName=useMemo(()=>`${normalizeSlug(slug||name)||'website'}-${suffix}`,[slug,name,suffix])
-  const address=`https://${projectName}.vercel.app`
+  const address=data?.hostingMode==='vercel'?`https://${projectName}.vercel.app`:`/site/${normalizeSlug(slug||name)||'website'}/`
 
   useEffect(()=>{if(createOpen){setMessage('');setName('');setSlug('');setDescription('');setTemplate('blank');setServerId(data?.servers?.[0]?.id??'')}},[createOpen])
   useEffect(()=>{if(createOpen&&!serverId&&data?.servers?.[0]?.id)setServerId(data.servers[0].id)},[createOpen,serverId,data?.servers])
@@ -123,16 +125,16 @@ export function WebsiteManager({createOpen,onCreateOpenChange}:{createOpen:boole
     {error&&<div className="flex items-center gap-2 rounded-xl border border-red-400/25 bg-red-500/10 p-3 text-sm text-red-200"><AlertTriangle className="size-4"/>{error.message}</div>}
     {message&&<div className="flex items-center gap-2 rounded-xl border border-amber-400/25 bg-amber-500/10 p-3 text-sm text-amber-100"><AlertTriangle className="size-4"/>{message}</div>}
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-cyan-400/20 bg-[#071827]/80 p-4">
-      <div><h2 className="flex items-center gap-2 text-lg font-bold text-white"><Globe2 className="size-5 text-cyan-300"/>Websiteler</h2><p className="mt-1 text-sm text-sky-100/50">BlockCtrl üzerinden oluşturduğunuz Vercel web projeleri ve yayın adresleri.</p></div>
+      <div><h2 className="flex items-center gap-2 text-lg font-bold text-white"><Globe2 className="size-5 text-cyan-300"/>Websiteler</h2><p className="mt-1 text-sm text-sky-100/50">BlockCtrl üzerinden oluşturduğunuz Minecraft websiteleri ve canlı yayın adresleri.</p></div>
       {data?.canCreate&&<Button className="rounded-xl border border-cyan-300/40 bg-gradient-to-r from-cyan-500 to-sky-600 text-white hover:brightness-110" onClick={()=>onCreateOpenChange(true)}><Plus className="size-4"/>Website oluştur</Button>}
     </div>
-    {!data?.integrationConfigured&&<div className="rounded-2xl border border-amber-400/25 bg-amber-500/[.07] p-4 text-sm text-amber-100"><b>Vercel yayın entegrasyonu henüz yapılandırılmadı.</b><p className="mt-1 text-amber-100/65">Gerçek .vercel.app yayını için sunucu ortamında VERCEL_TOKEN ve VERCEL_TEAM_ID/VERCEL_ORG_ID tanımlanmalıdır.</p></div>}
+    {!data?.integrationConfigured&&<div className="rounded-2xl border border-cyan-400/20 bg-cyan-500/[.06] p-4 text-sm text-cyan-100"><b>BlockCtrl dahili yayın aktif.</b><p className="mt-1 text-cyan-100/65">Website oluşturma ve yayınlama hazırdır. Ayrı .vercel.app projesi isterseniz Vercel API entegrasyonu daha sonra opsiyonel olarak bağlanabilir.</p></div>}
     {data?.websites?.length?<div className="grid gap-4 lg:grid-cols-2">{data.websites.map(site=>{
       const liveUrl=site.productionUrl||site.deploymentUrl
       const ready=site.status==='ready'
       return <Card key={site.id} className="overflow-hidden rounded-2xl border border-cyan-400/20 bg-[#071827]/92 text-slate-100 shadow-[0_20px_60px_rgba(0,0,0,.18)]">
         <CardContent className="p-5">
-          <div className="flex items-start gap-4"><div className="grid size-12 shrink-0 place-items-center rounded-xl border border-cyan-400/20 bg-cyan-400/10"><Globe2 className="size-6 text-cyan-300"/></div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h3 className="truncate text-lg font-bold text-white">{site.name}</h3><Badge className={ready?'border border-emerald-400/30 bg-emerald-400/10 text-emerald-300':'border border-amber-400/25 bg-amber-400/10 text-amber-200'}>{statusLabel[site.status]||site.status}</Badge></div><p className="mt-1 truncate font-mono text-sm text-cyan-200/75">{site.productionUrl||site.deploymentUrl||`${site.projectName}.vercel.app`}</p><p className="mt-1 text-xs text-slate-500">{templateLabel[site.template]||site.template}{site.description?` · ${site.description}`:''}</p><p className="mt-2 flex items-center gap-1.5 text-xs text-slate-400"><span className="size-1.5 rounded-full bg-cyan-400"/>{site.serverId?(data?.servers.find(server=>server.id===site.serverId)?.name??'Bağlı sunucu'):'Ana sunucu seçilmedi'}</p></div></div>
+          <div className="flex items-start gap-4"><div className="grid size-12 shrink-0 place-items-center rounded-xl border border-cyan-400/20 bg-cyan-400/10"><Globe2 className="size-6 text-cyan-300"/></div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h3 className="truncate text-lg font-bold text-white">{site.name}</h3><Badge className={ready?'border border-emerald-400/30 bg-emerald-400/10 text-emerald-300':'border border-amber-400/25 bg-amber-400/10 text-amber-200'}>{statusLabel[site.status]||site.status}</Badge></div><p className="mt-1 truncate font-mono text-sm text-cyan-200/75">{site.productionUrl||site.deploymentUrl||(data?.hostingMode==='vercel'?`https://${site.projectName}.vercel.app`:`/site/${site.slug}/`)}</p><p className="mt-1 text-xs text-slate-500">{templateLabel[site.template]||site.template}{site.description?` · ${site.description}`:''}</p><p className="mt-2 flex items-center gap-1.5 text-xs text-slate-400"><span className="size-1.5 rounded-full bg-cyan-400"/>{site.serverId?(data?.servers.find(server=>server.id===site.serverId)?.name??'Bağlı sunucu'):'Ana sunucu seçilmedi'}</p></div></div>
           {site.lastError&&<p className="mt-4 rounded-xl border border-red-400/20 bg-red-500/10 p-3 text-xs text-red-200">{site.lastError}</p>}
           <div className="mt-5 flex flex-wrap gap-2">
             {liveUrl&&<Button size="sm" className="rounded-xl bg-cyan-600 text-white hover:bg-cyan-500" onClick={()=>window.open(liveUrl,'_blank','noopener,noreferrer')}><ExternalLink className="size-4"/>Siteyi Aç</Button>}
@@ -165,7 +167,7 @@ export function WebsiteManager({createOpen,onCreateOpenChange}:{createOpen:boole
             ['blank','Boş Proje','Her bölümü kendiniz ekleyin'],
           ].map(([key,title,desc])=><button type="button" key={key} onClick={()=>setTemplate(key)} className={`rounded-2xl border p-4 text-left transition ${template===key?'border-cyan-400/70 bg-cyan-400/10':'border-white/10 bg-white/[.02] hover:border-cyan-400/30'}`}><div className="flex items-center justify-between gap-2"><b className="text-sm text-white">{title}</b>{template===key&&<CheckCircle2 className="size-4 text-cyan-300"/>}</div><p className="mt-1 text-xs text-slate-500">{desc}</p></button>)}</div></div>
           {message&&<div role="alert" className="flex items-center gap-2 rounded-xl border border-red-400/25 bg-red-500/10 p-3 text-sm text-red-200"><AlertTriangle className="size-4"/>{message}</div>}
-          <div className="flex justify-end gap-2"><Button variant="outline" onClick={()=>onCreateOpenChange(false)} disabled={busy}>İptal</Button><Button className="bg-gradient-to-r from-cyan-500 to-sky-600 text-white" onClick={()=>void createWebsite()} disabled={busy||!data?.canCreate||!data?.integrationConfigured}>{busy?<LoaderCircle className="size-4 animate-spin"/>:<Rocket className="size-4"/>}{busy?'Yayınlanıyor...':'Website oluştur ve tasarla'}</Button></div>
+          <div className="flex justify-end gap-2"><Button variant="outline" onClick={()=>onCreateOpenChange(false)} disabled={busy}>İptal</Button><Button className="bg-gradient-to-r from-cyan-500 to-sky-600 text-white" onClick={()=>void createWebsite()} disabled={busy||!data?.canCreate}>{busy?<LoaderCircle className="size-4 animate-spin"/>:<Rocket className="size-4"/>}{busy?'Yayınlanıyor...':'Website oluştur ve tasarla'}</Button></div>
         </div>
       </DialogContent>
     </Dialog>
