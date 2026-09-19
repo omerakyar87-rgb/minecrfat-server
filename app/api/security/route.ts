@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getPanelActor } from '@/lib/api-auth'
+import { auth } from '@/lib/auth'
 import { and, desc, eq, inArray } from 'drizzle-orm'
 import { db, ensurePanelSchema, pool } from '@/lib/db'
 import { agentCommands, auditLog, serverPermissions, serverSftp, servers } from '@/lib/db/schema'
