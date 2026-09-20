@@ -20,6 +20,7 @@ import { ServerContentManager } from '@/components/server-content-manager'
 import { ServerSecurityCenter } from '@/components/server-security-center'
 import { ServerWorldCenter } from '@/components/server-world-center'
 import { ServerIntegrationsCenter } from '@/components/server-integrations-center'
+import { SupportCenter } from '@/components/support-center'
 import { useActionConfirm } from '@/components/action-confirm-dialog'
 import { SERVER_NAV, ServerDetailNavigation, type ServerNavKey } from '@/components/server-detail-navigation'
 import { ServerDetailHeader } from '@/components/server-detail-header'
@@ -312,6 +313,7 @@ export default function ServerPage(){
   return <main className="min-h-svh bg-[#07111f] text-slate-100 selection:bg-sky-400/30">
     <a href="#server-main-content" className="bc-skip-link">Sunucu içeriğine geç</a>
     {actionConfirm.dialog}
+    <SupportCenter showTriggers={false}/>
     <div className="flex min-h-svh">
       <ServerDetailNavigation
         open={open}
@@ -326,7 +328,7 @@ export default function ServerPage(){
         onlineNode={onlineNode}
         diskPct={diskPct}
         onClose={()=>setOpen(false)}
-        onSelect={key=>{setSection(key);setOpen(false)}}
+        onSelect={key=>{setSection(key);setOpen(false);const params=new URLSearchParams(searchParams.toString());params.set('section',key);router.replace(`/servers/${id}?${params.toString()}`,{scroll:false})}}
         onBack={()=>router.push('/')}
       />
 
@@ -641,12 +643,12 @@ export default function ServerPage(){
 
           {section==='files'&&<>
             <PageHeading title="Dosyalar" text="Sunucu dosyalarınızı yükleyin, yönetin ve silin. Modlar, eklentiler, yapılandırma dosyaları, dünyalar ve günlükler bu sayfadan yönetilir."/>
-            {canFiles?<ServerFilesManager serverId={id} disabled={running}/>:<PanelCard title="Salt okunur" subtitle="Dosya içeriği güvenlik nedeniyle işlem izni olmayan kullanıcılara açılmaz."><EmptyText text="Yöneticiden Dosya ve mod işlemleri izni isteyin."/></PanelCard>}
+            {canFiles?<div className="space-y-4"><ServerBulkDownload serverId={id} canEdit={canFiles} running={running}/><ServerFilesManager serverId={id} disabled={running}/></div>:<PanelCard title="Salt okunur" subtitle="Dosya içeriği güvenlik nedeniyle işlem izni olmayan kullanıcılara açılmaz."><EmptyText text="Yöneticiden Dosya ve mod işlemleri izni isteyin."/></PanelCard>}
           </>}
 
           {section==='bulk-download'&&<>
             <PageHeading title="Toplu İndirme" text="Birden fazla sunucu dosyası ve klasörünü seçip güvenli şekilde ZIP paketleri oluşturun."/>
-            {canFiles?<ServerBulkDownload serverId={id}/>:<PanelCard title="Salt okunur" subtitle="Toplu indirme için Dosyalar yetkisi gerekir."><EmptyText text="Yöneticiden Dosyalar yetkisi isteyin."/></PanelCard>}
+            {canFiles?<ServerBulkDownload serverId={id} canEdit={canFiles} running={running}/>:<PanelCard title="Salt okunur" subtitle="Toplu indirme için Dosyalar yetkisi gerekir."><EmptyText text="Yöneticiden Dosyalar yetkisi isteyin."/></PanelCard>}
           </>}
 
           {section==='worlds'&&<>
