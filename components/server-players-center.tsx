@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import useSWR from 'swr'
-import { Ban, CheckCircle2, Clock3, Crown, MessageSquare, RefreshCw, Search, ShieldCheck, UserCheck, UserMinus, Users, UserX } from 'lucide-react'
+import { Ban, CheckCircle2, Clock3, Crown, FileText, MessageSquare, RefreshCw, Search, ShieldCheck, UserCheck, UserCog, UserMinus, Users, UserX } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useActionConfirm } from '@/components/action-confirm-dialog'
@@ -35,10 +35,15 @@ export function ServerPlayersCenter({serverId,running,canManage,maxPlayers,white
   const [notice,setNotice]=useState('')
   const [message,setMessage]=useState('')
   const [reason,setReason]=useState('')
+  const [advancedBusy,setAdvancedBusy]=useState('')
+  const [advancedNotice,setAdvancedNotice]=useState('')
+  const [runtimeDetail,setRuntimeDetail]=useState<Record<string,unknown>|null>(null)
+  const [historyLines,setHistoryLines]=useState<string[]>([])
 
   const players=data?.players??[]
   useEffect(()=>{if(selected&&players.some(player=>player.playerName===selected))return;setSelected(players.find(player=>player.isOnline)?.playerName??players[0]?.playerName??'')},[players,selected])
   const current=players.find(player=>player.playerName===selected)??null
+  useEffect(()=>{setRuntimeDetail(null);setHistoryLines([]);setAdvancedNotice('')},[selected])
   const normalized=query.trim().toLocaleLowerCase('tr-TR')
   const visible=useMemo(()=>players.filter(player=>{
     const matchesSearch=!normalized||`${player.playerName} ${player.playerUuid??''}`.toLocaleLowerCase('tr-TR').includes(normalized)
@@ -55,6 +60,37 @@ export function ServerPlayersCenter({serverId,running,canManage,maxPlayers,white
     catch(e){setNotice(e instanceof Error?e.message:'Oyuncu işlemi başarısız.');return null}finally{setBusy('')}
   }
   async function refresh(){await post('refresh')}
+  async function runAgent(action:'player-details'|'player-history',payload:Record<string,unknown>={}){
+    setAdvancedBusy(action);setAdvancedNotice('')
+    try{
+      const started=await readJson(await fetch('/api/server-actions',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({serverId,action,payload})}))
+      const commandId=String(started.command?.id??'');if(!commandId)throw new Error('Agent komut kimliği alınamadı')
+      const deadline=Date.now()+15_000
+      while(Date.now()<deadline){
+        const snapshot=await readJson(await fetch(`/api/server-actions?serverId=${encodeURIComponent(serverId)}`,{cache:'no-store'}))
+        const row=(snapshot.actions??[]).find((item:any)=>String(item.id)===commandId)
+        if(row?.status==='failed')throw new Error(String(row.result?.error??'Agent oyuncu sorgusu başarısız'))
+        if(row?.status==='completed')return row.result??{}
+        await new Promise(resolve=>setTimeout(resolve,500))
+      }
+      throw new Error('Agent oyuncu sorgusu zaman aşımına uğradı')
+    }catch(e){setAdvancedNotice(e instanceof Error?e.message:'Gelişmiş oyuncu sorgusu başarısız');return null}finally{setAdvancedBusy('')}
+  }
+  async function loadRuntimeDetail(){
+    if(!current)return
+    const result=await runAgent('player-details');if(!result)return
+    const rows=Array.isArray(result.players)?result.players as Array<Record<string,unknown>>:[]
+    const detail=rows.find(row=>String(row.playerName??'').toLowerCase()===current.playerName.toLowerCase())??null
+    setRuntimeDetail(detail?{...detail,onlineVerified:result.onlineVerified,onlineSource:result.onlineSource,syncedAt:result.syncedAt}:null)
+    setAdvancedNotice(detail?'Canlı oyuncu detayları yenilendi.':'Agent snapshotında seçili oyuncu bulunamadı.')
+  }
+  async function loadHistory(){
+    if(!current)return
+    const result=await runAgent('player-history',{playerName:current.playerName});if(!result)return
+    setHistoryLines(Array.isArray(result.lines)?result.lines.map(String):[])
+    setAdvancedNotice('Oyuncu günlük geçmişi yenilendi.')
+  }
+
   async function act(action:'message'|'kick'|'whitelist-add'|'whitelist-remove'|'op'|'deop'|'ban'|'unban'){
     if(!current)return
     if(action==='message'){if(!message.trim()){setNotice('Gönderilecek mesajı yazın.');return};const ok=await post(action,{playerName:current.playerName,message:message.trim()});if(ok)setMessage('');return}
@@ -108,6 +144,14 @@ export function ServerPlayersCenter({serverId,running,canManage,maxPlayers,white
         {current?<div className="sticky top-3 overflow-hidden rounded-2xl border border-white/10 bg-[#081421]">
           <div className="border-b border-white/10 bg-gradient-to-br from-cyan-500/[.08] via-transparent to-emerald-500/[.05] p-5"><div className="flex items-start gap-4"><Avatar name={current.playerName} online={current.isOnline} large/><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h3 className="truncate text-xl font-bold text-white">{current.playerName}</h3>{current.isOnline?<Badge tone="green">Çevrimiçi</Badge>:<Badge tone="gray">Çevrimdışı</Badge>}</div><p className="mt-1 break-all font-mono text-[10px] text-slate-500">{current.playerUuid||'UUID doğrulanmadı'}</p><div className="mt-3 flex flex-wrap gap-1.5">{current.isOp&&<Badge tone="purple">OP yetkili</Badge>}{current.whitelisted&&<Badge tone="blue">Whitelist</Badge>}{current.banned&&<Badge tone="red">Yasaklı</Badge>}</div></div></div></div>
           <div className="grid grid-cols-2 gap-px bg-white/[.06]"><Detail label="İlk görülme" value={formatDate(current.firstSeenAt)}/><Detail label="Son görülme" value={current.isOnline?'Şimdi':formatDate(current.lastSeenAt)}/><Detail label="Son giriş" value={formatDate(current.lastJoinAt)}/><Detail label="Toplam süre" value={formatDuration(current.totalPlaySeconds)}/></div>
+          <div className="m-4 rounded-xl border border-cyan-400/15 bg-cyan-400/[.035] p-3">
+            <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-semibold text-cyan-100">Gelişmiş oyuncu detayları</p><p className="mt-1 text-[11px] leading-5 text-slate-500">Agent’ın doğrulanmış oyuncu snapshotı ve sunucu günlük geçmişi.</p></div><div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" disabled={!!advancedBusy||data?.nodeOnline===false} onClick={()=>void loadRuntimeDetail()}><UserCog className="mr-2 size-3.5"/>{advancedBusy==='player-details'?'Alınıyor…':'Canlı detay'}</Button><Button size="sm" variant="outline" disabled={!!advancedBusy||data?.nodeOnline===false} onClick={()=>void loadHistory()}><FileText className="mr-2 size-3.5"/>{advancedBusy==='player-history'?'Alınıyor…':'Geçmiş'}</Button></div></div>
+            {advancedNotice&&<p className="mt-3 rounded-lg border border-white/[.06] bg-black/15 px-3 py-2 text-[11px] text-slate-300">{advancedNotice}</p>}
+            {runtimeDetail&&<div className="mt-3 grid grid-cols-2 gap-2 text-[11px]"><AdvancedValue label="OP seviyesi" value={runtimeDetail.opLevel==null?'—':String(runtimeDetail.opLevel)}/><AdvancedValue label="Player limit bypass" value={runtimeDetail.bypassesPlayerLimit===true?'Evet':runtimeDetail.bypassesPlayerLimit===false?'Hayır':'—'}/><AdvancedValue label="Ban kaynağı" value={String(runtimeDetail.banSource??'—')}/><AdvancedValue label="Online doğrulama" value={runtimeDetail.onlineVerified===true?'Doğrulandı':runtimeDetail.onlineVerified===false?'Doğrulanamadı':'—'}/><AdvancedValue label="Online kaynağı" value={String(runtimeDetail.onlineSource??'—')}/><AdvancedValue label="Agent senkronu" value={runtimeDetail.syncedAt?formatDate(String(runtimeDetail.syncedAt)):'—'}/></div>}
+            {!!historyLines.length&&<details className="mt-3 rounded-lg border border-white/[.06] bg-black/15 p-3"><summary className="cursor-pointer text-[11px] font-semibold text-slate-200">Son {historyLines.length} ilgili günlük satırı</summary><pre className="mt-3 max-h-52 overflow-auto whitespace-pre-wrap break-words font-mono text-[10px] leading-4 text-slate-500">{historyLines.join('\n')}</pre></details>}
+            <p className="mt-3 text-[10px] leading-4 text-slate-600">Envanter ve Ender Chest agent tarafında doğrulanmış bir sözleşme olmadığı için çalışıyormuş gibi gösterilmez.</p>
+          </div>
+
           {current.banned&&<div className="m-4 rounded-xl border border-red-400/20 bg-red-400/[.06] p-3"><p className="text-xs font-semibold text-red-200">Ban kaydı</p><p className="mt-1 text-xs leading-5 text-red-100/70">{current.banReason||'Sebep kaydedilmemiş.'}</p>{current.banExpiresAt&&<p className="mt-1 text-[10px] text-red-300/60">Bitiş: {formatDate(current.banExpiresAt)}</p>}</div>}
           <div className="space-y-3 p-4">
             <div><label className="mb-1.5 block text-[11px] font-medium text-slate-400">Oyuncuya mesaj</label><div className="flex gap-2"><Input value={message} onChange={e=>setMessage(e.target.value)} maxLength={256} placeholder="Mesaj yaz..." disabled={!running||!effectiveCanManage}/><Button size="icon" title="Mesaj gönder" disabled={!running||!effectiveCanManage||!message.trim()||!!busy} onClick={()=>void act('message')}><MessageSquare className="size-4"/></Button></div></div>
@@ -127,6 +171,7 @@ function Avatar({name,online,large=false}:{name:string;online:boolean;large?:boo
 function Badge({children,tone}:{children:React.ReactNode;tone:'green'|'purple'|'red'|'blue'|'gray'}){const cls={green:'border-emerald-400/20 bg-emerald-400/10 text-emerald-300',purple:'border-violet-400/20 bg-violet-400/10 text-violet-300',red:'border-red-400/20 bg-red-400/10 text-red-300',blue:'border-sky-400/20 bg-sky-400/10 text-sky-300',gray:'border-white/10 bg-white/[.04] text-slate-400'}[tone];return <span className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${cls}`}>{children}</span>}
 function Stat({icon,label,value,sub,accent,good,danger}:{icon:React.ReactNode;label:string;value:string;sub:string;accent?:boolean;good?:boolean;danger?:boolean}){const tone=danger?'text-red-300':accent||good?'text-emerald-300':'text-slate-500';return <div className="rounded-xl border border-white/10 bg-[#081421] p-4"><div className={`flex items-center gap-2 text-[11px] ${tone}`}>{icon}<span>{label}</span></div><p className="mt-2 text-xl font-semibold text-white">{value}</p><p className="mt-1 truncate text-[10px] text-slate-600">{sub}</p></div>}
 function Detail({label,value}:{label:string;value:string}){return <div className="bg-[#081421] p-3"><p className="text-[9px] uppercase tracking-wider text-slate-600">{label}</p><p className="mt-1 text-xs font-medium text-slate-300">{value}</p></div>}
+function AdvancedValue({label,value}:{label:string;value:string}){return <div className="rounded-lg border border-white/[.05] bg-black/10 p-2.5"><p className="text-[9px] uppercase tracking-wider text-slate-600">{label}</p><p className="mt-1 break-words text-[11px] font-medium text-slate-300">{value}</p></div>}
 function Empty({text}:{text:string}){return <div className="p-10 text-center"><Users className="mx-auto size-7 text-slate-700"/><p className="mx-auto mt-3 max-w-lg text-xs leading-5 text-slate-500">{text}</p></div>}
 function formatDate(value?:string|null){if(!value)return '—';const date=new Date(value);return Number.isNaN(date.getTime())?'—':date.toLocaleString('tr-TR')}
 function formatDuration(total:number){const seconds=Math.max(0,Math.floor(Number(total)||0));const days=Math.floor(seconds/86400);const hours=Math.floor((seconds%86400)/3600);const minutes=Math.floor((seconds%3600)/60);if(days)return `${days} gün ${hours} sa`;if(hours)return `${hours} sa ${minutes} dk`;if(minutes)return `${minutes} dk`;return `${seconds} sn`}
