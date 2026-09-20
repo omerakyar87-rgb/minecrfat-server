@@ -22,8 +22,6 @@ export const websites = pgTable('websites', {
   productionUrl: text('productionUrl'),
   status: text('status').notNull().default('queued'),
   lastError: text('lastError'),
-  builderData: jsonb('builderData').$type<Record<string, unknown> | null>(),
-  publishedAt: timestamp('publishedAt'),
   createdAt: timestamp('createdAt').notNull().defaultNow(),
   updatedAt: timestamp('updatedAt').notNull().defaultNow(),
 })
