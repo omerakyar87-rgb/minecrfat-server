@@ -42,6 +42,7 @@ export function InfrastructureManager(){
   useEffect(()=>{if(data?.actor?.role) window.dispatchEvent(new CustomEvent('blockctrl:role',{detail:{role:data.actor.role}}))},[data?.actor?.role])
   useEffect(()=>{const openWorldManagement=()=>{const first=data?.servers?.[0];if(!first)return;router.push(`/servers/${first.id}?section=worlds`)};window.addEventListener('blockctrl:open-world-management',openWorldManagement);return()=>window.removeEventListener('blockctrl:open-world-management',openWorldManagement)},[data?.servers,router])
   useEffect(()=>{const openStats=()=>{const first=data?.servers?.[0];if(!first)return;router.push(`/servers/${first.id}?section=overview`)};window.addEventListener('blockctrl:open-member-stats',openStats);return()=>window.removeEventListener('blockctrl:open-member-stats',openStats)},[data?.servers,router])
+  useEffect(()=>{const openWebsites=()=>setTab('websites');window.addEventListener('blockctrl:open-websites',openWebsites);return()=>window.removeEventListener('blockctrl:open-websites',openWebsites)},[])
   const[tab,setTab]=useState('servers');const[nodeOpen,setNodeOpen]=useState(false);const[serverOpen,setServerOpen]=useState(false);const[websiteOpen,setWebsiteOpen]=useState(false);const[editNode,setEditNode]=useState<PanelData['nodes'][number]|null>(null);const[setup,setSetup]=useState<{install:string;token:string|null}|null>(null);const[busy,setBusy]=useState(false);const[message,setMessage]=useState<string|null>(null)
   const actionConfirm=useActionConfirm()
   const manager=data?.actor.role==='manager'
