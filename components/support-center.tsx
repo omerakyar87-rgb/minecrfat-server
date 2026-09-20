@@ -63,7 +63,7 @@ function counterpart(thread:ThreadSummary,actor:Actor){
   return thread.creatorName??'Üye'
 }
 
-export function SupportCenter(){
+export function SupportCenter({showTriggers=true}:{showTriggers?:boolean}={}){
   const[open,setOpen]=useState(false)
   const[view,setView]=useState<View>('home')
   const[selectedId,setSelectedId]=useState<string|null>(null)
@@ -97,6 +97,7 @@ export function SupportCenter(){
   const enabledRequestTypes=data?.supportSettings?.requestTypes?.filter(item=>item.enabled)??[]
 
   return <>
+    {showTriggers&&<>
     <Button type="button" variant="ghost" size="icon" className="relative rounded-full" aria-label="Duyurular" title="Duyurular" onClick={openAnnouncementCenter}>
       <Bell className="size-[19px]"/>
       {!!data?.announcementUnread&&<span className="absolute -right-0.5 -top-0.5 grid min-h-4 min-w-4 place-items-center rounded-full bg-amber-500 px-1 text-[9px] font-bold leading-4 text-black">{Math.min(99,data.announcementUnread)}</span>}
@@ -105,6 +106,7 @@ export function SupportCenter(){
       <MessageCircle className="size-[19px]"/>
       {!!data?.attentionCount&&<span className="absolute -right-0.5 -top-0.5 grid min-h-4 min-w-4 place-items-center rounded-full bg-red-500 px-1 text-[9px] font-bold leading-4 text-white">{Math.min(99,data.attentionCount)}</span>}
     </Button>
+    </>}
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent className="h-[88svh] w-[calc(100vw-1rem)] max-w-[1180px] overflow-hidden p-0 sm:max-w-[1180px]">
         <div className="flex h-full min-h-0 flex-col bg-background">
