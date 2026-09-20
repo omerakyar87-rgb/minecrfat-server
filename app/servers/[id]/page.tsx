@@ -1,4 +1,11 @@
-'use client'
+﻿'use client'
+
+
+
+
+
+
+
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import useSWR from 'swr'
@@ -20,6 +27,7 @@ import { ServerContentManager } from '@/components/server-content-manager'
 import { ServerSecurityCenter } from '@/components/server-security-center'
 import { ServerWorldCenter } from '@/components/server-world-center'
 import { ServerIntegrationsCenter } from '@/components/server-integrations-center'
+import { SupportCenter } from '@/components/support-center'
 import { useActionConfirm } from '@/components/action-confirm-dialog'
 import { SERVER_NAV, ServerDetailNavigation, type ServerNavKey } from '@/components/server-detail-navigation'
 import { ServerDetailHeader } from '@/components/server-detail-header'
@@ -29,7 +37,21 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
+
+
+
+
+
+
+
 const MAX_DIRECT_UPLOAD = 2 * 1024 * 1024 * 1024
+
+
+
+
+
+
+
 
 type Server = {
   id:string; name:string; nodeId?:string; loader:string; mcVersion:string; loaderVersion?:string|null;
@@ -67,6 +89,20 @@ type ConsoleDiagnostics = {
 }
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 async function readJson(response:Response){
   const text = await response.text()
   try { return text ? JSON.parse(text) : {} }
@@ -74,6 +110,13 @@ async function readJson(response:Response){
 }
 const fetcher=(url:string)=>fetch(url,{cache:'no-store',headers:{accept:'application/json'}}).then(async r=>{const d=await readJson(r);if(!r.ok)throw new Error(d.error??'İstek başarısız');return d})
 function visiblePoll(ms:number){return ()=>typeof document!=='undefined'&&document.visibilityState==='hidden'?0:ms}
+
+
+
+
+
+
+
 
 async function directUploadFile(serverId:string,file:File,category:string,onProgress?:(percent:number)=>void){
   const started=await fetch('/api/direct-upload',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'start',serverId,filename:file.name,size:file.size,category})})
@@ -89,6 +132,13 @@ async function directUploadFile(serverId:string,file:File,category:string,onProg
   const done=await fetch('/api/direct-upload',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'complete',commandId,uploadId})})
   const result=await readJson(done); if(!done.ok)throw new Error(result.error??'Yükleme tamamlanamadı'); return result
 }
+
+
+
+
+
+
+
 
 export default function ServerPage(){
   const {id}=useParams<{id:string}>(); const router=useRouter(); const searchParams=useSearchParams()
@@ -119,13 +169,20 @@ export default function ServerPage(){
   const logs=useMemo(()=>data?.logs?.filter(l=>l.serverId===id).slice(-150)??[],[data,id])
   const errorCount=useMemo(()=>logs.filter(row=>/\bERROR\b|Exception|failed|fatal/i.test(row.line)).length,[logs])
   const activeSchedules=(data?.schedules??[]).filter(s=>s.enabled).length; const activeBackupSchedules=(data?.schedules??[]).filter(s=>s.enabled&&s.taskType==='backup').length
-  const canStart=!!manager||!!permission?.canStart; const canStop=!!manager||!!permission?.canStop; const canRestart=!!manager||!!permission?.canRestart; const canConsole=!!manager||!!permission?.canConsole; const canFiles=!!manager||!!permission?.canFiles; const canBackup=!!manager||!!permission?.canBackup; const canReset=!!manager||!!permission?.canReset; const canManageLostItems=fullAccess||!!permission?.canManageLostItems
+  const canStart=!!manager||!!permission?.canStart; const canStop=!!manager||!!permission?.canStop; const canRestart=!!manager||!!permission?.canRestart; const canConsole=!!manager||!!permission?.canConsole; const canFiles=!!manager||!!permission?.canFiles; const canViewFiles=fullAccess||allowedSections.includes('files')||allowedSections.includes('bulk-download'); const canViewSoftwareFiles=canViewFiles||allowedSections.includes('software'); const canBackup=!!manager||!!permission?.canBackup; const canReset=!!manager||!!permission?.canReset; const canManageLostItems=fullAccess||!!permission?.canManageLostItems
   useEffect(()=>{if(visibleNav.length&&!visibleNav.some(([key])=>key===section))setSection(visibleNav[0][0])},[visibleNav,section])
   useEffect(()=>{const wanted=searchParams.get('section');if(wanted&&visibleNav.some(([key])=>key===wanted))setSection(wanted as ServerNavKey)},[searchParams,visibleNav])
   useEffect(()=>{if(manager&&!selectedUserId&&data?.users?.length)setSelectedUserId(data.users[0].id)},[manager,selectedUserId,data?.users])
   useEffect(()=>{const x=settingsSnapshot?.settings;if(!x)return;if(typeof x.motd==='string')setMotd(x.motd);if(typeof x.maxPlayers==='number'||typeof x.maxPlayers==='string')setMaxPlayers(String(x.maxPlayers));if(typeof x.onlineMode==='boolean')setOnlineMode(x.onlineMode);if(typeof x.gamemode==='string')setGamemode(x.gamemode);if(typeof x.difficulty==='string')setDifficulty(x.difficulty);if(typeof x.pvp==='boolean')setPvp(x.pvp);if(typeof x.viewDistance==='number'||typeof x.viewDistance==='string')setViewDistance(String(x.viewDistance));if(typeof x.simulationDistance==='number'||typeof x.simulationDistance==='string')setSimulationDistance(String(x.simulationDistance));if(typeof x.spawnProtection==='number'||typeof x.spawnProtection==='string')setSpawnProtection(String(x.spawnProtection));if(typeof x.allowFlight==='boolean')setAllowFlight(x.allowFlight);if(typeof x.whitelist==='boolean')setWhitelist(x.whitelist)},[settingsSnapshot])
   useEffect(()=>{try{const raw=localStorage.getItem(`blockctrl:console-history:${id}`);if(raw){const parsed=JSON.parse(raw);if(Array.isArray(parsed))setConsoleHistory(parsed.filter(x=>typeof x==='string').slice(-60))}}catch{}},[id])
   useEffect(()=>{try{localStorage.setItem(`blockctrl:console-history:${id}`,JSON.stringify(consoleHistory.slice(-60)))}catch{}},[id,consoleHistory])
+
+
+
+
+
+
+
 
   async function command(type:string,payload:Record<string,unknown>={},destructive=false){
     if(!server)return; let confirmName: string|undefined
@@ -155,10 +212,24 @@ export default function ServerPage(){
     }catch(error){setNotice(error instanceof Error?error.message:'Ağ teşhisi başarısız')}finally{setBusy(false)}
   }
 
+
+
+
+
+
+
+
   async function ensureOciMinecraftPort(){
     const result=await panelAction('oci-nsg-ensure-port',{cidr:ociCidr.trim()||'0.0.0.0/0'})
     if(result){setNotice(result.oci?.changed?'OCI NSG Minecraft ingress kuralı eklendi.':'OCI NSG kuralı zaten mevcut.');await runNetworkDiagnostics()}
   }
+
+
+
+
+
+
+
 
   async function restoreLostItem(item:LostItemRow){
     if(!canManageLostItems||!item.playerName)return
@@ -172,6 +243,13 @@ export default function ServerPage(){
     const result=await panelAction('delete-lost-item',{id:item.id})
     if(result&&selectedLostItemId===item.id)setSelectedLostItemId(null)
   }
+
+
+
+
+
+
+
 
   async function backupAction(type:string,payload:Record<string,unknown>={},requiresConfirm=false){
     if(requiresConfirm&&!await actionConfirm.ask('Bu yedek işlemi mevcut sunucu verisinin üzerine yazabilir.',{title:'Yedek işlemini onayla',confirmLabel:'Devam et',danger:true,requiredText:'CONFIRM'}))return;setBusy(true);setNotice('')
@@ -204,9 +282,23 @@ export default function ServerPage(){
   async function uploadWorldFile(file:File){if(file.size>MAX_DIRECT_UPLOAD){setNotice('Dünya ZIP dosyası 2 GB sınırını aşamaz.');return}setBusy(true);try{await directUploadFile(id,file,'worlds',p=>{const uploaded=Math.round(file.size*p/100/1048576);setNotice(`${file.name} yükleniyor: %${p} · ${uploaded} / ${(file.size/1048576).toFixed(0)} MB`)});setNotice(`${file.name} dünya paketi sunucuya yüklendi.`);await mutate()}catch(err){setNotice(err instanceof Error?err.message:'Dünya yüklenemedi')}finally{setBusy(false)}}
   function downloadLogs(){const body=logs.map(l=>`[${new Date(l.createdAt).toLocaleString('tr-TR')}] ${l.line}`).join('\n');const url=URL.createObjectURL(new Blob([body],{type:'text/plain'}));const a=document.createElement('a');a.href=url;a.download=`${server?.name??'server'}-latest.log`;a.click();URL.revokeObjectURL(url)}
 
+
+
+
+
+
+
+
   if(error)return <main className="p-8 text-red-300">{error.message}</main>; if(!server)return <main className="p-8">Sunucu bulunamadı.</main>
   if(!fullAccess&&data?.allowedSections&&data.allowedSections.length===0&&!permission?.canViewLostItems&&!permission?.canManageLostItems)return <main className="min-h-svh bg-[#06100d] p-8 text-slate-100"><div className="mx-auto max-w-xl rounded-xl border border-[#203a55] bg-[#0b1b2a] p-6"><Shield className="size-8 text-slate-500"/><h1 className="mt-4 text-xl font-semibold">Sunucu ayrıntı erişimi atanmadı</h1><p className="mt-2 text-sm text-slate-400">Bu sunucuda görüntüleyebileceğiniz bir yönetim bölümü bulunmuyor. Size özel kayıp eşya veya diğer izinler ana panelden kullanılabilir.</p><Button className="mt-5" variant="outline" onClick={()=>router.push('/')}><ArrowLeft className="mr-2 size-4"/>Sunuculara dön</Button></div></main>
   const running=server.status==='running'; const diskPct=node?.diskTotalGb?Math.round(node.diskUsedGb/node.diskTotalGb*100):0; const ramPct=node?.memoryTotalMb?Math.round(node.memoryUsedMb/node.memoryTotalMb*100):0
+
+
+
+
+
+
+
 
   const connectionAddress=server.connectionAddress??`${server.publicHost??'IP bekleniyor'}:${server.port}`
   const recentLogs=[...logs].reverse().slice(0,24)
@@ -274,7 +366,7 @@ export default function ServerPage(){
   const minecraftPortState:'open'|'closed'|'unknown'=securityPortScanFresh?(observedPort(server.port)?'open':'closed'):'unknown'
   const requestedPort=Number(newPort);const portChangeValid=Number.isInteger(requestedPort)&&requestedPort>=1024&&requestedPort<=65535&&requestedPort!==server.port
   const lostItems=(data?.lostItems??[]).filter(item=>item.serverId===id)
-  const lostReasons=[...new Set(lostItems.map(item=>String(item.reason)).filter(Boolean))].sort()
+  const lostReasons:string[]=[...new Set<string>(lostItems.map(item=>String(item.reason)).filter(Boolean))].sort()
   const lostRangeMs=lostRange==='24h'?86_400_000:lostRange==='7d'?7*86_400_000:lostRange==='30d'?30*86_400_000:null
   const filteredLostItems=lostItems.filter(item=>{const query=lostQuery.trim().toLowerCase();const age=Date.now()-new Date(item.occurredAt).getTime();const rangeOk=lostRangeMs===null||(age>=0&&age<=lostRangeMs);const queryOk=!query||`${item.playerName??''} ${item.itemName} ${item.itemId} ${item.world} ${item.reason} ${server.name}`.toLowerCase().includes(query);return queryOk&&rangeOk&&(lostReason==='all'||item.reason===lostReason)})
   const recentLostItems=lostItems.slice(0,5)
@@ -309,9 +401,17 @@ export default function ServerPage(){
   if(server.installError)overviewAlerts.unshift({tone:'critical',title:'Sunucu kurulum/çalıştırma hatası',text:server.installError})
   const operationalState=!running?'Kapalı':overviewAlerts.some(alert=>alert.tone==='critical')?'Müdahale gerekli':overviewAlerts.some(alert=>alert.tone==='warn')?'İnceleme gerekli':'Normal'
 
+
+
+
+
+
+
+
   return <main className="min-h-svh bg-[#07111f] text-slate-100 selection:bg-sky-400/30">
     <a href="#server-main-content" className="bc-skip-link">Sunucu içeriğine geç</a>
     {actionConfirm.dialog}
+    <SupportCenter showTriggers={false}/>
     <div className="flex min-h-svh">
       <ServerDetailNavigation
         open={open}
@@ -326,9 +426,16 @@ export default function ServerPage(){
         onlineNode={onlineNode}
         diskPct={diskPct}
         onClose={()=>setOpen(false)}
-        onSelect={key=>{setSection(key);setOpen(false)}}
+        onSelect={key=>{setSection(key);setOpen(false);const params=new URLSearchParams(searchParams.toString());params.set('section',key);router.replace(`/servers/${id}?${params.toString()}`,{scroll:false})}}
         onBack={()=>router.push('/')}
       />
+
+
+
+
+
+
+
 
       <section id="server-main-content" className="min-w-0 flex-1">
         <ServerDetailHeader
@@ -339,8 +446,22 @@ export default function ServerPage(){
           onRefresh={()=>{void mutate()}}
         />
 
+
+
+
+
+
+
+
         <div className="mx-auto w-full max-w-[1540px] space-y-4 p-3 sm:p-4 lg:p-5">
           {notice&&<div role="status" className="rounded-lg border border-sky-500/25 bg-[#0d2034]/35 px-4 py-3 text-sm text-sky-200">{notice}</div>}
+
+
+
+
+
+
+
 
           {section==='overview'&&<>
             <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_330px]">
@@ -372,6 +493,13 @@ export default function ServerPage(){
                   </div>
                 </DashboardCard>
 
+
+
+
+
+
+
+
                 <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
                   <OverviewKpi icon={Users} title="Oyuncular" value={`${displayedPlayerCount} / ${actualMaxPlayers??'—'}`} detail={metricFresh?'Canlı process metriği':'Canlı veri bekleniyor'} progress={actualMaxPlayers?Math.round(displayedPlayerCount/Math.max(1,actualMaxPlayers)*100):undefined} tone="blue"/>
                   <OverviewKpi icon={Cpu} title="Node CPU" value={onlineNode&&node?`%${Math.round(node.cpuPercent)}`:'—'} detail={onlineNode?'Heartbeat telemetrisi':'Node doğrulanmadı'} progress={onlineNode&&node?node.cpuPercent:undefined} tone="green"/>
@@ -381,11 +509,25 @@ export default function ServerPage(){
                   <OverviewKpi icon={Box} title="Kayıp Eşya" value={canSeeLostItems?`${lostLast24h} kayıt`:'—'} detail={canSeeLostItems?'Son 24 saat':'Yetki yok'} tone="blue"/>
                 </div>
 
+
+
+
+
+
+
+
                 <div className="grid gap-3 lg:grid-cols-2">
                   <DashboardCard title="Oyuncu Aktivitesi" subtitle={metrics24h.length?'Son 24 saat · gerçek sunucu metrik geçmişi':'Henüz telemetri örneği yok'}><TelemetryChart metrics={metrics24h} mode="players"/></DashboardCard>
                   <DashboardCard title="Kaynak Kullanımı" subtitle="Minecraft process CPU/RAM ve disk yüzdeleri"><TelemetryChart metrics={metrics24h} mode="resources"/></DashboardCard>
                 </div>
               </div>
+
+
+
+
+
+
+
 
               <aside className="space-y-3">
                 <DashboardCard title="Sunucu Durumu">
@@ -404,6 +546,13 @@ export default function ServerPage(){
                   </div>
                 </DashboardCard>
 
+
+
+
+
+
+
+
                 <DashboardCard title="Hızlı İşlemler">
                   <div className="grid grid-cols-4 gap-2">
                     {canOpenSection('console')&&<OverviewQuickButton icon={Terminal} label="Konsol" onClick={()=>setSection('console')}/>}
@@ -419,19 +568,47 @@ export default function ServerPage(){
               </aside>
             </div>
 
+
+
+
+
+
+
+
             <div className="grid gap-3 lg:grid-cols-3">
               <DashboardCard title="Sunucu Özellikleri">
                 <div className="grid gap-1 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2"><OverviewPropertyRow label="Oyun Modu" value={actualGamemode??'Doğrulanmadı'}/><OverviewPropertyRow label="Zorluk" value={actualDifficulty??'Doğrulanmadı'}/><OverviewPropertyRow label="Max Oyuncu" value={actualMaxPlayers===null?'Doğrulanmadı':String(actualMaxPlayers)}/><OverviewPropertyRow label="Online-Mode" value={actualOnlineMode===null?'Doğrulanmadı':actualOnlineMode?'Açık':'Kapalı'} good={actualOnlineMode===true}/><OverviewPropertyRow label="Whitelist" value={actualWhitelist===null?'Doğrulanmadı':actualWhitelist?'Açık':'Kapalı'} good={actualWhitelist===true}/><OverviewPropertyRow label="Dünya Adı" value={server.worldName??String(settingsSnapshot?.settings?.worldName??'Doğrulanmadı')}/></div>
               </DashboardCard>
 
+
+
+
+
+
+
+
               <DashboardCard title="Servis ve Bağlantı Durumu">
                 <div className="space-y-1"><OverviewStatusRow label="Minecraft Process" state={processState} value={processStatusLabel}/><OverviewStatusRow label="Agent Heartbeat" state={heartbeatHealthy?'ok':onlineNode?'warn':'bad'} value={heartbeatAge===null?'Doğrulanmadı':`${heartbeatAge} sn`}/><OverviewStatusRow label="Node Bağlantısı" state={onlineNode?'ok':'bad'} value={onlineNode?'Online':'Çevrimdışı'}/><OverviewStatusRow label="Ayar Senkronizasyonu" state={settingsSnapshot?.liveSync?'ok':settingsSnapshot?'warn':'neutral'} value={settingsSnapshot?.liveSync?'Başarılı':settingsSnapshot?'Kısıtlı':'Doğrulanmadı'}/><OverviewStatusRow label="Güvenlik Telemetrisi" state={canSeeSecurity&&securitySnapshot?.summary?'ok':'neutral'} value={canSeeSecurity?(securitySnapshot?.summary?'Aktif':'Doğrulanmadı'):'Yetki yok'}/><OverviewStatusRow label="Kayıp Eşya Tracker" state={trackerState} value={trackerLabel}/></div>
               </DashboardCard>
+
+
+
+
+
+
+
 
               <DashboardCard title="Dikkat Gerektiren Noktalar" action={overviewAlerts.length?<span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-xs text-amber-300">{overviewAlerts.length} uyarı</span>:undefined}>
                 {overviewAlerts.length?<div className="space-y-1.5">{overviewAlerts.slice(0,5).map((alert,index)=><div key={`${alert.title}-${index}`} className="flex items-start gap-2 rounded-lg border border-[#20354d] bg-[#0a1826] p-2.5"><AlertTriangle className={`mt-0.5 size-3.5 shrink-0 ${alert.tone==='critical'?'text-red-400':alert.tone==='warn'?'text-amber-400':'text-blue-400'}`}/><div className="min-w-0"><p className="text-xs font-medium text-slate-200">{alert.title}</p><p className="mt-0.5 line-clamp-2 text-xs text-slate-500">{alert.text}</p></div></div>)}</div>:<div className="rounded-lg border border-emerald-500/20 bg-emerald-500/[.05] p-4 text-center text-xs text-emerald-300">Doğrulanmış aktif uyarı yok.</div>}
               </DashboardCard>
             </div>
+
+
+
+
+
+
+
 
             <div className="grid gap-3 lg:grid-cols-3">
               <DashboardCard title="Son İşlemler" action={<button className="text-xs text-sky-300 hover:text-sky-200" onClick={()=>setSection('logs')}>Tümünü Gör</button>}>
@@ -439,10 +616,24 @@ export default function ServerPage(){
                 <div className="space-y-1">{(data?.operations??[]).slice(0,5).map(operation=><CompactDashboardRow key={operation.id} left={operation.operation} middle={operation.message||operation.status} right={new Date(operation.createdAt).toLocaleString('tr-TR')} tone={operation.status==='failed'?'bad':operation.status==='completed'?'ok':'warn'}/>)}{!(data?.operations??[]).length&&<EmptyDashboardState text="Henüz işlem kaydı yok."/>}</div>
               </DashboardCard>
 
+
+
+
+
+
+
+
               <DashboardCard title="Son Hatalar ve Uyarılar" action={<button className="text-xs text-sky-300 hover:text-sky-200" onClick={()=>setSection('logs')}>Tümünü Gör</button>}>
                 <div className="mb-1 grid grid-cols-[minmax(72px,.8fr)_minmax(0,1.2fr)_auto] gap-2 border-b border-[#1d3248] pb-2 text-[10px] font-semibold uppercase tracking-wide text-slate-600"><span>Seviye</span><span>Mesaj</span><span>Zaman</span></div>
                 <div className="space-y-1">{recentSystemEvents.map(row=>{const parsed=parseLog(row.line);return <CompactDashboardRow key={row.id} left={parsed.level} middle={parsed.message} right={new Date(row.createdAt).toLocaleString('tr-TR')} tone={parsed.level==='ERROR'?'bad':'warn'}/>})}{!recentSystemEvents.length&&<EmptyDashboardState text="Son günlüklerde önemli hata/uyarı yok."/>}</div>
               </DashboardCard>
+
+
+
+
+
+
+
 
               <DashboardCard title="Son Kayıp Eşya Kayıtları" action={canOpenSection('lost-items')?<button className="text-xs text-sky-300 hover:text-sky-200" onClick={()=>setSection('lost-items')}>Tümünü Gör</button>:undefined}>
                 <div className="mb-1 grid grid-cols-[minmax(72px,.8fr)_minmax(0,1.2fr)_auto] gap-2 border-b border-[#1d3248] pb-2 text-[10px] font-semibold uppercase tracking-wide text-slate-600"><span>Oyuncu</span><span>Eşya</span><span>Zaman</span></div>
@@ -450,6 +641,13 @@ export default function ServerPage(){
               </DashboardCard>
             </div>
           </>}
+
+
+
+
+
+
+
 
           {section==='settings'&&<>
             <PageHeading title="Ayarlar" text="Sunucu, güvenlik, performans, JVM, loader, yedekleme ve diğer gelişmiş seçenekleri tek merkezden yönetin."/>
@@ -461,6 +659,13 @@ export default function ServerPage(){
               onNavigate={target=>{if(visibleNav.some(([key])=>key===target))setSection(target as ServerNavKey)}}
             />
           </>}
+
+
+
+
+
+
+
 
           {section==='console'&&<>
             <PageHeading
@@ -475,12 +680,26 @@ export default function ServerPage(){
               </div>}
             />
 
+
+
+
+
+
+
+
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <CompactMetric label="Minecraft" value={processStatusLabel} sub={consoleDiagnostics?.server?.pid?`PID ${consoleDiagnostics.server.pid}`:`${server.loader} ${server.mcVersion}`} good={processState==='ok'}/>
               <CompactMetric label="Konsol kanalı" value={!running?'Kapalı':consoleDiagnostics?.server?.controlChannelReady?'Hazır':'Doğrulanmadı'} sub={consoleDiagnostics?.server?.controlChannelReady?'Kalıcı FIFO komut kanalı':running?'Agent tanılaması bekleniyor':'Sunucu çalışmıyor'} good={!!consoleDiagnostics?.server?.controlChannelReady}/>
               <CompactMetric label="Agent" value={consoleDiagnosticsError?'Erişilemiyor':consoleDiagnostics?'Bağlı':'Bekleniyor'} sub={consoleDiagnostics?`${consoleDiagnostics.node.hostname} · PID ${consoleDiagnostics.node.agentPid}`:consoleDiagnosticsError?'Node bridge yanıt vermedi':'Canlı veri yükleniyor'} good={!!consoleDiagnostics&&!consoleDiagnosticsError}/>
               <CompactMetric label="Kayıt akışı" value={`${consoleRows.length} satır`} sub={`${logs.length} API kaydı · ${consolePauseAt?'duraklatıldı':'canlı takip'}`} good={!consolePauseAt}/>
             </div>
+
+
+
+
+
+
+
 
             <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_310px]">
               <PanelCard className="overflow-hidden p-0">
@@ -506,6 +725,13 @@ export default function ServerPage(){
                     {consoleTab==='server'&&<Button size="sm" variant="outline" className="h-9" onClick={()=>{setConsoleClearAt(Date.now());setNotice('Konsol görünümü temizlendi; sunucudaki gerçek log dosyaları silinmedi.')}}><Trash2 className="mr-1.5 size-3.5"/>Görünümü temizle</Button>}
                   </div>
                 </div>
+
+
+
+
+
+
+
 
                 {consoleTab==='server'&&<>
                   <div ref={consoleViewportRef} className="h-[470px] overflow-auto bg-[#050c15] p-4 font-mono text-[12px] leading-[1.75]">
@@ -535,6 +761,13 @@ export default function ServerPage(){
                   </form>
                 </>}
 
+
+
+
+
+
+
+
                 {consoleTab==='agent'&&<div ref={consoleViewportRef} className="h-[570px] overflow-auto bg-[#050c15]">
                   {consoleDiagnosticsError&&<div className="m-4 rounded-lg border border-red-500/25 bg-red-500/[.07] p-3 text-xs text-red-300"><AlertTriangle className="mr-2 inline size-4"/>Agent tanılaması alınamadı: {consoleDiagnosticsError.message}</div>}
                   <div className="border-b border-[#203a55] p-4">
@@ -550,6 +783,13 @@ export default function ServerPage(){
                     <div className="p-4"><div className="mb-2 flex items-center justify-between"><h3 className="text-xs font-semibold">Startup stderr</h3><span className="text-xs text-slate-500">{startupStderr.length} satır</span></div><div className="max-h-[260px] overflow-auto font-mono text-xs leading-5 text-amber-300/80">{startupStderr.length?startupStderr.slice(-140).map((line,index)=><div key={index} className={consoleWrap?'whitespace-pre-wrap break-words':'whitespace-pre'}>{line}</div>):<span className="text-slate-600">stderr kaydı yok.</span>}</div></div>
                   </div>
                 </div>}
+
+
+
+
+
+
+
 
                 {consoleTab==='system'&&<div ref={consoleViewportRef} className="min-h-[570px] bg-[#050c15] p-4">
                   {!consoleDiagnostics?<div className="grid min-h-[500px] place-items-center text-xs text-slate-500">{consoleDiagnosticsError?`Sistem tanılaması alınamadı: ${consoleDiagnosticsError.message}`:'Sistem tanılama verisi yükleniyor…'}</div>:<>
@@ -582,12 +822,26 @@ export default function ServerPage(){
                 </div>}
               </PanelCard>
 
+
+
+
+
+
+
+
               <div className="space-y-3">
                 <PanelCard title="Bağlantı ve kontrol" subtitle="Konsol komutunun gerçekten sunucuya ulaşabildiğini doğrular." icon={Signal}>
                   <ServiceState label="Agent heartbeat" state={heartbeatHealthy?'ok':onlineNode?'warn':'bad'} value={heartbeatHealthy?'Güncel':onlineNode?'Gecikiyor':'Yok'} detail={heartbeatAge===null?'Heartbeat alınmadı':`${heartbeatAge} saniye önce`}/>
                   <ServiceState label="Node bridge" state={directBridgeOnline?'ok':server.directBridge?'bad':'neutral'} value={directBridgeOnline?'Erişilebilir':server.directBridge?'Erişilemiyor':'Doğrulanmadı'} detail={server.directBridge?.error??'Doğrudan agent bağlantısı'}/>
                   <ServiceState label="Konsol FIFO" state={!running?'neutral':consoleDiagnostics?.server?.controlChannelReady?'ok':'warn'} value={!running?'Kapalı':consoleDiagnostics?.server?.controlChannelReady?'Hazır':'Kontrol gerekli'} detail={consoleDiagnostics?.server?.controlChannelReady?'Komut kanalı hazır':'Eski launcher veya agent erişimi olabilir'}/>
                 </PanelCard>
+
+
+
+
+
+
+
 
                 <PanelCard title="Güvenli hızlı komutlar" subtitle="Sık kullanılan, yıkıcı olmayan Minecraft komutları." icon={Terminal}>
                   <div className="grid gap-2">
@@ -600,6 +854,13 @@ export default function ServerPage(){
                     ].map(([label,cmd])=><button key={cmd} type="button" disabled={!running||!canConsole||consoleDiagnostics?.server?.controlChannelReady===false} onClick={()=>void sendConsoleCommand(cmd)} className="flex items-center justify-between rounded-lg border border-[#203a55] bg-black/10 px-3 py-2 text-left text-xs transition hover:border-sky-500/30 hover:bg-sky-500/[.05] disabled:opacity-40"><span className="text-slate-300">{label}</span><code className="ml-2 truncate text-xs text-sky-400">{cmd}</code></button>)}
                   </div>
                 </PanelCard>
+
+
+
+
+
+
+
 
                 <PanelCard title="Konsol özeti" subtitle="Yüklenen veri ve filtrelerin özeti." icon={Activity}>
                   <div className="space-y-2 text-xs">
@@ -616,6 +877,13 @@ export default function ServerPage(){
             </div>
           </>}
 
+
+
+
+
+
+
+
           {section==='logs'&&<>
             <PageHeading title="Günlük" text="Sunucu olaylarını, hataları ve sistem kayıtlarını görüntüleyin."/>
             <div className="grid gap-3 xl:grid-cols-[1fr_310px]">
@@ -629,25 +897,60 @@ export default function ServerPage(){
             <ServerFeatureActions serverId={id} section="logs"/>
           </>}
 
+
+
+
+
+
+
+
           {section==='players'&&<ServerPlayersCenter serverId={id} running={running} canManage={canConsole} maxPlayers={actualMaxPlayers} whitelistEnabled={actualWhitelist} antiCheatEventCount={canSeeSecurity?antiCheatEvents.length:null}/>}
+
+
+
+
+
+
+
 
           {section==='software'&&<>
             <PageHeading title="Yazılım" text="Sunucu yazılımını, modları, pluginleri, resource packleri, dünyaları ve Java ortamını yönetin."/>
             <div className="grid gap-3 xl:grid-cols-3"><InfoCard icon={Settings2} label="Sunucu yazılımı" value={`${server.loader} ${server.mcVersion}`} detail="Kurulu loader ve Minecraft sürümü"/><InfoCard icon={Database} label="Java ortamı" value={consoleDiagnostics?.server?.javaRuntime?.version?`Java ${consoleDiagnostics.server.javaRuntime.version}`:"Doğrulanmadı"} detail={consoleDiagnostics?.server?.javaRuntime?.vendor?`${consoleDiagnostics.server.javaRuntime.vendor} · ${consoleDiagnostics.server.javaRuntime.binary}`:consoleDiagnostics?.server?.javaRuntime?.error??"Agent Java runtime verisi bekleniyor"} good={!!consoleDiagnostics?.server?.javaRuntime?.version}/><InfoCard icon={Package} label="İçerik yönetimi" value="Canlı disk taraması" detail="Mod / plugin / dünya / resource pack / config" good/></div>
-            {canFiles?<ServerContentManager serverId={id} running={running} canEdit={canFiles} loader={server.loader} mcVersion={server.mcVersion} serverName={server.name} canInstallMarketplace={canReset}/>:<PanelCard title="Salt okunur" subtitle="Mod ve plugin dosyaları yalnız dosya izni olan kullanıcılara açılır."><EmptyText text="Yöneticiden Dosya ve mod işlemleri izni isteyin."/></PanelCard>}
+            {canViewSoftwareFiles?<ServerContentManager serverId={id} running={running} canEdit={canFiles} loader={server.loader} mcVersion={server.mcVersion} serverName={server.name} canInstallMarketplace={canReset&&canFiles}/>:<PanelCard title="Erişim yok" subtitle="Bu bölümün disk içeriğini görüntüleme yetkiniz yok."><EmptyText text="Yöneticiden Yazılım veya Dosyalar bölüm izni isteyin."/></PanelCard>}
             <PanelCard title="Yazılım değiştir" subtitle="Sunucu yazılımı değiştirildiğinde mevcut sunucu yedeklenir ve yeniden kurulur."><div className="grid gap-4 md:grid-cols-3"><Field label="Loader" value={softwareLoader} set={setSoftwareLoader}/><Field label="Minecraft sürümü" value={softwareVersion} set={setSoftwareVersion}/><Field label="Loader sürümü" value={softwareLoaderVersion} set={setSoftwareLoaderVersion}/></div><Button className="mt-4 bg-sky-600 text-slate-950" disabled={!canReset||busy||running||!softwareLoader.trim()||!softwareVersion.trim()} onClick={()=>command('change-software',{loader:softwareLoader.trim().toLowerCase(),mcVersion:softwareVersion.trim(),loaderVersion:softwareLoaderVersion.trim()||undefined},true)}>Yazılımı değiştir</Button></PanelCard>
             <ServerFeatureActions serverId={id} section="software"/>
           </>}
 
+
+
+
+
+
+
+
           {section==='files'&&<>
             <PageHeading title="Dosyalar" text="Sunucu dosyalarınızı yükleyin, yönetin ve silin. Modlar, eklentiler, yapılandırma dosyaları, dünyalar ve günlükler bu sayfadan yönetilir."/>
-            {canFiles?<ServerFilesManager serverId={id} disabled={running}/>:<PanelCard title="Salt okunur" subtitle="Dosya içeriği güvenlik nedeniyle işlem izni olmayan kullanıcılara açılmaz."><EmptyText text="Yöneticiden Dosya ve mod işlemleri izni isteyin."/></PanelCard>}
+            {canViewFiles?<div className="space-y-4"><ServerBulkDownload serverId={id} canEdit={canFiles} running={running}/>{canFiles?<ServerFilesManager serverId={id} disabled={running}/>:<PanelCard title="Salt okunur dosya erişimi" subtitle="Dosyaları görüntüleyebilir ve izin verilen indirmeleri kullanabilirsiniz; değiştirme/yükleme işlemleri kapalıdır."><EmptyText text="Düzenleme için ayrıca Dosya işlemleri izni gerekir."/></PanelCard>}</div>:<PanelCard title="Erişim yok" subtitle="Sunucu dosyalarını görüntüleme yetkiniz yok."><EmptyText text="Yöneticiden Dosyalar bölüm izni isteyin."/></PanelCard>}
           </>}
+
+
+
+
+
+
+
 
           {section==='bulk-download'&&<>
             <PageHeading title="Toplu İndirme" text="Birden fazla sunucu dosyası ve klasörünü seçip güvenli şekilde ZIP paketleri oluşturun."/>
-            {canFiles?<ServerBulkDownload serverId={id}/>:<PanelCard title="Salt okunur" subtitle="Toplu indirme için Dosyalar yetkisi gerekir."><EmptyText text="Yöneticiden Dosyalar yetkisi isteyin."/></PanelCard>}
+            {canViewFiles?<ServerBulkDownload serverId={id} canEdit={canFiles} running={running}/>:<PanelCard title="Erişim yok" subtitle="Toplu indirme için Dosyalar bölüm izni gerekir."><EmptyText text="Yöneticiden Dosyalar bölüm izni isteyin."/></PanelCard>}
           </>}
+
+
+
+
+
+
+
 
           {section==='worlds'&&<>
             <ServerWorldCenter
@@ -665,6 +968,13 @@ export default function ServerPage(){
             />
           </>}
 
+
+
+
+
+
+
+
           {section==='backups'&&<>
             <PageHeading title="Yedekler" text="Sunucunuzun yedeklerini yönetin, geri yükleyin ve indirin."/>
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><MetricCard icon={FileText} title="Listelenen yedek" value={String(backupData?.backups?.length??0)} detail="En yeni en fazla 100 kayıt"/><MetricCard icon={HardDrive} title="Listelenen yedek alanı" value={`${((backupData?.backups??[]).reduce((a,b)=>a+(b.sizeMb||0),0)/1024).toFixed(1)} GB`} detail="Yalnız yüklenen yedek kayıtlarının toplamı"/><MetricCard icon={CheckCircle2} title="Son başarılı yedek" value={lastBackup?new Date(lastBackup.createdAt).toLocaleString('tr-TR'):'—'} detail={lastBackup?'Hazır':'Henüz yedek yok'}/><MetricCard icon={Clock3} title="Otomatik yedekleme" value={activeBackupSchedules?'Aktif':'Kapalı'} detail={activeBackupSchedules?`${activeBackupSchedules} aktif yedek zamanlaması`:'Yedek zamanlaması oluşturulmadı'} accent={!!activeBackupSchedules}/></div>
@@ -673,6 +983,13 @@ export default function ServerPage(){
             <PanelCard className="p-0 overflow-hidden" title="Yedek listesi" subtitle="Oluşturulan yedekleri görüntüleyin, indirin veya geri yükleyin.">{backupError?<p className="p-4 text-red-300">{backupError.message}</p>:<div className="overflow-x-auto"><table className="w-full min-w-[800px] text-xs"><thead className="border-y border-[#203a55] bg-white/[.02] text-left text-slate-400"><tr><th className="p-3">Ad</th><th className="p-3">Tür</th><th className="p-3">Boyut</th><th className="p-3">Tarih</th><th className="p-3">Durum</th><th className="p-3">İşlemler</th></tr></thead><tbody>{backupData?.backups?.length?backupData.backups.map(b=><tr key={b.id} className="border-b border-[#1f3851]"><td className="p-3 font-semibold text-white">{b.blobPathname.split('/').pop()}</td><td className="p-3"><span className="rounded-full bg-slate-700/50 px-2 py-1">Yedek</span></td><td className="p-3">{b.sizeMb?`${b.sizeMb.toFixed(1)} MB`:'—'}</td><td className="p-3 text-slate-400">{new Date(b.createdAt).toLocaleString('tr-TR')}</td><td className="p-3 text-sky-300">● {b.status==='failed'?'Başarısız':'Başarılı'}</td><td className="p-3"><div className="flex gap-2"><a href={`/api/backups/${b.id}/download`} className="rounded-md border border-[#28445f] px-3 py-1.5">İndir</a>{canBackup&&<Button size="sm" variant="outline" className="h-7" onClick={()=>backupAction('restore-backup',{path:b.blobPathname},true)}>Geri yükle</Button>}{canBackup&&<Button size="sm" variant="destructive" className="h-7" onClick={()=>backupAction('delete-backup',{path:b.blobPathname},true)}>Sil</Button>}</div></td></tr>):<tr><td colSpan={6} className="p-8 text-center text-slate-500">Henüz yedek yok.</td></tr>}</tbody></table></div>}</PanelCard>
             <ServerFeatureActions serverId={id} section="backups"/>
           </>}
+
+
+
+
+
+
+
 
           {section==='network'&&<>
             <PageHeading title="Ağ / Portlar" text="Sunucunun ağ ayarlarını yönetin, portları yapılandırın ve bağlantı bilgilerine erişin."/>
@@ -688,8 +1005,29 @@ export default function ServerPage(){
           </>}
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
           {section==='lost-items'&&<>
             <PageHeading title="Kayıp Eşya Takibi" text="Sunucunuzda kaybolan eşyaları gerçek tracker kayıtlarından inceleyin, filtreleyin ve yetkiniz varsa oyuncuya geri verin." right={<div className="flex items-center gap-2"><div className="flex items-center gap-2 rounded-lg border border-[#23405e] bg-[#0d1c2c] px-3 py-2 text-xs text-slate-400"><span className={`size-2 rounded-full ${trackerState==='ok'?'bg-cyan-400':trackerState==='warn'?'bg-amber-400':'bg-slate-500'}`}/>{trackerLabel}</div><Button size="sm" variant="outline" className="h-9 border-[#294762] bg-[#0c1b2a] text-slate-200 hover:bg-[#122b43]" onClick={()=>setSection('settings')}><Settings2 className="mr-2 size-4"/>Ayarlar</Button></div>}/>
+
+
+
+
+
+
+
 
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <OverviewKpi icon={Box} title="Toplam Kayıt" value={canSeeLostItems?String(lostItems.length):'—'} detail="Bu sunucu için yüklenen kayıt" tone="blue"/>
@@ -697,6 +1035,13 @@ export default function ServerPage(){
               <OverviewKpi icon={RotateCcw} title="Geri Verilen" value={canSeeLostItems?String(restoredLostItems):'—'} detail={lostItems.length?`Kayıtların %${Math.round(restoredLostItems/lostItems.length*100)}'i`:'Henüz geri verilen yok'} tone="green"/>
               <OverviewKpi icon={Clock3} title="Bekleyen" value={canSeeLostItems?String(pendingLostItems):'—'} detail="Geri verilmemiş / doğrulanmamış" tone={pendingLostItems>0?'amber':'blue'}/>
             </div>
+
+
+
+
+
+
+
 
             {!canSeeLostItems?<DashboardCard><EmptyDashboardState text="Bu sunucunun kayıp eşya kayıtlarını görüntüleme yetkiniz yok."/></DashboardCard>:<>
               <DashboardCard className="p-3">
@@ -708,6 +1053,13 @@ export default function ServerPage(){
                   <Button size="sm" variant="outline" className="h-9 border-[#294762] bg-[#102238] px-4 text-slate-200 hover:bg-[#173451]" onClick={()=>{setLostQuery('');setLostReason('all');setLostRange('7d')}}><RotateCcw className="mr-2 size-3.5"/>Temizle</Button>
                 </div>
               </DashboardCard>
+
+
+
+
+
+
+
 
               <div className="grid items-start gap-3 xl:grid-cols-[minmax(0,1fr)_370px]">
                 <DashboardCard title="Kayıp Eşya Kayıtları" subtitle="Tracker'ın Minecraft sunucusundan gönderdiği gerçek kayıtlar." action={<span className="text-xs text-slate-500">{filteredLostItems.length} kayıt</span>}>
@@ -727,6 +1079,13 @@ export default function ServerPage(){
                   </div>
                   <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-[#1c3148] pt-3"><span className="text-xs text-slate-500">Sayfa {safeLostPage} / {lostPageCount} · sayfa başına {lostPageSize}</span><div className="flex gap-1"><Button size="sm" variant="outline" className="h-8 border-[#294762] bg-[#0a1826]" disabled={safeLostPage<=1} onClick={()=>setLostPage(page=>Math.max(1,page-1))}>Önceki</Button><Button size="sm" variant="outline" className="h-8 border-[#294762] bg-[#0a1826]" disabled={safeLostPage>=lostPageCount} onClick={()=>setLostPage(page=>Math.min(lostPageCount,page+1))}>Sonraki</Button></div></div>
                 </DashboardCard>
+
+
+
+
+
+
+
 
                 <DashboardCard title="Eşya Detayları" action={selectedLostItem?<LostItemStatusBadge status={selectedLostItem.status}/>:undefined}>
                   {!selectedLostItem?<EmptyDashboardState text="Detaylarını görmek için tablodan bir eşya seçin."/>:<div className="space-y-4">
@@ -751,15 +1110,43 @@ export default function ServerPage(){
                 </DashboardCard>
               </div>
 
+
+
+
+
+
+
+
               <div className="grid gap-3 lg:grid-cols-2"><DashboardCard title="Tracker Durumu"><div className="space-y-1"><OverviewStatusRow label="Takip" state={server.itemTrackingEnabled?'ok':'neutral'} value={server.itemTrackingEnabled?'Açık':'Kapalı'}/><OverviewStatusRow label="Runtime doğrulaması" state={trackerRuntimeVerified?'ok':'warn'} value={trackerRuntimeVerified?'Doğrulandı':'Bekleniyor'}/><OverviewStatusRow label="Adapter" state={trackerState} value={trackerRuntime?.trackerAdapter??'Doğrulanmadı'}/><OverviewStatusRow label="Control channel" state={trackerRuntime?.controlChannelReady?'ok':running?'warn':'neutral'} value={trackerRuntime?.controlChannelReady?'Hazır':running?'Doğrulanmadı':'Sunucu kapalı'}/></div></DashboardCard><DashboardCard title="Takip ve Geri Verme Notu"><p className="text-xs leading-5 text-slate-400">Event-adapter destekli loaderlarda kayıtlar gerçek item yaşam döngüsünden gelir. Geri verme işlemi agent üzerinden Minecraft konsoluna güvenli <code className="text-sky-300">give</code> komutu gönderir ve mümkünse sunucu çıktısından sonucu doğrular. Doğrulanamayan komutlar tekrar otomatik gönderilmez.</p>{trackerRuntime?.trackerWarning&&<div className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/[.06] p-3 text-xs text-amber-200">{trackerRuntime.trackerWarning}</div>}</DashboardCard></div>
             </>}
           </>}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
           {section==='sftp'&&<>
             <PageHeading title="SFTP" text="Sunucu dosyalarına kullanıcı dostu ve sunucuya özel SFTP erişimini yönetin." right={<div className="rounded-lg border border-[#23405e] bg-[#0d1c2c] px-3 py-2 text-xs text-slate-400">{onlineNode?'Node bağlı':'Node doğrulanmadı'}</div>}/>
             {manager?<ServerSftpManager serverId={id} host={server.publicHost} nodeOnline={onlineNode} sftp={data?.sftp??null} onRefresh={()=>mutate()}/>:<DashboardCard title="SFTP erişimi"><EmptyDashboardState text="SFTP hesap bilgileri güvenlik nedeniyle yalnız yönetici tarafından görüntülenebilir ve değiştirilebilir."/></DashboardCard>}
           </>}
+
+
+
+
+
+
+
 
           {section==='support'&&<>
             <PageHeading title="Destek" text="Destek talepleri, özel görüşmeler, duyurular ve bilgilendirme merkezi."/>
@@ -769,9 +1156,23 @@ export default function ServerPage(){
             </div>
           </>}
 
+
+
+
+
+
+
+
           {section==='integrations'&&<>
             <ServerIntegrationsCenter serverId={id} serverName={server.name} canManage={canReset}/>
           </>}
+
+
+
+
+
+
+
 
           {section==='schedules'&&<>
             <PageHeading title="Zamanlamalar" text="Sunucunuzda otomatik olarak çalışacak görevleri yönetin."/>
@@ -780,12 +1181,26 @@ export default function ServerPage(){
             <PanelCard title="Mevcut zamanlanmış görevler" subtitle="Oluşturduğunuz zamanlanmış görevleri görüntüleyin ve yönetin."><div className="overflow-x-auto"><table className="w-full min-w-[880px] text-xs"><thead className="border-y border-[#203a55] bg-white/[.02] text-left text-slate-400"><tr><th className="p-3">Görev adı</th><th className="p-3">İşlem türü</th><th className="p-3">Zamanlama</th><th className="p-3">Sonraki çalışma</th><th className="p-3">Son çalışma</th><th className="p-3">Durum</th><th className="p-3">İşlemler</th></tr></thead><tbody>{data?.schedules?.length?data.schedules.map(s=><tr key={s.id} className="border-b border-[#1f3851]"><td className="p-3"><b className="text-white">{s.name}</b><div className="mt-0.5 text-xs text-slate-500">Otomatik görev</div></td><td className="p-3">{s.taskType==='restart'?'Sunucu komutu':s.taskType==='backup'?'Yedek oluştur':'Dosya temizleme'}</td><td className="p-3">{s.cadence==='daily'?`Her gün ${s.timeOfDay??''}`:s.cadence==='weekly'?`Her hafta ${s.timeOfDay??''}`:`Her ${s.intervalMinutes} dk`}</td><td className="p-3 text-slate-300">{new Date(s.nextRunAt).toLocaleString('tr-TR')}</td><td className="p-3 text-slate-400">{s.lastRunAt?new Date(s.lastRunAt).toLocaleString('tr-TR'):'Hiç çalışmadı'}</td><td className="p-3"><span className={s.enabled?'rounded-full bg-sky-500/10 px-2 py-1 text-sky-300':'rounded-full bg-red-500/10 px-2 py-1 text-red-300'}>● {s.enabled?'Aktif':'Pasif'}</span></td><td className="p-3">{manager&&<div className="flex gap-1.5"><Button size="sm" variant="outline" className="h-7" onClick={()=>panelAction('toggle-schedule',{scheduleId:s.id,enabled:!s.enabled})}>{s.enabled?'Durdur':'Etkinleştir'}</Button><Button size="icon" variant="destructive" className="size-7" onClick={async()=>{if(await actionConfirm.ask('Bu zamanlanmış görev kalıcı olarak silinecek.',{title:'Zamanlamayı sil',confirmLabel:'Sil',danger:true}))await panelAction('delete-schedule',{scheduleId:s.id})}}><Trash2 className="size-3.5"/></Button></div>}</td></tr>):<tr><td colSpan={7} className="p-8 text-center text-slate-500">Henüz zamanlanmış görev yok.</td></tr>}</tbody></table></div></PanelCard>
           </>}
 
+
+
+
+
+
+
+
           {section==='databases'&&<>
             <PageHeading title="Veritabanları" text="Minecraft eklentileri için MariaDB/MySQL veritabanlarını node üzerinde yönetin."/>
             <div className="grid gap-3 xl:grid-cols-[1.15fr_.85fr]">{manager&&<PanelCard title="Yeni veritabanı" subtitle="Parola agent tarafından üretilir ve yalnız VPS üzerindeki güvenli alana kaydedilir." icon={Database}><div className="grid gap-3 sm:grid-cols-2"><Field label="Veritabanı adı" value={databaseName} set={setDatabaseName}/><Field label="Kullanıcı adı" value={databaseUser} set={setDatabaseUser}/><MiniValue label="Motor" value="MariaDB"/><MiniValue label="Karakter seti" value="utf8mb4"/></div><Button className="mt-4 bg-sky-600 text-slate-950" disabled={busy||databaseName.length<2||databaseUser.length<2} onClick={()=>panelAction('create-database',{databaseName:databaseName.trim(),databaseUser:databaseUser.trim()})}><Database className="mr-2 size-4"/>Veritabanı oluştur</Button></PanelCard>}<PanelCard title="Güvenlik ve erişim" subtitle="Veritabanlarınızın güvenliği ve erişim ayarları." icon={Shield}><StatusLine icon={KeyRound} label="Kimlik bilgisi dosyası" sub="Agent tarafından oluşturulan credentials path" status={primaryDatabase?.credentialsPath?'Hazır':'Doğrulanmadı'}/><StatusLine icon={Network} label="Bağlantı kapsamı" sub={primaryDatabase?`${primaryDatabase.host}:${primaryDatabase.port}`:'Veritabanı yok'} status={primaryDatabase&&(primaryDatabase.host==='127.0.0.1'||primaryDatabase.host==='localhost')?'Yerel':primaryDatabase?'Uzak / özel':'Veri yok'}/><StatusLine icon={RotateCcw} label="Veritabanı yedeği" sub={primaryDatabase?.lastBackup?.filename?`${primaryDatabase.lastBackup.filename} · ${formatFileBytes(Number(primaryDatabase.lastBackup.sizeBytes??0))}`:'Henüz doğrulanmış DB yedeği yok'} status={primaryDatabase?.lastBackup?'Hazır':'Yedek yok'}/><StatusLine icon={ShieldCheck} label="SSL bağlantı" sub={primaryDatabase?.telemetry?.tls?`have_ssl=${primaryDatabase.telemetry.tls.available?'YES':'NO'} · require_secure_transport=${primaryDatabase.telemetry.tls.required?'ON':'OFF'}`:'Telemetri çalıştırılmalı'} status={!primaryDatabase?.telemetry?.tls?'Test gerekli':primaryDatabase.telemetry.tls.required?'Zorunlu':primaryDatabase.telemetry.tls.available?'Destekli':'Kapalı'}/><StatusLine icon={FileText} label="Slow query" sub={primaryDatabase?.telemetry?.slowQuery?`slow_query_log=${primaryDatabase.telemetry.slowQuery.enabled?'ON':'OFF'} · ${primaryDatabase.telemetry.slowQuery.slowQueries??0} slow query · eşik ${primaryDatabase.telemetry.slowQuery.longQueryTime??0}s`:'Telemetri çalıştırılmalı'} status={!primaryDatabase?.telemetry?.slowQuery?'Test gerekli':primaryDatabase.telemetry.slowQuery.enabled?'Aktif':'Kapalı'}/></PanelCard></div>
             <PanelCard title="Yönetilen veritabanları" subtitle="Oluşturduğunuz veritabanlarını yönetin, yedek alın ve bağlantı bilgilerini görüntüleyin."><div className="overflow-x-auto"><table className="w-full min-w-[900px] text-xs"><thead className="border-y border-[#203a55] bg-white/[.02] text-left text-slate-400"><tr><th className="p-3">Veritabanı adı</th><th className="p-3">Host / Port</th><th className="p-3">Kullanıcı adı</th><th className="p-3">Motor / Sürüm</th><th className="p-3">Durum</th><th className="p-3">İşlemler</th></tr></thead><tbody>{data?.databases?.length?data.databases.map(db=><tr key={db.id} className="border-b border-[#1f3851]"><td className="p-3 font-semibold text-white">{db.databaseName}</td><td className="p-3 font-mono">{db.host}:{db.port}</td><td className="p-3">{db.databaseUser}</td><td className="p-3">{db.engine}</td><td className="p-3"><span className={db.status==='ready'?'text-sky-300':db.status==='failed'?'text-red-300':'text-amber-300'}>● {db.status}</span></td><td className="p-3">{manager&&<div className="flex flex-wrap gap-1.5"><Button size="sm" variant="outline" className="h-7" disabled={busy||db.status!=='ready'} onClick={()=>void databaseAction(db.id,'database-status')}>Telemetri</Button><Button size="sm" variant="outline" className="h-7" disabled={busy||db.status!=='ready'} onClick={()=>void databaseAction(db.id,'database-backup')}>Yedek al</Button><Button size="sm" variant="outline" className="h-7" disabled={busy||db.status!=='ready'} onClick={()=>void databaseAction(db.id,'database-optimize')}>Optimize</Button><Button size="sm" variant="outline" className="h-7" disabled={busy||db.status!=='ready'} onClick={async()=>{if(await actionConfirm.ask('Tablo onarımı veritabanında bakım işlemleri çalıştıracak.',{title:'Veritabanını onar',confirmLabel:'Onar'}))await databaseAction(db.id,'database-repair',{confirm:true})}}>Repair</Button>{db.lastBackup?.downloadUrl&&<Button size="sm" variant="outline" className="h-7" onClick={()=>window.open(db.lastBackup?.downloadUrl,'_blank','noopener,noreferrer')}>Son yedeği indir</Button>}{db.lastBackup?.filename&&<Button size="sm" variant="outline" className="h-7" disabled={busy} onClick={async()=>{if(await actionConfirm.ask(`${db.lastBackup?.filename} yedeği ${db.databaseName} üzerine geri yüklenecek.`,{title:'Veritabanını geri yükle',confirmLabel:'Geri yükle',danger:true,requiredText:'RESTORE'}))await databaseAction(db.id,'database-restore',{filename:db.lastBackup?.filename,confirm:true})}}>Geri yükle</Button>}<Button size="sm" variant="outline" className="h-7" disabled={busy||db.status!=='ready'} onClick={async()=>{if(await actionConfirm.ask('Veritabanı parolası yenilenecek; eski bağlantı bilgileri geçersiz olacaktır.',{title:'Parolayı döndür',confirmLabel:'Parolayı yenile'}))await panelAction('rotate-database-password',{databaseId:db.id})}}>Şifre döndür</Button><Button size="sm" variant="destructive" className="h-7" disabled={busy||db.status==='deleting'} onClick={async()=>{if(await actionConfirm.ask(`${db.databaseName} veritabanı ve yönetilen kullanıcı kalıcı olarak silinecek.`,{title:'Veritabanını sil',confirmLabel:'Kalıcı sil',danger:true,requiredText:db.databaseName}))await panelAction('delete-database',{databaseId:db.id})}}>Sil</Button></div>}</td></tr>):<tr><td colSpan={6} className="p-8 text-center text-slate-500">Henüz yönetilen veritabanı yok.</td></tr>}</tbody></table></div></PanelCard>
             <div className="grid gap-3 xl:grid-cols-2"><PanelCard title="Bağlantı bilgileri" subtitle="Sunucunuzdaki veritabanlarına bağlanmak için aşağıdaki bilgileri kullanın." icon={Network}><div className="grid gap-3 sm:grid-cols-3 sm:gap-4"><MiniValue label="Host" value={primaryDatabase?.host??'—'}/><MiniValue label="Port" value={primaryDatabase?String(primaryDatabase.port):'—'}/><MiniValue label="Motor" value={primaryDatabase?.engine??'Veritabanı seçilmedi'}/></div></PanelCard><PanelCard title="Sorgu ve bakım geçmişi" subtitle="Veritabanlarınızla ilgili son işlemler ve sistem olayları." icon={Clock3}><div className="space-y-2">{(data?.operations??[]).filter(o=>/database|db/i.test(o.operation)).slice(0,5).map(o=><EventRow key={o.id} title={o.operation} text={o.message??o.status} date={new Date(o.createdAt).toLocaleString('tr-TR')}/>)}{!(data?.operations??[]).some(o=>/database|db/i.test(o.operation))&&<EmptyText text="Veritabanı işlem kaydı bulunmadı."/>}</div></PanelCard></div>
           </>}
+
+
+
+
+
+
+
 
           {manager&&section==='access'&&<ServerAccessSection
             users={data?.users??[]}
@@ -799,6 +1214,13 @@ export default function ServerPage(){
             onPermissionAction={permissionAction}
           />}
 
+
+
+
+
+
+
+
           {manager&&section==='security'&&<>
             <PageHeading title="Güvenlik" text="Firewall, ağ, erişim, dosya bütünlüğü, SFTP ve hile korumasını gerçek agent verileriyle yönetin."/>
             <ServerSecurityCenter serverId={id} running={running} onNavigate={target=>setSection(target as ServerNavKey)}/>
@@ -809,6 +1231,13 @@ export default function ServerPage(){
     </div>
   </main>
 }
+
+
+
+
+
+
+
 
 function DashboardCard({title,subtitle,action,children,className=''}:{title?:string;subtitle?:string;action?:React.ReactNode;children?:React.ReactNode;className?:string}){return <section className={`rounded-2xl border border-[#203a55] bg-[linear-gradient(145deg,rgba(13,29,45,.96),rgba(7,18,30,.96))] p-4 shadow-[inset_0_1px_rgba(255,255,255,.018),0_12px_34px_rgba(0,0,0,.12)] ${className}`}>{(title||subtitle||action)&&<div className="mb-3 flex items-start justify-between gap-3"><div>{title&&<h4 className="text-sm font-semibold text-white">{title}</h4>}{subtitle&&<p className="mt-0.5 text-xs text-slate-500">{subtitle}</p>}</div>{action}</div>}{children}</section>}
 function OverviewKpi({icon:Icon,title,value,detail,progress,tone='blue'}:{icon:React.ComponentType<{className?:string}>;title:string;value:string;detail:string;progress?:number;tone?:'blue'|'green'|'amber'}){const iconTone=tone==='green'?'bg-emerald-500/10 text-emerald-300':tone==='amber'?'bg-amber-500/10 text-amber-300':'bg-blue-500/10 text-blue-300';const barTone=tone==='green'?'bg-emerald-400':tone==='amber'?'bg-amber-400':'bg-blue-400';return <DashboardCard className="min-h-[104px] p-3"><div className="flex items-start gap-3"><div className={`grid size-9 shrink-0 place-items-center rounded-lg border border-white/[.04] ${iconTone}`}><Icon className="size-4.5"/></div><div className="min-w-0 flex-1"><p className="text-xs text-slate-500">{title}</p><p className="mt-1 truncate text-[16px] font-semibold text-white">{value}</p><p className="mt-0.5 truncate text-xs text-slate-600">{detail}</p>{progress!==undefined&&<div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-800"><div className={`h-full rounded-full ${barTone}`} style={{width:`${Math.max(0,Math.min(100,progress))}%`}}/></div>}</div></div></DashboardCard>}

@@ -1,4 +1,5 @@
-'use client'
+﻿'use client'
+
 
 import { useEffect, useMemo, useState } from 'react'
 import useSWR from 'swr'
@@ -13,12 +14,14 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from '@/components/ui/input'
 import { Progress } from '@/components/ui/progress'
 
+
 const MAX_ATTACHMENT_BYTES = 100 * 1024 * 1024
 const MAX_ATTACHMENTS = 6
 const ALLOWED_ATTACHMENT_TYPES = new Set([
   'image/jpeg','image/png','image/webp','image/gif','image/avif','image/heic','image/heif',
   'video/mp4','video/webm','video/quicktime','video/x-m4v',
 ])
+
 
 type AppRole='manager'|'admin'|'guide'|'member'
 type ThreadType=string
@@ -44,6 +47,7 @@ type View='home'|'info'|'new-request'|'invite-private'|'thread'|'support-admin'|
 type ServerSupportContext={serverId:string;serverName:string;address?:string;loader?:string;mcVersion?:string;status?:string;nodeName?:string;recentErrors?:number}
 type SupportOpenDetail={view?:View;requestType?:string;serverContext?:ServerSupportContext}
 
+
 async function fetcher<T>(url:string){
   const response=await fetch(url,{cache:'no-store',headers:{accept:'application/json'}})
   const text=await response.text();let data:any={}
@@ -63,7 +67,8 @@ function counterpart(thread:ThreadSummary,actor:Actor){
   return thread.creatorName??'Üye'
 }
 
-export function SupportCenter(){
+
+export function SupportCenter({showTriggers=true}:{showTriggers?:boolean}={}){
   const[open,setOpen]=useState(false)
   const[view,setView]=useState<View>('home')
   const[selectedId,setSelectedId]=useState<string|null>(null)
@@ -75,6 +80,7 @@ export function SupportCenter(){
   const{data:detail,mutate:mutateDetail}=useSWR<ThreadDetail>(open&&selectedId?`/api/support?threadId=${encodeURIComponent(selectedId)}`:null,fetcher,{refreshInterval:2000,revalidateOnFocus:true})
   const isStaff=!!data&&['manager','admin','guide'].includes(data.actor.role)
 
+
   useEffect(()=>{if(open&&data&&data.consent.required&&!data.consent.accepted)setView('info')},[open,data])
   useEffect(()=>{
     const openSupport=(event:Event)=>{const detail=(event as CustomEvent<SupportOpenDetail>).detail;setOpen(true);setSelectedId(null);if(detail?.requestType)setSelectedRequestType(detail.requestType);setServerContext(detail?.serverContext??null);setView(detail?.serverContext?'new-request':detail?.view??'home')}
@@ -82,6 +88,7 @@ export function SupportCenter(){
     return ()=>window.removeEventListener('blockctrl:open-support',openSupport)
   },[])
   useEffect(()=>{if(!open){setSelectedId(null);setView('home');setError(null);setServerContext(null)}},[open])
+
 
   async function post(body:Record<string,unknown>){
     setBusy(true);setError(null)
@@ -96,7 +103,9 @@ export function SupportCenter(){
   function openAnnouncementCenter(){setOpen(true);setSelectedId(null);setView('announcements')}
   const enabledRequestTypes=data?.supportSettings?.requestTypes?.filter(item=>item.enabled)??[]
 
+
   return <>
+    {showTriggers&&<>
     <Button type="button" variant="ghost" size="icon" className="relative rounded-full" aria-label="Duyurular" title="Duyurular" onClick={openAnnouncementCenter}>
       <Bell className="size-[19px]"/>
       {!!data?.announcementUnread&&<span className="absolute -right-0.5 -top-0.5 grid min-h-4 min-w-4 place-items-center rounded-full bg-amber-500 px-1 text-[9px] font-bold leading-4 text-black">{Math.min(99,data.announcementUnread)}</span>}
@@ -105,6 +114,7 @@ export function SupportCenter(){
       <MessageCircle className="size-[19px]"/>
       {!!data?.attentionCount&&<span className="absolute -right-0.5 -top-0.5 grid min-h-4 min-w-4 place-items-center rounded-full bg-red-500 px-1 text-[9px] font-bold leading-4 text-white">{Math.min(99,data.attentionCount)}</span>}
     </Button>
+    </>}
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent className="h-[88svh] w-[calc(100vw-1rem)] max-w-[1180px] overflow-hidden p-0 sm:max-w-[1180px]">
         <div className="flex h-full min-h-0 flex-col bg-background">
@@ -146,6 +156,7 @@ export function SupportCenter(){
   </>
 }
 
+
 function ConsentView({busy,accept,information}:{busy:boolean;error:string|null;accept:()=>Promise<void>;information:InformationPage}){
   const[checked,setChecked]=useState(false)
   return <div className="min-h-0 flex-1 overflow-y-auto p-5 md:p-8"><div className="mx-auto max-w-3xl space-y-5">
@@ -156,9 +167,11 @@ function ConsentView({busy,accept,information}:{busy:boolean;error:string|null;a
   </div></div>
 }
 
+
 const INFORMATION_ASSET_LIMIT = 200 * 1024 * 1024
 const INFORMATION_ASSET_TYPES = new Set(['image/jpeg','image/png','image/webp','image/gif','image/avif','video/mp4','video/webm','video/quicktime','video/x-m4v','application/pdf'])
 const INFO_LABELS:Record<InformationBlockType,string>={section:'Bölüm',heading:'Başlık',paragraph:'Paragraf',copy:'Kopyalanabilir metin',image:'Görsel',video:'Video',pdf:'PDF',divider:'Ayraç'}
+
 
 function cloneInformation(source:InformationPage):InformationPage{return {...source,blocks:(source.blocks??[]).map(block=>({...block}))}}
 function informationAssetSrc(block:InformationBlock){return block.pathname?`/api/support?informationAsset=${encodeURIComponent(block.pathname)}`:(block.url??'')}
@@ -172,6 +185,7 @@ function newInformationBlock(type:InformationBlockType):InformationBlock{
   if(type==='divider')return base
   return {...base,content:type==='image'?'Görsel açıklaması':type==='video'?'Video başlığı':'PDF belgesi',caption:''}
 }
+
 
 function InformationPanel({accepted,information,canEdit,busy,post,refresh}:{accepted:boolean;information:InformationPage;canEdit:boolean;busy:boolean;post?:(body:Record<string,unknown>)=>Promise<any>;refresh?:()=>Promise<void>}){
   const[editing,setEditing]=useState(canEdit)
@@ -211,6 +225,7 @@ function InformationPanel({accepted,information,canEdit,busy,post,refresh}:{acce
   </div></div>
 }
 
+
 function InformationEditorBlock({block,index,total,progress,patch,remove,move,uploadAsset,onDragStart,onDrop}:{block:InformationBlock;index:number;total:number;progress:number;patch:(id:string,patch:Partial<InformationBlock>)=>void;remove:(id:string)=>void;move:(index:number,direction:-1|1)=>void;uploadAsset:(block:InformationBlock,file:File)=>Promise<void>;onDragStart:()=>void;onDrop:()=>void}){
   const textBlock=['section','heading','paragraph','copy'].includes(block.type)
   const mediaBlock=['image','video','pdf'].includes(block.type)
@@ -225,6 +240,7 @@ function InformationEditorBlock({block,index,total,progress,patch,remove,move,up
   </div>
 }
 
+
 function InformationBlockView({block}:{block:InformationBlock}){
   const style={color:block.color||undefined,backgroundColor:block.background||undefined,textAlign:block.align??'left' as const,fontSize:blockFontSize(block.size)}
   const src=informationAssetSrc(block)
@@ -238,7 +254,9 @@ function InformationBlockView({block}:{block:InformationBlock}){
   return <div className="overflow-hidden rounded-xl border bg-muted/10">{src?<iframe src={src} title={block.content||'PDF'} className="h-[560px] w-full bg-white"/>:<div className="grid min-h-40 place-items-center text-sm text-muted-foreground">PDF eklenmemiş</div>}<div className="flex flex-wrap items-center justify-between gap-2 border-t p-3"><div><p className="font-medium">{block.content||block.filename||'PDF'}</p>{block.caption&&<p className="mt-1 text-sm text-muted-foreground">{block.caption}</p>}</div>{src&&<Button type="button" size="sm" variant="outline" onClick={()=>window.open(src,'_blank','noopener,noreferrer')}><FileText className="mr-1 size-4"/>PDF'yi aç</Button>}</div></div>
 }
 
+
 function CopyInformationButton({text}:{text:string}){const[copied,setCopied]=useState(false);return <Button type="button" size="sm" variant="outline" onClick={async()=>{try{await navigator.clipboard.writeText(text);setCopied(true);setTimeout(()=>setCopied(false),1500)}catch{}}}><Copy className="mr-1 size-3.5"/>{copied?'Kopyalandı':'Kopyala'}</Button>}
+
 
 function supportMediaSrc(item:SupportHeroMedia){return item.pathname?`/api/support?informationAsset=${encodeURIComponent(item.pathname)}`:(item.url??'')}
 function HomePanel({actor,isStaff,pending,settings}:{actor:Actor;isStaff:boolean;pending:number;settings:SupportSettings}){
@@ -253,6 +271,7 @@ function HomePanel({actor,isStaff,pending,settings}:{actor:Actor;isStaff:boolean
     {!isStaff&&<div className="grid gap-3 sm:grid-cols-2">{settings.requestTypes.filter(item=>item.enabled).map(item=><div key={item.id} className="rounded-xl border p-4" style={{borderColor:item.color}}><p className="font-semibold" style={{color:item.color}}>{item.title}</p><p className="mt-1 text-sm text-muted-foreground">{item.description}</p></div>)}</div>}
   </div></div>
 }
+
 
 function CreateRequest({kind,config,busy,post,select,serverContext}:{kind:string;config?:SupportRequestType;busy:boolean;post:(body:Record<string,unknown>)=>Promise<any>;select:(id:string)=>void;serverContext?:ServerSupportContext|null}){
   const[subject,setSubject]=useState('');const[message,setMessage]=useState('');const[priority,setPriority]=useState('normal');const[files,setFiles]=useState<File[]>([]);const[progress,setProgress]=useState(0);const[localError,setLocalError]=useState<string|null>(null)
@@ -277,6 +296,7 @@ function CreateRequest({kind,config,busy,post,select,serverContext}:{kind:string
   </div></div>
 }
 
+
 function PrivateInvite({members,busy,post,select}:{members:Array<{id:string;name:string;role:string}>;busy:boolean;post:(body:Record<string,unknown>)=>Promise<any>;select:(id:string)=>void}){
   const[targetUserId,setTargetUserId]=useState('');const[subject,setSubject]=useState('Özel görüşme');const[message,setMessage]=useState('')
   useEffect(()=>{if(!targetUserId&&members[0])setTargetUserId(members[0].id)},[members,targetUserId])
@@ -289,6 +309,7 @@ function PrivateInvite({members,busy,post,select}:{members:Array<{id:string;name
     </>}
   </div></div>
 }
+
 
 function Conversation({detail,actor,settings,busy,post,refresh}:{detail?:ThreadDetail;actor:Actor;settings:SupportSettings;busy:boolean;post:(body:Record<string,unknown>)=>Promise<any>;refresh:()=>Promise<void>}){
   const[text,setText]=useState('');const[files,setFiles]=useState<File[]>([]);const[progress,setProgress]=useState(0);const[localError,setLocalError]=useState<string|null>(null)
@@ -323,12 +344,14 @@ function Conversation({detail,actor,settings,busy,post,refresh}:{detail?:ThreadD
   </div>
 }
 
+
 async function uploadInformationAsset(file:File,prefix:string,onProgress?:(value:number)=>void){
   if(file.size>INFORMATION_ASSET_LIMIT)throw new Error(`${file.name} 200 MB sınırını aşıyor.`)
   if(!INFORMATION_ASSET_TYPES.has(file.type))throw new Error(`${file.name} desteklenmeyen bir dosya türü.`)
   const pathname=`information/${prefix}-${crypto.randomUUID()}-${safeFileName(file.name)}`
   return upload(pathname,file,{access:'private',handleUploadUrl:'/api/information-upload',clientPayload:JSON.stringify({filename:file.name}),multipart:true,onUploadProgress:event=>onProgress?.(Math.round(event.percentage))})
 }
+
 
 function SupportAdminPanel({settings,busy,post,refresh}:{settings:SupportSettings;busy:boolean;post:(body:Record<string,unknown>)=>Promise<any>;refresh:()=>Promise<void>}){
   const[draft,setDraft]=useState<SupportSettings>(()=>structuredClone(settings));const[localError,setLocalError]=useState<string|null>(null);const[uploading,setUploading]=useState(false)
@@ -344,6 +367,7 @@ function SupportAdminPanel({settings,busy,post,refresh}:{settings:SupportSetting
   </div></div>
 }
 
+
 function AnnouncementsPanel({announcements,post}:{announcements:Announcement[];post:(body:Record<string,unknown>)=>Promise<any>}){
   const[selected,setSelected]=useState<string|null>(announcements[0]?.id??null)
   useEffect(()=>{if(!selected&&announcements[0])setSelected(announcements[0].id)},[announcements,selected])
@@ -351,6 +375,7 @@ function AnnouncementsPanel({announcements,post}:{announcements:Announcement[];p
   useEffect(()=>{if(item?.id&&item.effectiveStatus==='published')void post({action:'mark-announcement-read',id:item.id})},[item?.id])
   return <div className="grid h-full min-h-0 md:grid-cols-[260px_1fr]"><aside className="overflow-y-auto border-r p-3"><h3 className="mb-3 flex items-center gap-2 font-semibold"><Bell className="size-4"/>Duyurular</h3>{announcements.length?announcements.map(a=><button key={a.id} onClick={()=>setSelected(a.id)} className={`mb-2 w-full rounded-lg border p-3 text-left ${item?.id===a.id?'border-primary bg-primary/5':''}`}><p className="font-medium">{a.title}</p><p className="mt-1 text-[11px] text-muted-foreground">{new Date(a.publishAt??a.createdAt).toLocaleString('tr-TR')}</p></button>):<div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">Aktif duyuru yok.</div>}</aside><div className="overflow-y-auto p-5 md:p-7">{item?<div className="mx-auto max-w-4xl space-y-4"><div><h2 className="text-2xl font-bold">{item.title}</h2><p className="text-xs text-muted-foreground">{new Date(item.publishAt??item.createdAt).toLocaleString('tr-TR')}</p></div>{item.blocks.map(block=><InformationBlockView key={block.id} block={block}/>)}</div>:<div className="grid h-full place-items-center text-sm text-muted-foreground">Duyuru bulunmuyor.</div>}</div></div>
 }
+
 
 function AnnouncementAdminPanel({announcements,busy,post,refresh}:{announcements:Announcement[];busy:boolean;post:(body:Record<string,unknown>)=>Promise<any>;refresh:()=>Promise<void>}){
   const[editing,setEditing]=useState<Announcement|null>(announcements[0]?structuredClone(announcements[0]):null);const[localError,setLocalError]=useState<string|null>(null);const[progress,setProgress]=useState<Record<string,number>>({});const[dragging,setDragging]=useState<string|null>(null)
@@ -366,11 +391,15 @@ function AnnouncementAdminPanel({announcements,busy,post,refresh}:{announcements
   return <div className="grid h-full min-h-0 md:grid-cols-[260px_1fr]"><aside className="overflow-y-auto border-r p-3"><Button className="mb-3 w-full" onClick={makeNew}><Plus className="mr-1 size-4"/>Duyuru oluştur</Button>{announcements.map(a=><button key={a.id} onClick={()=>setEditing(structuredClone(a))} className={`mb-2 w-full rounded-lg border p-3 text-left ${editing?.id===a.id?'border-primary bg-primary/5':''}`}><p className="font-medium">{a.title}</p><div className="mt-1 flex items-center justify-between text-[10px] text-muted-foreground"><span>{a.status}</span><span>{new Date(a.updatedAt).toLocaleDateString('tr-TR')}</span></div></button>)}</aside><div className="overflow-y-auto p-5">{editing?<div className="mx-auto max-w-4xl space-y-4"><div className="flex flex-wrap items-center gap-2"><Input className="min-w-52 flex-1 text-lg font-semibold" value={editing.title} onChange={e=>setEditing(v=>v?{...v,title:e.target.value}:v)}/><Button onClick={save} disabled={busy}><Save className="mr-1 size-4"/>Kaydet</Button><Button variant="destructive" disabled={busy||!announcements.some(a=>a.id===editing.id)} onClick={async()=>{if(window.confirm('Duyuru kaldırılsın mı?')){await post({action:'delete-announcement',id:editing.id});setEditing(null);await refresh()}}}><Trash2 className="mr-1 size-4"/>Kaldır</Button></div>{localError&&<div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{localError}</div>}<div className="grid gap-3 rounded-xl border p-3 sm:grid-cols-3"><label className="text-xs text-muted-foreground">Durum<select className="mt-1 h-10 w-full rounded-md border bg-background px-2 text-sm" value={editing.status} onChange={e=>setEditing(v=>v?{...v,status:e.target.value as Announcement['status']}:v)}><option value="draft">Taslak</option><option value="scheduled">Zamanlanmış</option><option value="published">Yayında</option><option value="archived">Arşiv</option></select></label><label className="text-xs text-muted-foreground">Yayın zamanı<Input type="datetime-local" className="mt-1" value={toLocal(editing.publishAt)} onChange={e=>setEditing(v=>v?{...v,publishAt:e.target.value?new Date(e.target.value).toISOString():null}:v)}/></label><label className="text-xs text-muted-foreground">Yayından kalkma<Input type="datetime-local" className="mt-1" value={toLocal(editing.expireAt)} onChange={e=>setEditing(v=>v?{...v,expireAt:e.target.value?new Date(e.target.value).toISOString():null}:v)}/></label></div><div className="rounded-xl border bg-muted/20 p-3"><p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">İçerik bloğu ekle</p><div className="flex flex-wrap gap-2">{(['section','heading','paragraph','copy','image','video','pdf','divider'] as InformationBlockType[]).map(type=><Button key={type} size="sm" variant="outline" onClick={()=>setEditing(v=>v?{...v,blocks:[...v.blocks,newInformationBlock(type)]}:v)}><Plus className="mr-1 size-3.5"/>{INFO_LABELS[type]}</Button>)}</div></div><div className="space-y-3">{editing.blocks.map((block,index)=><InformationEditorBlock key={block.id} block={block} index={index} total={editing.blocks.length} progress={progress[block.id]??0} patch={patchBlock} remove={removeBlock} move={moveBlock} uploadAsset={uploadAsset} onDragStart={()=>setDragging(block.id)} onDrop={()=>dropBlock(block.id)}/>)}</div></div>:<div className="grid h-full place-items-center text-sm text-muted-foreground">Düzenlemek için bir duyuru seçin veya yeni duyuru oluşturun.</div>}</div></div>
 }
 
+
 function MessageBubble({message,mine}:{message:ChatMessage;mine:boolean}){return <div className={`flex ${mine?'justify-end':'justify-start'}`}><div className={`max-w-[88%] rounded-2xl border px-3 py-2 ${mine?'border-primary/30 bg-primary/10':'bg-card'}`}><div className="mb-1 flex items-center gap-2 text-[10px] text-muted-foreground"><b className="text-foreground">{message.senderName??'Kullanıcı'}</b><span>{roleLabel(message.senderRole)}</span><span>·</span><span>{new Date(message.createdAt).toLocaleString('tr-TR')}</span></div>{message.body&&<p className="whitespace-pre-wrap break-words text-sm leading-6">{message.body}</p>}{message.attachments?.length>0&&<div className="mt-2 grid gap-2 sm:grid-cols-2">{message.attachments.map(file=><AttachmentPreview key={file.id} file={file}/>)}</div>}</div></div>}
+
 
 function AttachmentPreview({file}:{file:Attachment}){const src=`/api/support?attachmentId=${encodeURIComponent(file.id)}`;const video=file.contentType.startsWith('video/');return <div className="overflow-hidden rounded-lg border bg-black/10">{video?<video src={src} controls preload="metadata" className="max-h-72 w-full bg-black"/>:<a href={src} target="_blank" rel="noreferrer"><img src={src} alt={file.filename} loading="lazy" className="max-h-72 w-full object-contain"/></a>}<div className="flex items-center gap-2 px-2 py-1.5 text-[10px] text-muted-foreground">{video?<Video className="size-3"/>:<FileImage className="size-3"/>}<span className="min-w-0 flex-1 truncate">{file.filename}</span><span>{bytes(file.sizeBytes)}</span></div></div>}
 
+
 function AttachmentPicker({files,setFiles,progress}:{files:File[];setFiles:(files:File[])=>void;progress:number}){return <div className="space-y-2"><div className="rounded-lg border border-dashed p-4"><label className="flex cursor-pointer items-center justify-center gap-2 text-sm"><Paperclip className="size-4 text-primary"/>Görsel veya video seç<input type="file" accept="image/jpeg,image/png,image/webp,image/gif,image/avif,image/heic,image/heif,video/mp4,video/webm,video/quicktime,video/x-m4v" multiple className="hidden" onChange={e=>setFiles(Array.from(e.target.files??[]).slice(0,MAX_ATTACHMENTS))}/></label><p className="mt-1 text-center text-xs text-muted-foreground">En fazla {MAX_ATTACHMENTS} dosya · dosya başına 100 MB</p></div>{files.length>0&&<div className="flex flex-wrap gap-1">{files.map(file=><Badge key={`${file.name}-${file.size}`} variant="secondary">{file.name} · {bytes(file.size)}</Badge>)}</div>}{progress>0&&progress<100&&<div className="space-y-1"><Progress value={progress}/><p className="text-right text-xs text-muted-foreground">Yükleniyor %{progress}</p></div>}</div>}
+
 
 async function uploadAttachments(threadId:string,files:File[],setProgress:(value:number)=>void){
   const uploaded:Array<{pathname:string;url:string;filename:string;contentType:string;sizeBytes:number}>=[]
