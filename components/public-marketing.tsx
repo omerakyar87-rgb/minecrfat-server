@@ -283,12 +283,42 @@ function About(){
 function AboutStat({icon:Icon,value,label}:{icon:LucideIcon;value:string;label:string}){return <div className="flex items-center gap-3 px-1 py-2"><span className="grid size-9 shrink-0 place-items-center rounded-lg text-cyan-300"><Icon className="size-5"/></span><div><p className="text-[13px] font-black text-white">{value}</p><p className="mt-0.5 text-[9px] text-slate-500">{label}</p></div></div>}
 
 
-function Support(){return <><PageHero eyebrow="Destek" title="Sorununuzu doğru yere yönlendirin." description="Hesap erişimi, panel kullanımı, sunucu bağlantısı, SFTP ve diğer BlockCtrl özellikleri için başlangıç noktaları ve sık sorulan sorular." icon={Headphones}/>
-<section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8"><div className="grid gap-4 md:grid-cols-3"><SupportCard icon={KeyRound} title="Hesap erişimi" text="Giriş veya şifre sorunlarında şifre sıfırlama akışını kullanın." href="/forgot-password" cta="Şifremi yenile"/><SupportCard icon={Headphones} title="Panel içi destek" text="Hesabınız varsa destek merkezinden talep oluşturup yanıtları takip edin." href="/sign-in" cta="Giriş yap"/><SupportCard icon={CircleHelp} title="Yeni kullanıcı" text="BlockCtrl'e ilk kez geliyorsanız önce sistemin çalışma mantığını inceleyin." href="/bilgilendirme" cta="Bilgilendirmeyi aç"/></div></section>
-<section className="border-y border-white/5 bg-white/[.015]"><div className="mx-auto max-w-4xl px-4 py-16 sm:px-6 lg:px-8"><Fade><p className="text-xs font-semibold uppercase tracking-[.2em] text-sky-300">Sık sorulan sorular</p><h2 className="mt-3 text-3xl font-bold text-white">Hızlı cevaplar</h2></Fade><div className="mt-8 grid gap-3">{faqs.map(([q,a],i)=><Fade key={q} delay={i*.035}><details className="group rounded-2xl border border-white/7 bg-[#071522] p-5 open:border-sky-400/18"><summary className="flex cursor-pointer list-none items-center justify-between gap-4 font-medium text-white">{q}<ChevronRight className="size-4 text-slate-500 transition group-open:rotate-90"/></summary><p className="mt-4 pr-8 text-sm leading-7 text-slate-400">{a}</p></details></Fade>)}</div></div></section>
-<section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8"><Fade><div className="rounded-3xl border border-amber-400/15 bg-amber-400/[.04] p-6"><div className="flex gap-4"><div className="grid size-11 shrink-0 place-items-center rounded-xl bg-amber-400/10 text-amber-300"><CircleHelp className="size-5"/></div><div><h3 className="font-semibold text-white">Canlı sunucu sorunu mu yaşıyorsunuz?</h3><p className="mt-2 text-sm leading-6 text-slate-400">Destek talebi açarken sunucu adı, hata mesajı, işlemin ne zaman başladığı ve mümkünse ilgili log satırlarını eklemeniz sorunun daha hızlı anlaşılmasına yardımcı olur. Hassas parola veya erişim anahtarlarını destek mesajına eklemeyin.</p></div></div></div></Fade></section><CTA/></>}
+function Support(){
+  const topics=['Sunucu nasıl eklenir?','SFTP bilgilerine nasıl erişirim?','Yedekleri nasıl indiririm?','Oyuncu listesi nerede?','Destek talebi ne kadar sürede yanıtlanır?']
+  return <>
+    <section className="relative overflow-hidden border-b border-cyan-400/10 pt-[62px]">
+      <img src="/support-hero.webp" alt="" className="absolute inset-0 h-full w-full object-cover object-center"/>
+      <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(2,11,20,.96)_0%,rgba(2,11,20,.92)_42%,rgba(2,11,20,.48)_70%,rgba(2,11,20,.30)_100%),linear-gradient(180deg,rgba(2,10,18,.10),rgba(2,10,18,.82))]"/>
+      <div className="relative mx-auto max-w-[1240px] px-4 pb-8 pt-10 sm:px-6 sm:pt-12 lg:pb-10 lg:pt-14">
+        <div className="max-w-[690px]">
+          <Fade><h1 className="text-[38px] font-black tracking-[-.035em] text-white sm:text-[48px]">Her Zaman Yanınızdayız</h1><p className="mt-3 max-w-[630px] text-[14px] leading-6 text-slate-300 sm:text-[15px]">Sorularınız, önerileriniz veya yaşadığınız sorunlar için buradayız.</p></Fade>
+          <div className="mt-8 grid gap-3 sm:grid-cols-3">
+            <SupportShortcut icon={Headphones} title="Destek Talebi Aç" text="Hesabınıza giriş yaparak destek talebi oluşturun." href="/sign-in" cta="Destek Sistemine Git" tone="blue"/>
+            <SupportShortcut icon={CircleHelp} title="Sık Sorulan Sorular" text="En çok merak edilen soruların cevapları." href="#sss" cta="SSS'yi Gör" tone="teal"/>
+            <SupportShortcut icon={Sparkles} title="Yeni Kullanıcı Rehberi" text="Paneli kolayca kullanmak için rehberlere göz atın." href="/bilgilendirme" cta="Rehberleri Gör" tone="sky"/>
+          </div>
+        </div>
+        <div className="mt-7 grid gap-4 lg:grid-cols-[1.35fr_.9fr]">
+          <div id="sss" className="rounded-2xl border border-cyan-400/12 bg-[#051421]/86 p-5 shadow-[0_18px_50px_rgba(0,0,0,.24)] backdrop-blur-md">
+            <h2 className="text-[17px] font-bold text-white">Popüler Konular</h2>
+            <div className="mt-3 divide-y divide-cyan-400/[.08] overflow-hidden rounded-xl border border-cyan-400/10 bg-[#03101b]/78">{topics.map((topic,index)=><Link key={topic} href={index===0?'/bilgilendirme':index===1?'/bilgilendirme':'#'} className="group flex min-h-11 items-center justify-between gap-4 px-4 text-[12px] text-slate-200 transition hover:bg-cyan-400/[.05] hover:text-white"><span>{topic}</span><ChevronRight className="size-4 text-cyan-400 transition group-hover:translate-x-0.5"/></Link>)}</div>
+          </div>
+          <div className="rounded-2xl border border-cyan-400/12 bg-[#051421]/88 p-5 shadow-[0_18px_50px_rgba(0,0,0,.24)] backdrop-blur-md">
+            <h2 className="text-[17px] font-bold text-white">Hâlâ yardıma mı ihtiyacınız var?</h2>
+            <p className="mt-3 text-[12px] leading-5 text-slate-400">Giriş yaparak gerçek destek sistemimizden ekibimize ulaşabilirsiniz.</p>
+            <Link href="/sign-in" className="mt-6 inline-flex h-11 min-w-[120px] items-center justify-center rounded-lg border border-cyan-300/45 bg-gradient-to-b from-[#23c7ff] to-[#0b9ff0] px-5 text-[12px] font-bold text-[#001421] shadow-[0_0_24px_rgba(14,165,233,.18)] transition hover:brightness-110">Giriş Yap</Link>
+          </div>
+        </div>
+      </div>
+    </section>
+  </>
+}
 
-function SupportCard({icon:Icon,title,text,href,cta}:{icon:LucideIcon;title:string;text:string;href:string;cta:string}){return <Fade><motion.div whileHover={{y:-5}} className="h-full rounded-2xl border border-white/7 bg-[#071522] p-6"><div className="grid size-11 place-items-center rounded-xl bg-sky-400/10 text-sky-300"><Icon className="size-5"/></div><h3 className="mt-5 font-semibold text-white">{title}</h3><p className="mt-2 text-sm leading-6 text-slate-400">{text}</p><Link href={href} className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-sky-300 hover:text-sky-200">{cta}<ArrowRight className="size-4"/></Link></motion.div></Fade>}
+function SupportShortcut({icon:Icon,title,text,href,cta,tone}:{icon:LucideIcon;title:string;text:string;href:string;cta:string;tone:'blue'|'teal'|'sky'}){
+  const toneClass=tone==='teal'?'from-emerald-500/18 to-cyan-500/[.03] text-emerald-200 border-emerald-400/20':tone==='sky'?'from-blue-500/18 to-sky-500/[.03] text-sky-200 border-sky-400/20':'from-indigo-500/18 to-blue-500/[.03] text-blue-200 border-blue-400/20'
+  return <motion.div whileHover={{y:-3}} className="rounded-2xl border border-cyan-400/12 bg-[#061725]/90 p-4 shadow-[0_14px_36px_rgba(0,0,0,.20)] backdrop-blur-md"><div className={`grid size-10 place-items-center rounded-xl border bg-gradient-to-br ${toneClass}`}><Icon className="size-5"/></div><h3 className="mt-3 text-[13px] font-bold text-white">{title}</h3><p className="mt-1.5 min-h-[38px] text-[11px] leading-5 text-slate-400">{text}</p><Link href={href} className="mt-4 inline-flex min-h-9 w-full items-center justify-center gap-1.5 rounded-lg border border-cyan-300/20 bg-[#071b2c]/90 px-3 text-[11px] font-semibold text-white transition hover:border-cyan-300/45 hover:bg-cyan-400/[.07]">{cta}<ArrowRight className="size-3.5"/></Link></motion.div>
+}
+
 
 function CTA(){return <section className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8"><Fade><div className="relative overflow-hidden rounded-[30px] border border-sky-400/15 bg-[linear-gradient(135deg,rgba(14,165,233,.12),rgba(37,99,235,.08),rgba(7,21,34,.96))] p-8 sm:p-10"><div className="absolute -right-20 -top-20 size-72 rounded-full bg-sky-500/10 blur-[80px]"/><div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between"><div><p className="text-xs font-semibold uppercase tracking-[.2em] text-sky-300">BlockCtrl'e başlayın</p><h2 className="mt-3 text-3xl font-bold text-white">Sunucu yönetim merkezinizi oluşturun.</h2><p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400">Hesap oluşturun veya mevcut hesabınızla giriş yaparak size açık BlockCtrl sunucularını yönetmeye başlayın.</p></div><div className="flex shrink-0 flex-wrap gap-3"><Link href="/sign-in" className="rounded-xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold text-white hover:bg-white/10">Giriş Yap</Link><Link href="/sign-up" className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-lg">Kayıt Ol <ArrowRight className="size-4"/></Link></div></div></div></Fade></section>}
 
