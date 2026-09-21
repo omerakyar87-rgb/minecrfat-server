@@ -156,7 +156,7 @@ export function ServerSettingsCenter({serverId,loader,running,canEdit,onNavigate
     const ok=supported(def)
     const value=valueOf(def)
     const destination=categoryDestinations[def.category]
-    return <div key={def.key} className={`rounded-xl border p-4 ${ok?'border-emerald-950/70 bg-[linear-gradient(145deg,rgba(15,33,26,.92),rgba(8,23,18,.92))]':'border-slate-800 bg-slate-950/40 opacity-75'}`}>
+    return <div key={def.key} className={`rounded-xl border p-4 ${ok?'border-cyan-400/15 bg-[linear-gradient(145deg,rgba(7,26,43,.88),rgba(3,15,27,.90))] shadow-[0_12px_34px_rgba(0,0,0,.14)]':'border-slate-800 bg-slate-950/40 opacity-75'}`}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="flex flex-wrap items-center gap-2">
@@ -167,14 +167,14 @@ export function ServerSettingsCenter({serverId,loader,running,canEdit,onNavigate
           </div>
           <p className="mt-1 text-[11px] leading-5 text-slate-500">{def.description}</p>
         </div>
-        <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] ${ok?'bg-emerald-500/10 text-emerald-300':'bg-slate-800 text-slate-400'}`}>{ok?(offlineRequiredKeys.has(def.key)?'Agent üzerinden uygulanır':'Panelde uygulanır'):'Bu ekrandan uygulanmıyor'}</span>
+        <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] ${ok?'bg-emerald-500/10 text-cyan-300':'bg-slate-800 text-slate-400'}`}>{ok?(offlineRequiredKeys.has(def.key)?'Agent üzerinden uygulanır':'Panelde uygulanır'):'Bu ekrandan uygulanmıyor'}</span>
       </div>
       <div className="mt-3">
         {def.type==='boolean'
           ?<label className="inline-flex items-center gap-2 text-xs"><input type="checkbox" checked={Boolean(value)} disabled={!effectiveCanEdit||!ok} onChange={e=>setDraft(d=>({...d,[def.key]:e.target.checked}))} className="size-4 accent-emerald-500"/>{Boolean(value)?'Açık':'Kapalı'}</label>
           :def.type==='select'
-            ?<select value={String(value)} disabled={!effectiveCanEdit||!ok} onChange={e=>setDraft(d=>({...d,[def.key]:e.target.value}))} className="h-9 w-full rounded-md border border-emerald-950/80 bg-[#07130f] px-3 text-xs">{def.options?.map(o=><option key={o} value={o}>{optionLabel(def,o)}</option>)}</select>
-            :<Input type={def.type==='number'?'number':'text'} value={String(value)} disabled={!effectiveCanEdit||!ok} onChange={e=>setDraft(d=>({...d,[def.key]:def.type==='number'?Number(e.target.value):e.target.value}))} className="h-9 border-emerald-950/80 bg-[#07130f]"/>
+            ?<select value={String(value)} disabled={!effectiveCanEdit||!ok} onChange={e=>setDraft(d=>({...d,[def.key]:e.target.value}))} className="h-9 w-full rounded-md border border-cyan-400/15 bg-[#061522]/90 px-3 text-xs">{def.options?.map(o=><option key={o} value={o}>{optionLabel(def,o)}</option>)}</select>
+            :<Input type={def.type==='number'?'number':'text'} value={String(value)} disabled={!effectiveCanEdit||!ok} onChange={e=>setDraft(d=>({...d,[def.key]:def.type==='number'?Number(e.target.value):e.target.value}))} className="h-9 border-cyan-400/15 bg-[#061522]/90"/>
         }
       </div>
       <div className="mt-3 grid grid-cols-2 gap-2 text-[10px] text-slate-500">
@@ -185,23 +185,23 @@ export function ServerSettingsCenter({serverId,loader,running,canEdit,onNavigate
     </div>
   }
 
-  return <div className="space-y-4">
-    <div className="rounded-xl border border-emerald-950/70 bg-[#0b1914] p-3">
+  return <div className="space-y-5">
+    <div className="rounded-2xl border border-cyan-400/15 bg-[linear-gradient(145deg,rgba(7,26,43,.90),rgba(3,15,27,.92))] shadow-[0_16px_44px_rgba(0,0,0,.18)] backdrop-blur-xl p-3">
       <div className="flex flex-wrap gap-2">
         <div className="relative min-w-[260px] flex-1">
           <Search className="absolute left-3 top-2.5 size-4 text-slate-500"/>
-          <Input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Tüm ayarlarda ara: RAM, whitelist, SFTP, xray, backup..." className="h-9 border-emerald-950/80 bg-[#07130f] pl-9"/>
+          <Input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Tüm ayarlarda ara: RAM, whitelist, SFTP, xray, backup..." className="h-9 border-cyan-400/15 bg-[#061522]/90 pl-9"/>
         </div>
         {mode==='other'&&!query&&<Button variant="outline" onClick={()=>setShowAdvanced(v=>!v)}><SlidersHorizontal className="mr-2 size-4"/>{showAdvanced?'Gelişmişleri gizle':'Gelişmişleri göster'}</Button>}
       </div>
 
       <div className="mt-3 grid gap-2 md:grid-cols-2">
-        <button onClick={()=>{setMode('popular');setQuery('')}} className={`rounded-lg border p-3 text-left transition ${mode==='popular'&&!query?'border-emerald-500/50 bg-emerald-500/10':'border-emerald-950/70 bg-[#07130f] hover:border-emerald-800'}`}>
-          <div className={`text-sm font-semibold ${mode==='popular'&&!query?'text-emerald-300':'text-white'}`}>Sık Kullanılan</div>
+        <button onClick={()=>{setMode('popular');setQuery('')}} className={`rounded-lg border p-3 text-left transition ${mode==='popular'&&!query?'border-cyan-400/40 bg-cyan-400/[.07] shadow-[inset_3px_0_0_#22d3ee]':'border-cyan-400/12 bg-[#061522]/70 hover:border-cyan-400/25 hover:bg-cyan-400/[.035]'}`}>
+          <div className={`text-sm font-semibold ${mode==='popular'&&!query?'text-cyan-300':'text-white'}`}>Sık Kullanılan</div>
           <div className="mt-1 text-[11px] text-slate-500">Günlük sunucu yönetiminde en çok değiştirilen temel ayarlar.</div>
         </button>
-        <button onClick={()=>{setMode('other');setQuery('')}} className={`rounded-lg border p-3 text-left transition ${mode==='other'&&!query?'border-emerald-500/50 bg-emerald-500/10':'border-emerald-950/70 bg-[#07130f] hover:border-emerald-800'}`}>
-          <div className={`text-sm font-semibold ${mode==='other'&&!query?'text-emerald-300':'text-white'}`}>Ek Ayarlar</div>
+        <button onClick={()=>{setMode('other');setQuery('')}} className={`rounded-lg border p-3 text-left transition ${mode==='other'&&!query?'border-cyan-400/40 bg-cyan-400/[.07] shadow-[inset_3px_0_0_#22d3ee]':'border-cyan-400/12 bg-[#061522]/70 hover:border-cyan-400/25 hover:bg-cyan-400/[.035]'}`}>
+          <div className={`text-sm font-semibold ${mode==='other'&&!query?'text-cyan-300':'text-white'}`}>Ek Ayarlar</div>
           <div className="mt-1 text-[11px] text-slate-500">25 kategori altında standart, gelişmiş ve ilgili yönetim sayfalarına yönlendiren ayarları görüntüleyin.</div>
         </button>
       </div>
@@ -212,7 +212,7 @@ export function ServerSettingsCenter({serverId,loader,running,canEdit,onNavigate
           const defs=settingsRegistry.filter(x=>availableForLoader(x)&&(!x.advanced||showAdvanced)&&(x.category===k||extra.includes(x.key)))
           const count=defs.length
           const activeCount=defs.filter(x=>writableKeys.has(x.key)).length
-          return <button key={k} onClick={()=>setCategory(k)} className={`rounded-lg border px-3 py-2 text-left ${category===k?'border-emerald-500/50 bg-emerald-500/10 text-emerald-300':'border-emerald-950/70 bg-[#07130f] text-slate-400 hover:border-emerald-800 hover:text-white'}`}>
+          return <button key={k} onClick={()=>setCategory(k)} className={`rounded-lg border px-3 py-2 text-left ${category===k?'border-cyan-400/40 bg-cyan-400/[.07] shadow-[inset_3px_0_0_#22d3ee] text-cyan-300':'border-cyan-400/12 bg-[#061522]/70 text-slate-400 hover:border-cyan-400/25 hover:text-white'}`}>
             <div className="text-xs font-semibold">{l}</div>
             <div className="mt-1 text-[10px] opacity-70">{count} ayar · {activeCount} doğrudan uygulanabilir{!showAdvanced&&settingsRegistry.some(x=>x.category===k&&x.advanced)?' · gelişmişler gizli':''}</div>
           </button>
@@ -222,7 +222,7 @@ export function ServerSettingsCenter({serverId,loader,running,canEdit,onNavigate
       {query&&<div className="mt-3 rounded-lg border border-emerald-950/70 bg-[#07130f] px-3 py-2 text-xs text-slate-400"><b className="text-white">{visible.length}</b> eşleşme bulundu. Arama tüm 25 kategoriyi ve seçim seçeneklerini kapsar.</div>}
     </div>
 
-    {data&&<div className={`rounded-xl border p-3 text-xs leading-5 ${data.nodeOnline?'border-emerald-500/20 bg-emerald-950/15 text-emerald-100':'border-amber-500/25 bg-amber-950/15 text-amber-100'}`}>
+    {data&&<div className={`rounded-xl border p-3 text-xs leading-5 ${data.nodeOnline?'border-cyan-400/20 bg-cyan-400/[.055] text-cyan-100':'border-amber-500/25 bg-amber-950/15 text-amber-100'}`}>
       <b>Agent durumu:</b> {data.nodeOnline?'Node bağlı.':'Node çevrimdışı; sunucuya yazılacak ayarlar kilitli.'} {' '}
       {data.nodeOnline&&!data.agentSettingsWritable&&`Sunucu durumu “${data.serverStatus}”; dosyaya yazılan ayarlar için sunucuyu tamamen durdurun. `}
       {data.nodeOnline&&(data.liveSync?'Gerçek server.properties değerleri agent üzerinden senkronlandı.':`Canlı ayar okuma kullanılamıyor${data.liveSyncError?`: ${data.liveSyncError}`:''}; yalnız son doğrulanmış/panel değerleri gösteriliyor.`)}
@@ -231,7 +231,7 @@ export function ServerSettingsCenter({serverId,loader,running,canEdit,onNavigate
     </div>}
     {error&&<div className="rounded-xl border border-red-500/30 bg-red-950/20 p-3 text-sm text-red-200">{error.message}</div>}
 
-    {mode==='popular'&&!query&&<div className="rounded-xl border border-emerald-500/20 bg-emerald-950/15 p-3 text-xs leading-5 text-emerald-100">
+    {mode==='popular'&&!query&&<div className="rounded-2xl border border-cyan-400/20 bg-cyan-400/[.055] p-3 text-xs leading-5 text-cyan-100">
       Bu ilk ekran yalnız en sık kullanılan ayarları öne çıkarır. Hiçbir ayar kaldırılmadı; tam liste <b>Ek Ayarlar</b> altında kaynak sırasına uygun 25 kategori halinde durur.
     </div>}
 
@@ -244,9 +244,9 @@ export function ServerSettingsCenter({serverId,loader,running,canEdit,onNavigate
       :<div className="grid gap-3 xl:grid-cols-2">{visible.map(renderSetting)}</div>
     }
 
-    {!visible.length&&<div className="rounded-xl border border-emerald-950/70 bg-[#0b1914] p-8 text-center text-sm text-slate-500">{query?'Aramanızla eşleşen ayar bulunamadı.':'Bu bölümde görüntülenecek ayar bulunamadı.'}</div>}
+    {!visible.length&&<div className="rounded-2xl border border-cyan-400/15 bg-[linear-gradient(145deg,rgba(7,26,43,.90),rgba(3,15,27,.92))] shadow-[0_16px_44px_rgba(0,0,0,.18)] backdrop-blur-xl p-8 text-center text-sm text-slate-500">{query?'Aramanızla eşleşen ayar bulunamadı.':'Bu bölümde görüntülenecek ayar bulunamadı.'}</div>}
 
-    <div className="sticky bottom-3 rounded-xl border border-emerald-900/60 bg-[#07130f]/95 p-3 shadow-2xl backdrop-blur">
+    <div className="sticky bottom-3 rounded-2xl border border-cyan-400/25 bg-[#04111d]/95 p-4 shadow-[0_20px_65px_rgba(0,0,0,.38),0_0_30px_rgba(34,211,238,.05)] backdrop-blur-2xl">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="text-sm font-semibold text-white">Değiştirilen ayarlar: {changed.length}</div>
@@ -256,11 +256,11 @@ export function ServerSettingsCenter({serverId,loader,running,canEdit,onNavigate
         </div>
         <div className="flex gap-2">
           <Button variant="outline" disabled={!changed.length} onClick={()=>setDraft(data?.settings??{})}><RotateCcw className="mr-2 size-4"/>Değişiklikleri geri al</Button>
-          <Button className="bg-emerald-600 text-emerald-950 hover:bg-emerald-500" disabled={!effectiveCanEdit||saving||!changed.length||blockedByRunning} onClick={save}><Save className="mr-2 size-4"/>Kaydet</Button>
+          <Button className="bg-cyan-400 text-slate-950 hover:bg-cyan-300" disabled={!effectiveCanEdit||saving||!changed.length||blockedByRunning} onClick={save}><Save className="mr-2 size-4"/>Kaydet</Button>
         </div>
       </div>
       {blockedByRunning&&<div className="mt-3 flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-950/20 px-3 py-2 text-xs text-amber-200"><AlertTriangle className="size-4"/>Bu değişiklikler gerçek sunucu dosyasına yazılır. Agent güvenliği nedeniyle önce sunucuyu durdurun; panel çalışırken uygulanmış gibi göstermeyecek.</div>}
-      {notice&&<div className="mt-3 flex items-center gap-2 text-xs text-emerald-300"><Check className="size-4"/>{notice}</div>}
+      {notice&&<div className="mt-3 flex items-center gap-2 text-xs text-cyan-300"><Check className="size-4"/>{notice}</div>}
     </div>
   </div>
 }
