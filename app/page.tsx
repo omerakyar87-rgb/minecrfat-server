@@ -2,6 +2,7 @@ import { asc, count, eq, or } from 'drizzle-orm'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { ControlPanel } from '@/components/control-panel'
+import { PublicSite } from '@/components/public-site'
 import { auth } from '@/lib/auth'
 import { db, ensurePanelSchema } from '@/lib/db'
 import { user } from '@/lib/db/schema'
@@ -9,7 +10,7 @@ import { user } from '@/lib/db/schema'
 export default async function Page() {
   try {
     const session = await auth.api.getSession({ headers: await headers() })
-    if (!session?.user) redirect('/sign-in')
+    if (!session?.user) return <PublicSite page="home" />
 
     await ensurePanelSchema()
     let [record] = await db.select().from(user).where(or(eq(user.id, session.user.id), eq(user.email, session.user.email))).limit(1)
@@ -37,12 +38,10 @@ export default async function Page() {
     if (!isDatabaseUnavailable) throw error
 
     return (
-      <main className="flex min-h-screen items-center justify-center bg-background px-6 text-foreground">
-        <section className="max-w-lg space-y-3 text-center">
-          <h1 className="text-2xl font-semibold">Database connection unavailable</h1>
-          <p className="text-muted-foreground">
-            The Neon database is connected to the project, but its connection variable is not available to this preview yet. Refresh the preview after the integration finishes provisioning.
-          </p>
+      <main className="flex min-h-screen items-center justify-center bg-[#020b16] px-6 text-slate-100">
+        <section className="max-w-lg space-y-3 rounded-2xl border border-cyan-400/15 bg-[#061523] p-8 text-center">
+          <h1 className="text-2xl font-semibold">Veritabanı bağlantısı kullanılamıyor</h1>
+          <p className="text-slate-400">Neon bağlantısı bu çalışma ortamına henüz aktarılmamış olabilir. Entegrasyon tamamlandıktan sonra sayfayı yenileyin.</p>
         </section>
       </main>
     )

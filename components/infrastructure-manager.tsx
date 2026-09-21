@@ -42,6 +42,7 @@ export function InfrastructureManager(){
   useEffect(()=>{if(data?.actor?.role) window.dispatchEvent(new CustomEvent('blockctrl:role',{detail:{role:data.actor.role}}))},[data?.actor?.role])
   useEffect(()=>{const openWorldManagement=()=>{const first=data?.servers?.[0];if(!first)return;router.push(`/servers/${first.id}?section=worlds`)};window.addEventListener('blockctrl:open-world-management',openWorldManagement);return()=>window.removeEventListener('blockctrl:open-world-management',openWorldManagement)},[data?.servers,router])
   useEffect(()=>{const openStats=()=>{const first=data?.servers?.[0];if(!first)return;router.push(`/servers/${first.id}?section=overview`)};window.addEventListener('blockctrl:open-member-stats',openStats);return()=>window.removeEventListener('blockctrl:open-member-stats',openStats)},[data?.servers,router])
+  useEffect(()=>{const openWebsites=()=>setTab('websites');window.addEventListener('blockctrl:open-websites',openWebsites);return()=>window.removeEventListener('blockctrl:open-websites',openWebsites)},[])
   const[tab,setTab]=useState('servers');const[nodeOpen,setNodeOpen]=useState(false);const[serverOpen,setServerOpen]=useState(false);const[websiteOpen,setWebsiteOpen]=useState(false);const[editNode,setEditNode]=useState<PanelData['nodes'][number]|null>(null);const[setup,setSetup]=useState<{install:string;token:string|null}|null>(null);const[busy,setBusy]=useState(false);const[message,setMessage]=useState<string|null>(null)
   const actionConfirm=useActionConfirm()
   const manager=data?.actor.role==='manager'
@@ -50,15 +51,15 @@ export function InfrastructureManager(){
   async function command(server:ServerRow,type:string,destructive=false){let confirm:string|undefined;if(destructive){const accepted=await actionConfirm.ask(`Bu işlem önce yerel yedek alır ve geri döndürülemez olabilir. Devam etmek için sunucu adını doğrulayın.`,{title:'Yıkıcı sunucu işlemi',confirmLabel:'İşlemi uygula',danger:true,requiredText:server.name});if(!accepted)return;confirm=server.name}await post({action:'command',serverId:server.id,type,confirm,payload:{}})}
   const lost=useMemo(()=>data?.lostItems??[],[data])
   if(error&&!data)return <Card><CardContent className="flex flex-col gap-4 py-8 text-destructive"><p>Canlı panel verileri şu anda alınamadı: {error.message}</p><Button variant="outline" onClick={()=>mutate()}>Tekrar dene</Button></CardContent></Card>
-  return <div className="flex flex-col gap-7">
+  return <div className="flex flex-col gap-5">
     {actionConfirm.dialog}
     {message&&<div role="alert" className="flex items-center gap-2 rounded-xl border border-red-400/25 bg-red-500/10 p-3.5 text-sm text-red-200 shadow-[0_12px_40px_rgba(127,29,29,.12)]"><AlertTriangle className="size-4"/>{message}</div>}
-    <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
-      <div><h1 className="text-balance text-3xl font-bold tracking-[-.03em] text-white md:text-4xl">Canlı sunucu operasyonları</h1><p className="mt-2 text-sm leading-6 text-sky-100/55">Neon ve VPS agent verileri · <span className="text-sky-100/75">{data?.actor.name??'Yükleniyor'}</span> · {data?roleLabels[normalizeRole(data.actor.role)]:''}</p></div>
-      {canCreateNode&&<div className="flex flex-wrap gap-3"><Button variant="outline" className="h-11 rounded-xl border-sky-400/25 bg-[#071827]/75 px-5 text-sky-100 shadow-[0_12px_35px_rgba(0,0,0,.15)] hover:border-sky-400/45 hover:bg-sky-400/10" onClick={()=>{setSetup(null);setNodeOpen(true)}}><Network data-icon="inline-start"/>Node bağla</Button><Button variant="outline" className="h-11 rounded-xl border-cyan-400/35 bg-cyan-400/10 px-5 font-semibold text-cyan-100 shadow-[0_12px_35px_rgba(6,182,212,.12)] hover:border-cyan-300/55 hover:bg-cyan-400/15" onClick={()=>{setTab('websites');setWebsiteOpen(true)}}><Globe2 data-icon="inline-start"/>Website oluştur</Button><Button className="h-11 rounded-xl border border-sky-300/40 bg-gradient-to-r from-sky-500 to-blue-600 px-5 font-semibold text-white shadow-[0_12px_36px_rgba(14,165,233,.22)] hover:brightness-110" onClick={()=>setServerOpen(true)} disabled={!data?.nodes.length}><Plus data-icon="inline-start"/>Sunucu oluştur</Button></div>}
+    <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
+      <div><h1 className="text-balance text-[34px] font-black leading-none tracking-[-.035em] text-white md:text-[40px]">Canlı sunucu operasyonları</h1><p className="mt-2 text-sm leading-6 text-sky-100/55">Neon ve VPS agent verileri · <span className="text-sky-100/75">{data?.actor.name??'Yükleniyor'}</span> · {data?roleLabels[normalizeRole(data.actor.role)]:''}</p></div>
+      {canCreateNode&&<div className="flex flex-wrap gap-3"><Button variant="outline" className="h-[52px] rounded-xl border-sky-400/35 bg-[#061726]/70 px-6 text-[15px] text-sky-100 shadow-[0_12px_35px_rgba(0,0,0,.18)] backdrop-blur-md hover:border-sky-300/55 hover:bg-sky-400/10" onClick={()=>{setSetup(null);setNodeOpen(true)}}><Network data-icon="inline-start"/>Node bağla</Button><Button className="h-[52px] rounded-xl border border-cyan-300/45 bg-gradient-to-b from-[#20c8ff] to-[#0aa7ef] px-7 text-[15px] font-semibold text-[#00101d] shadow-[0_0_30px_rgba(14,165,233,.18)] hover:brightness-110" onClick={()=>setServerOpen(true)} disabled={!data?.nodes.length}><Plus data-icon="inline-start"/>Sunucu oluştur</Button><Button className="h-[52px] rounded-xl border border-cyan-300/45 bg-gradient-to-b from-[#20c8ff] to-[#0aa7ef] px-7 text-[15px] font-semibold text-[#00101d] shadow-[0_0_30px_rgba(14,165,233,.18)] hover:brightness-110" onClick={()=>{setTab('websites');setWebsiteOpen(true)}}><Plus data-icon="inline-start"/>Website oluştur</Button></div>}
     </div>
     <Tabs value={tab} onValueChange={setTab}>
-      <div className="overflow-x-auto pb-1"><TabsList className="h-auto min-w-[900px] w-full justify-start gap-1 rounded-2xl border border-sky-400/20 bg-[#071827]/80 p-1.5 shadow-[0_16px_50px_rgba(0,0,0,.18)] backdrop-blur-xl">
+      <div className="overflow-x-auto pb-1"><TabsList className="h-auto min-w-[1050px] w-full justify-start gap-1 rounded-2xl border border-sky-400/25 bg-[#061726]/72 p-1.5 shadow-[0_16px_50px_rgba(0,0,0,.18)] backdrop-blur-xl">
         <TabsTrigger value="servers" className="h-11 flex-1 gap-2 rounded-xl border border-transparent px-4 text-slate-400 transition data-[state=active]:border-sky-400/55 data-[state=active]:bg-gradient-to-r data-[state=active]:from-sky-500/25 data-[state=active]:to-blue-600/15 data-[state=active]:text-white data-[state=active]:shadow-[0_0_24px_rgba(14,165,233,.14)]"><Server className="size-4"/>Sunucular</TabsTrigger>
         <TabsTrigger value="websites" className="h-11 flex-1 gap-2 rounded-xl border border-transparent px-4 text-slate-400 transition data-[state=active]:border-cyan-400/55 data-[state=active]:bg-gradient-to-r data-[state=active]:from-cyan-500/20 data-[state=active]:to-sky-600/15 data-[state=active]:text-white data-[state=active]:shadow-[0_0_24px_rgba(6,182,212,.12)]"><Globe2 className="size-4"/>Websiteler</TabsTrigger>
         {canCreateNode&&<TabsTrigger value="nodes" className="h-11 flex-1 gap-2 rounded-xl border border-transparent px-4 text-slate-400 transition data-[state=active]:border-sky-400/55 data-[state=active]:bg-sky-500/15 data-[state=active]:text-white"><Box className="size-4"/>Node&apos;lar</TabsTrigger>}
@@ -67,7 +68,7 @@ export function InfrastructureManager(){
         <TabsTrigger value="system" className="h-11 flex-1 gap-2 rounded-xl border border-transparent px-4 text-slate-400 transition data-[state=active]:border-sky-400/55 data-[state=active]:bg-sky-500/15 data-[state=active]:text-white"><Shield className="size-4"/>Sistem Durumu</TabsTrigger>
         {manager&&<TabsTrigger value="users" className="h-11 flex-1 gap-2 rounded-xl border border-transparent px-4 text-slate-400 transition data-[state=active]:border-sky-400/55 data-[state=active]:bg-sky-500/15 data-[state=active]:text-white"><Users className="size-4"/>Kullanıcılar</TabsTrigger>}
       </TabsList></div>
-      <TabsContent value="servers" className="mt-6"><div className="grid max-w-5xl gap-4">{isLoading?<Loading/>:data?.servers.length?data.servers.map(s=><ServerCard key={s.id} server={s} permission={data.permissions.find(p=>p.serverId===s.id&&p.userId===data.actor.id)} manager={!!manager} onSelect={()=>router.push(`/servers/${s.id}`)} onEdit={()=>router.push(`/servers/${s.id}?section=settings`)} command={command}/>):<Empty text="Size atanmış veya kurulmuş bir sunucu yok."/>}</div></TabsContent>
+      <TabsContent value="servers" className="mt-7"><div className="grid max-w-[950px] gap-4">{isLoading?<Loading/>:data?.servers.length?data.servers.map(s=><ServerCard key={s.id} server={s} permission={data.permissions.find(p=>p.serverId===s.id&&p.userId===data.actor.id)} manager={!!manager} onSelect={()=>router.push(`/servers/${s.id}`)} onEdit={()=>router.push(`/servers/${s.id}?section=settings`)} command={command}/>):<Empty text="Size atanmış veya kurulmuş bir sunucu yok."/>}</div></TabsContent>
       <TabsContent value="websites" className="mt-6"><WebsiteManager createOpen={websiteOpen} onCreateOpenChange={setWebsiteOpen}/></TabsContent>
       {canCreateNode&&<TabsContent value="nodes"><div className="grid gap-4 lg:grid-cols-2">{data?.nodes.map(n=><Card key={n.id}><CardHeader className="flex-row items-center justify-between"><div><CardTitle>{n.name}</CardTitle><CardDescription>{n.lastHeartbeat?new Date(n.lastHeartbeat).toLocaleString('tr-TR'):'Henüz sinyal yok'}</CardDescription></div><Badge variant={n.status==='online'?'default':'secondary'}>{n.status}</Badge></CardHeader><CardContent className="flex flex-col gap-3"><div className="flex justify-between text-sm"><span>RAM</span><span className="font-mono">{n.memoryUsedMb} / {n.memoryTotalMb} MB</span></div><Progress value={n.memoryTotalMb?n.memoryUsedMb/n.memoryTotalMb*100:0}/><div className="flex justify-between text-sm"><span>CPU</span><span className="font-mono">%{Math.round(n.cpuPercent)}</span></div><div className="rounded-md border bg-muted/20 p-3"><div className="mb-2 flex items-center justify-between gap-3 text-sm"><span className="flex items-center gap-2 font-medium"><HardDrive className="size-4"/>Depolama</span><span className="font-mono">{n.diskTotalGb?`${n.diskUsedGb.toFixed(1)} / ${n.diskTotalGb.toFixed(1)} GB`:'Agent verisi bekleniyor'}</span></div><Progress value={n.diskTotalGb?Math.min(100,n.diskUsedGb/n.diskTotalGb*100):0}/><div className="mt-2 flex justify-between text-xs text-muted-foreground"><span>{n.diskTotalGb?`%${Math.round(n.diskUsedGb/n.diskTotalGb*100)} kullanım`:'Disk metriği alınmadı'}</span><span>{n.diskTotalGb?`${Math.max(0,n.diskTotalGb-n.diskUsedGb).toFixed(1)} GB boş`:''}</span></div></div><div className="flex flex-wrap gap-2"><Button variant="outline" onClick={()=>setEditNode(n)} disabled={busy}>Düzenle</Button><Button variant="outline" onClick={async()=>{const result=await post({action:'node-install-info',nodeId:n.id}) as {install:string;token:null}|null;if(result)setSetup(result);setNodeOpen(true)}} disabled={busy}>Kurulum bilgilerini görüntüle</Button><Button variant="outline" onClick={async()=>{const accepted=await actionConfirm.ask('Eski node tokeni anında geçersiz olacak. Agent yeni token ile yeniden yapılandırılmalıdır.',{title:'Node tokenini yenile',confirmLabel:'Yeni token oluştur',danger:true});if(!accepted)return;const result=await post({action:'regenerate-node-token',nodeId:n.id}) as {install:string;token:string}|null;if(result)setSetup({install:result.install,token:result.token});setNodeOpen(true)}} disabled={busy}><RefreshCw data-icon="inline-start"/>Tokeni yenile</Button><Button variant="destructive" onClick={async()=>{const accepted=await actionConfirm.ask(`“${n.name}” node kaydı silinecek. Bu işlem node üzerindeki dosyaları silmez ancak panel bağlantısını kaldırır.`,{title:'Node bağlantısını sil',confirmLabel:'Node kaydını sil',danger:true,requiredText:n.name});if(accepted)await post({action:'delete-node',nodeId:n.id})}} disabled={busy}><Trash2 data-icon="inline-start"/>Sil</Button></div></CardContent></Card>)}</div></TabsContent>}
       <TabsContent value="lost"><LostItems rows={lost} servers={data?.servers??[]} canDelete={serverId=>!!manager||!!data?.permissions.find(p=>p.serverId===serverId&&p.userId===data.actor.id)?.canManageLostItems} remove={async id=>{await post({action:'delete-lost-item',id})}}/></TabsContent>
@@ -89,54 +90,47 @@ export function InfrastructureManager(){
 
 
 function ServerCard({server,permission,manager,onSelect,onEdit,command}:{server:ServerRow;permission?:Permission;manager:boolean;onSelect:()=>void;onEdit:()=>void;command:(s:ServerRow,t:string,d?:boolean)=>Promise<void>}){
-  const running=server.status==='running';const canStart=manager||!!permission?.canStart;const canStop=manager||!!permission?.canStop;const canRestart=manager||!!permission?.canRestart;const canEdit=manager||!!permission?.canReset
+  const running=server.status==='running'
+  const canStart=manager||!!permission?.canStart
+  const canStop=manager||!!permission?.canStop
+  const canRestart=manager||!!permission?.canRestart
+  const canEdit=manager||!!permission?.canReset
   const busyState=['queued','downloading','installing'].includes(server.status)
-  const address=server.connectionAddress??`${server.publicHost??'IP bekleniyor'}:${server.port}`
-  const playerText=server.maxPlayers&&server.maxPlayers>0?`${server.playerCount}/${server.maxPlayers}`:String(server.playerCount)
-  return <Card className="group relative overflow-hidden rounded-[22px] border border-white/10 bg-[linear-gradient(145deg,rgba(7,24,39,.98),rgba(4,17,28,.96))] text-slate-100 shadow-[0_22px_70px_rgba(0,0,0,.28)] transition duration-300 hover:-translate-y-0.5 hover:border-cyan-400/30 hover:shadow-[0_30px_90px_rgba(0,0,0,.34),0_0_45px_rgba(14,165,233,.06)]">
-    <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-cyan-300/45 to-transparent"/>
+  const address=server.connectionAddress??`${server.publicHost??'node-configured-address'}:${server.port}`
+
+  return <Card className="group relative overflow-hidden rounded-2xl border border-cyan-400/55 bg-[#061727]/82 text-slate-100 shadow-[0_18px_55px_rgba(0,0,0,.30),inset_0_1px_0_rgba(255,255,255,.025)] backdrop-blur-md transition hover:border-cyan-300/75 hover:shadow-[0_22px_70px_rgba(0,0,0,.36),0_0_38px_rgba(14,165,233,.08)]">
+    <div className="pointer-events-none absolute right-7 top-6 grid grid-cols-3 gap-1 opacity-[.11]">{Array.from({length:7}).map((_,i)=><span key={i} className="size-4 bg-cyan-500"/>)}</div>
     <CardContent className="p-0">
-      <div className="flex items-start gap-4 border-b border-white/[.06] px-5 py-5 md:px-6">
-        <div className="relative size-14 shrink-0 overflow-hidden rounded-2xl border border-white/10 bg-[#07121c] shadow-[inset_0_0_26px_rgba(56,189,248,.06)]">
-          {server.coverVideoUrl?<video className="absolute inset-0 size-full object-cover" src={server.coverVideoUrl} autoPlay muted loop playsInline/>:server.coverImageUrl?<img className="absolute inset-0 size-full object-cover" src={server.coverImageUrl} alt=""/>:<div className="grid size-full place-items-center bg-[radial-gradient(circle_at_35%_25%,rgba(74,222,128,.22),transparent_35%),linear-gradient(145deg,#143629,#07131e)]"><Box className="size-7 text-emerald-300"/></div>}
-          <span className={`absolute bottom-1 right-1 size-2.5 rounded-full border-2 border-[#071827] ${running?'bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,.75)]':'bg-slate-500'}`}/>
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2"><h2 className="truncate text-lg font-bold tracking-[-.02em] text-white md:text-xl">{server.name}</h2>{server.serverSubtitle&&<span className="truncate text-xs text-slate-500">· {server.serverSubtitle}</span>}</div>
-          <p className="mt-1 text-xs font-medium text-sky-200/70">Minecraft Sunucusu</p>
-        </div>
-        <div className="shrink-0 text-right">
-          <p className="text-[10px] font-semibold uppercase tracking-[.14em] text-slate-600">Oyuncular</p>
-          <div className="mt-1 flex items-center justify-end gap-2"><b className="font-mono text-sm text-white">{playerText}</b><span className={`size-2 rounded-full ${running?'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,.7)]':'bg-slate-600'}`}/></div>
-        </div>
-      </div>
-
-
-      <div className="px-5 py-4 md:px-6">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="min-w-0">
-            <p className="truncate font-mono text-[13px] text-cyan-100/65"><span className="text-cyan-300/80">{server.loader}</span> <span className="text-slate-500">{server.mcVersion}</span><span className="px-2 text-white/15">·</span>{address}</p>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <Badge className={running?'border border-emerald-400/25 bg-emerald-400/10 text-emerald-300 hover:bg-emerald-400/10':'border border-slate-500/20 bg-slate-500/10 text-slate-300'}>{running?'● Çalışıyor':labels[server.status]??server.status}</Badge>
-              {server.loaderVersion&&<span className="rounded-full border border-white/[.06] bg-white/[.025] px-2.5 py-1 text-[10px] text-slate-500">Loader {server.loaderVersion}</span>}
+      <div className="grid lg:grid-cols-[minmax(0,1fr)_138px]">
+        <div className="p-5 md:px-6 md:py-6">
+          <div className="flex items-start gap-5">
+            <div className="relative size-[82px] shrink-0 overflow-hidden">
+              {server.coverVideoUrl?<video className="absolute inset-0 size-full object-cover" src={server.coverVideoUrl} autoPlay muted loop playsInline/>:server.coverImageUrl?<img className="absolute inset-0 size-full rounded-xl object-cover" src={server.coverImageUrl} alt=""/>:<img className="absolute inset-0 size-full object-contain" src="/blockctrl-grass-block.png" alt="Minecraft grass block"/>}
+            </div>
+            <div className="min-w-0 flex-1 pt-1">
+              <h2 className="truncate text-[22px] font-bold tracking-[-.02em] text-white">{server.name}</h2>
+              <p className="mt-1 truncate font-mono text-[14px] text-sky-100/70">{server.loader} {server.mcVersion}<span className="px-2 text-white/20">·</span>{address}</p>
+              <div className="mt-3">
+                <Badge className={running?'border border-emerald-400/30 bg-emerald-500/15 px-3 py-1 text-emerald-300 hover:bg-emerald-500/15':'border border-slate-500/25 bg-slate-500/10 px-3 py-1 text-slate-300'}>{running?'● Çalışıyor':labels[server.status]??server.status}</Badge>
+              </div>
             </div>
           </div>
-          <Button size="sm" variant="ghost" className="hidden h-9 shrink-0 rounded-xl px-3 text-cyan-300 hover:bg-cyan-400/10 hover:text-cyan-200 lg:inline-flex" onClick={onSelect}>Yönet <ChevronRight className="size-4"/></Button>
+
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            {canStart&&<Button size="sm" variant="outline" className="h-[46px] rounded-xl border-cyan-400/65 bg-[#062039]/78 px-5 text-[15px] text-cyan-200 shadow-[0_0_24px_rgba(14,165,233,.10)] hover:bg-cyan-400/12" onClick={()=>command(server,'start')} disabled={!['stopped','ready','crashed'].includes(server.status)}><Play className="size-4"/>Başlat</Button>}
+            {canStop&&<Button size="sm" variant="outline" className="h-[46px] rounded-xl border-sky-300/35 bg-[#071827]/75 px-5 text-[15px] text-slate-100 hover:bg-white/[.06]" onClick={()=>command(server,'stop')} disabled={!running}><Square className="size-4"/>Durdur</Button>}
+            {canRestart&&<Button size="sm" variant="outline" className="h-[46px] rounded-xl border-sky-300/35 bg-[#071827]/75 px-5 text-[15px] text-slate-100 hover:bg-white/[.06]" onClick={()=>command(server,'restart')} disabled={!running}><RefreshCw className="size-4"/>Restart</Button>}
+            {canEdit&&<Button size="sm" variant="outline" className="h-[46px] rounded-xl border-sky-300/35 bg-[#071827]/75 px-5 text-[15px] text-slate-100 hover:border-cyan-300/45 hover:bg-cyan-400/[.08]" onClick={onEdit} disabled={busyState}><Pencil className="size-4"/>Düzenle</Button>}
+            {manager&&<Button size="sm" variant="outline" className="h-[46px] rounded-xl border-red-500/65 bg-red-500/[.06] px-5 text-[15px] text-red-300 hover:bg-red-500/15" onClick={()=>command(server,'delete-server',true)} disabled={busyState}><Trash2 className="size-4"/>Sil</Button>}
+          </div>
+
+          {busyState&&<div className="mt-4 rounded-xl border border-cyan-400/15 bg-cyan-400/[.04] p-3"><div className="mb-2 flex justify-between text-[11px] text-cyan-100/55"><span>Kurulum devam ediyor</span><span>%{server.installProgress}</span></div><Progress value={server.installProgress}/></div>}
+          {server.installError&&<p className="mt-4 rounded-xl border border-red-400/20 bg-red-500/10 p-3 text-sm text-red-300">{server.installError}</p>}
         </div>
 
-
-        <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-white/[.06] pt-4">
-          {canStart&&<Button size="sm" className="h-9 rounded-xl border border-emerald-400/25 bg-emerald-500/15 px-3 text-emerald-200 hover:bg-emerald-500/25" onClick={()=>command(server,'start')} disabled={!['stopped','ready','crashed'].includes(server.status)}><Play className="size-3.5"/>Başlat</Button>}
-          {canStop&&<Button size="sm" variant="outline" className="h-9 rounded-xl border-white/10 bg-white/[.025] px-3 text-slate-200 hover:border-white/20 hover:bg-white/[.055]" onClick={()=>command(server,'stop')} disabled={!running}><Square className="size-3.5"/>Durdur</Button>}
-          {canRestart&&<Button size="sm" variant="outline" className="h-9 rounded-xl border-white/10 bg-white/[.025] px-3 text-slate-200 hover:border-white/20 hover:bg-white/[.055]" onClick={()=>command(server,'restart')} disabled={!running}><RefreshCw className="size-3.5"/>Restart</Button>}
-          {canEdit&&<Button size="sm" variant="outline" className="h-9 rounded-xl border-white/10 bg-white/[.025] px-3 text-slate-200 hover:border-cyan-400/25 hover:bg-cyan-400/[.07]" onClick={onEdit} disabled={busyState}><Pencil className="size-3.5"/>Düzenle</Button>}
-          {manager&&<Button size="sm" variant="outline" className="h-9 rounded-xl border-red-500/20 bg-red-500/[.08] px-3 text-red-300 hover:bg-red-500/15 hover:text-red-200" onClick={()=>command(server,'delete-server',true)} disabled={busyState}><Trash2 className="size-3.5"/>Sil</Button>}
-          <Button size="sm" variant="ghost" className="ml-auto h-9 rounded-xl px-3 font-semibold text-cyan-300 hover:bg-cyan-400/10 hover:text-cyan-200 lg:hidden" onClick={onSelect}>Yönet <ChevronRight className="size-4"/></Button>
-        </div>
-
-
-        {busyState&&<div className="mt-4 rounded-xl border border-cyan-400/10 bg-cyan-400/[.035] p-3"><div className="mb-2 flex justify-between text-[11px] text-cyan-100/55"><span>Kurulum devam ediyor</span><span>%{server.installProgress}</span></div><Progress value={server.installProgress}/></div>}
-        {server.installError&&<p className="mt-4 rounded-xl border border-red-400/20 bg-red-500/10 p-3 text-sm text-red-300">{server.installError}</p>}
+        <button type="button" onClick={onSelect} className="flex min-h-[92px] items-center justify-center gap-2 border-t border-cyan-400/20 px-5 text-[15px] font-semibold text-cyan-300 transition hover:bg-cyan-400/[.06] lg:min-h-full lg:border-l lg:border-t-0">
+          Yönet <ChevronRight className="size-5"/>
+        </button>
       </div>
     </CardContent>
   </Card>
