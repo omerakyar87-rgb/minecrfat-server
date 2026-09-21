@@ -167,11 +167,76 @@ const managementAreas:Array<{title:string;description:string;icon:LucideIcon}> =
   {title:'Zamanlamalar',icon:FileClock,description:'Planlı bakım ve otomasyonlar'},
 ]
 
-function Information(){const steps=[['1','Sunucuyu ekleyin','Minecraft sunucusunu bir node üzerinde BlockCtrl yönetimine bağlayın.',Server],['2','Agent bağlantısını kurun','Node agent panelden görev alır, sunucu süreci ve dosya sistemiyle güvenli biçimde iletişim kurar.',Network],['3','Canlı verileri izleyin','CPU, RAM, disk, oyuncu, çalışma süresi ve log akışı gibi kullanılabilir veriler panelde görünür.',Activity],['4','İşlemleri yönetin','Konsol, dosya, SFTP, yedek, dünya, güvenlik ve bakım işlemlerini yetkiniz dahilinde çalıştırın.',Wrench]] as const
-return <><PageHero eyebrow="Bilgilendirme" title="BlockCtrl nasıl çalışır?" description="Panel, node agent ve Minecraft sunucu süreci arasındaki yapıyı; hangi araçların ne işe yaradığını ve günlük yönetim akışını burada görebilirsiniz." icon={CloudCog}/>
-<section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8"><div className="grid gap-4 lg:grid-cols-4">{steps.map(([n,t,d,Icon],i)=><Fade key={n} delay={i*.06}><div className="h-full rounded-2xl border border-white/7 bg-[#071522] p-5"><div className="flex items-center justify-between"><span className="text-3xl font-black text-sky-400/25">{n}</span><Icon className="size-5 text-sky-300"/></div><h3 className="mt-5 font-semibold text-white">{t}</h3><p className="mt-2 text-sm leading-6 text-slate-400">{d}</p></div></Fade>)}</div></section>
-<section className="border-y border-white/5 bg-white/[.015]"><div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8"><Fade><h2 className="text-3xl font-bold text-white">Yönetim alanları</h2><p className="mt-3 max-w-2xl text-sm leading-7 text-slate-400">Sunucunun ve kullanıcının yetkilerine göre aşağıdaki alanlar kullanılabilir.</p></Fade><div className="mt-9 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{managementAreas.map((item,i)=>{const Icon=item.icon;return <Fade key={item.title} delay={(i%4)*.03}><div className="flex h-full gap-3 rounded-xl border border-white/6 bg-[#071522]/70 p-4"><div className="grid size-9 shrink-0 place-items-center rounded-xl bg-sky-400/10 text-sky-300"><Icon className="size-4"/></div><div><p className="text-sm font-medium text-white">{item.title}</p><p className="mt-1 text-xs leading-5 text-slate-500">{item.description}</p></div></div></Fade>})}</div></div></section>
-<section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8"><div className="grid gap-6 lg:grid-cols-2"><Fade><div className="rounded-3xl border border-sky-400/12 bg-gradient-to-br from-sky-400/8 to-transparent p-7"><ShieldCheck className="size-8 text-sky-300"/><h2 className="mt-5 text-2xl font-bold text-white">Yetki ve güvenlik yaklaşımı</h2><p className="mt-3 text-sm leading-7 text-slate-400">BlockCtrl; yönetim işlemlerini kullanıcı rolü ve sunucu bazlı yetkilerle sınırlandırır. Konsol, dosya, yedek ve kayıp eşya gibi işlemler ayrı izinlerle kontrol edilebilir.</p></div></Fade><Fade delay={.08}><div className="rounded-3xl border border-sky-400/12 bg-gradient-to-br from-blue-500/8 to-transparent p-7"><Cpu className="size-8 text-sky-300"/><h2 className="mt-5 text-2xl font-bold text-white">Gerçek veri, sahte metrik yok</h2><p className="mt-3 text-sm leading-7 text-slate-400">Bir veri agent veya ilgili API tarafından doğrulanamıyorsa panelin örnek değer uydurması yerine “doğrulanmadı” veya uygun boş durum göstermesi hedeflenir.</p></div></Fade></div></section><CTA/></>}
+function Information(){
+  const coreFeatures:Array<{title:string;description:string;icon:LucideIcon;tone:string}> = [
+    {title:'Genel Bakış',description:'Sunucularınızın anlık durumunu görüntüleyin.',icon:Gauge,tone:'from-sky-500/25 to-blue-600/8'},
+    {title:'Konsol',description:'Gerçek zamanlı konsol erişimi ve komut yönetimi.',icon:Terminal,tone:'from-violet-500/25 to-fuchsia-600/7'},
+    {title:'Oyuncular',description:'Oyuncu listesi ve detaylı istatistikler.',icon:Users,tone:'from-emerald-500/25 to-teal-600/8'},
+    {title:'Dosyalar',description:'Tüm sunucu dosyalarınızı yönetin.',icon:Files,tone:'from-cyan-500/25 to-teal-500/7'},
+    {title:'Dünyalar',description:'Dünya yönetimi, yükleme ve geri yükleme.',icon:Globe2,tone:'from-orange-500/25 to-amber-600/8'},
+    {title:'Eklentiler / Modlar',description:'Kurulum, güncelleme ve yönetim.',icon:Package,tone:'from-lime-500/25 to-green-600/8'},
+    {title:'SFTP',description:'Güvenli dosya transferi.',icon:KeyRound,tone:'from-sky-500/25 to-cyan-600/8'},
+    {title:'Veritabanları',description:'MySQL, MariaDB ve diğerleri.',icon:Database,tone:'from-purple-500/25 to-indigo-600/8'},
+    {title:'Güvenlik',description:'Gelişmiş güvenlik araçları.',icon:ShieldCheck,tone:'from-red-500/25 to-rose-600/8'},
+    {title:'Ağ & Portlar',description:'Port yönetimi ve ağ ayarları.',icon:Network,tone:'from-cyan-500/25 to-blue-600/8'},
+    {title:'Yedekler',description:'Otomatik yedekleme ve indirme.',icon:FileClock,tone:'from-blue-500/25 to-sky-600/8'},
+    {title:'Zamanlanmış Görevler',description:'Otomatik görev planlama.',icon:RefreshCw,tone:'from-orange-500/25 to-red-600/8'},
+    {title:'Kayıp Eşya Takibi',description:'Kaybolan eşyaları takip edin.',icon:ShieldCheck,tone:'from-red-500/25 to-rose-600/8'},
+    {title:'Entegrasyonlar',description:'Discord ve diğer servisler.',icon:Blocks,tone:'from-cyan-500/25 to-sky-600/8'},
+    {title:'Toplu İndirme',description:'Birçok dosyayı için kolay indirme.',icon:HardDrive,tone:'from-cyan-500/25 to-teal-600/8'},
+  ]
+  return <>
+    <section className="relative isolate overflow-hidden border-b border-cyan-400/10 pt-[62px]">
+      <div className="absolute inset-0 -z-20 bg-[#020b14]"/>
+      <div className="absolute inset-0 -z-10 opacity-[.18] [background-image:radial-gradient(circle_at_center,rgba(56,189,248,.9)_0,rgba(56,189,248,.9)_1px,transparent_1.3px)] [background-size:52px_52px]"/>
+      <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_80%_20%,rgba(14,165,233,.16),transparent_28%),radial-gradient(circle_at_40%_55%,rgba(14,165,233,.07),transparent_35%),linear-gradient(180deg,rgba(2,11,20,.20),rgba(2,11,20,.94))]"/>
+      <div className="mx-auto grid min-h-[460px] max-w-[1240px] items-center gap-10 px-5 py-11 sm:px-6 lg:grid-cols-[.92fr_1.08fr] lg:py-14">
+        <Fade>
+          <div className="max-w-[560px]">
+            <h1 className="text-[38px] font-black leading-none tracking-[-.04em] text-white sm:text-[50px]">BlockCtrl Nasıl Çalışır?</h1>
+            <p className="mt-4 max-w-[520px] text-[13px] leading-6 text-slate-200/80 sm:text-[14px]">Minecraft sunucu yönetimini kolay, güvenli ve kapsamlı hale getiriyoruz.</p>
+            <div className="mt-9 space-y-6">
+              <InfoStep number="1" title="Hesap Oluştur" text="Ücretsiz olarak kayıt olun ve panelin tüm özelliklerine erişin."/>
+              <InfoStep number="2" title="Sunucu Ekleyin" text="Node/agent ile sunucunuzu bağlayın, otomatik kurulumu tamamlayın."/>
+              <InfoStep number="3" title="Yönetin" text="Konsoldan oyunculara, dosyalardan yedeklere kadar her şeyi tek yerden yönetin."/>
+            </div>
+          </div>
+        </Fade>
+        <Fade delay={.08}>
+          <div className="relative mx-auto w-full max-w-[500px]">
+            <div className="pointer-events-none absolute inset-10 rounded-full bg-cyan-400/10 blur-3xl"/>
+            <img src="/info-architecture.webp" alt="BlockCtrl panel, node agent ve Minecraft sunucusu mimarisi" className="relative z-10 mx-auto block max-h-[430px] w-auto max-w-full object-contain drop-shadow-[0_24px_50px_rgba(0,0,0,.36)]"/>
+          </div>
+        </Fade>
+      </div>
+    </section>
+
+    <section className="relative bg-[#020b14] px-5 pb-14 pt-7 sm:px-6">
+      <div className="mx-auto max-w-[1240px]">
+        <Fade><h2 className="text-[22px] font-bold tracking-[-.025em] text-white">Başlıca Özellikler</h2></Fade>
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
+          {coreFeatures.map((item,i)=><Fade key={item.title} delay={(i%5)*.025}>
+            <motion.div whileHover={{y:-3}} className={`group min-h-[138px] rounded-lg border border-sky-300/15 bg-gradient-to-br ${item.tone} p-3.5 shadow-[0_12px_30px_rgba(0,0,0,.18)]`}>
+              <span className="grid size-9 place-items-center rounded-lg border border-white/10 bg-black/15 text-cyan-200 shadow-[0_0_22px_rgba(34,211,238,.07)]"><item.icon className="size-4.5"/></span>
+              <h3 className="mt-3 text-[12px] font-bold text-white">{item.title}</h3>
+              <p className="mt-1.5 text-[10px] leading-[1.5] text-slate-300/72">{item.description}</p>
+            </motion.div>
+          </Fade>)}
+        </div>
+      </div>
+    </section>
+  </>
+}
+
+function InfoStep({number,title,text}:{number:string;title:string;text:string}){
+  return <div className="relative flex gap-4 pl-1">
+    <div className="relative flex w-10 shrink-0 justify-center">
+      <span className="relative z-10 grid size-10 place-items-center rounded-full border border-cyan-300/45 bg-[linear-gradient(145deg,#0d6fb6,#063b78)] text-lg font-bold text-cyan-100 shadow-[0_0_18px_rgba(14,165,233,.18)]">{number}</span>
+      {number!=='3'&&<span className="absolute top-10 h-[48px] w-px bg-gradient-to-b from-cyan-300/60 to-cyan-400/10"/>}
+    </div>
+    <div className="pt-1"><h3 className="text-[14px] font-bold text-white">{title}</h3><p className="mt-1 text-[11px] leading-5 text-slate-300/72">{text}</p></div>
+  </div>
+}
 
 function About(){
   const values:Array<{title:string;description:string;icon:LucideIcon}>=[
