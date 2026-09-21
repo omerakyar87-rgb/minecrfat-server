@@ -2,7 +2,7 @@ import { asc, count, eq, or } from 'drizzle-orm'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { ControlPanel } from '@/components/control-panel'
-import { PublicSite } from '@/components/public-site'
+import { PublicMarketingPage } from '@/components/public-marketing'
 import { auth } from '@/lib/auth'
 import { db, ensurePanelSchema } from '@/lib/db'
 import { user } from '@/lib/db/schema'
@@ -10,7 +10,7 @@ import { user } from '@/lib/db/schema'
 export default async function Page() {
   try {
     const session = await auth.api.getSession({ headers: await headers() })
-    if (!session?.user) return <PublicSite page="home" />
+    if (!session?.user) return <PublicMarketingPage page="home" />
 
     await ensurePanelSchema()
     let [record] = await db.select().from(user).where(or(eq(user.id, session.user.id), eq(user.email, session.user.email))).limit(1)
