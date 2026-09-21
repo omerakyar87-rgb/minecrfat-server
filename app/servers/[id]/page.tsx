@@ -289,6 +289,13 @@ export default function ServerPage(){
 
 
 
+  // Keep hook order stable while SWR is loading. These values do not require a resolved server.
+  const consoleRows=logs.filter(row=>{const at=new Date(row.createdAt).getTime();return at>=consoleClearAt&&(consolePauseAt===null||at<=consolePauseAt)}).filter(row=>{const parsed=parseLog(row.line);return (consoleLevel==='all'||parsed.level===consoleLevel)&&(consoleQuery.trim()===''||row.line.toLowerCase().includes(consoleQuery.toLowerCase()))})
+  const agentConsoleRows=(consoleDiagnostics?.events??[]).filter(event=>{const at=new Date(event.at).getTime();const normalized=event.level==='error'?'ERROR':event.level==='warn'?'WARN':'INFO';return at>=consoleClearAt&&(consolePauseAt===null||at<=consolePauseAt)&&(consoleLevel==='all'||normalized===consoleLevel)&&(consoleQuery.trim()===''||event.message.toLowerCase().includes(consoleQuery.toLowerCase()))})
+  const startupStdout=(consoleDiagnostics?.startup?.stdout??[]).filter(line=>consoleQuery.trim()===''||line.toLowerCase().includes(consoleQuery.toLowerCase()))
+  const startupStderr=(consoleDiagnostics?.startup?.stderr??[]).filter(line=>consoleQuery.trim()===''||line.toLowerCase().includes(consoleQuery.toLowerCase()))
+  useEffect(()=>{if(section!=='console'||consolePauseAt!==null||!consoleAutoScroll)return;const el=consoleViewportRef.current;if(!el)return;el.scrollTop=el.scrollHeight},[section,consoleTab,consoleRows.length,agentConsoleRows.length,startupStdout.length,startupStderr.length,consolePauseAt,consoleAutoScroll])
+
   if(error)return <main className="p-8 text-red-300">{error.message}</main>; if(!server)return <main className="p-8">Sunucu bulunamadı.</main>
   if(!fullAccess&&data?.allowedSections&&data.allowedSections.length===0&&!permission?.canViewLostItems&&!permission?.canManageLostItems)return <main className="min-h-svh bg-[#06100d] p-8 text-slate-100"><div className="mx-auto max-w-xl rounded-xl border border-[#203a55] bg-[#0b1b2a] p-6"><Shield className="size-8 text-slate-500"/><h1 className="mt-4 text-xl font-semibold">Sunucu ayrıntı erişimi atanmadı</h1><p className="mt-2 text-sm text-slate-400">Bu sunucuda görüntüleyebileceğiniz bir yönetim bölümü bulunmuyor. Size özel kayıp eşya veya diğer izinler ana panelden kullanılabilir.</p><Button className="mt-5" variant="outline" onClick={()=>router.push('/')}><ArrowLeft className="mr-2 size-4"/>Sunuculara dön</Button></div></main>
   const running=server.status==='running'; const diskPct=node?.diskTotalGb?Math.round(node.diskUsedGb/node.diskTotalGb*100):0; const ramPct=node?.memoryTotalMb?Math.round(node.memoryUsedMb/node.memoryTotalMb*100):0
@@ -313,7 +320,7 @@ export default function ServerPage(){
   const processMemoryLimit=running&&metricFresh&&latestMetric.memoryTotalMb>0?latestMetric.memoryTotalMb:server.memoryMb
   const processRamPct=processMemoryUsed!==null&&processMemoryLimit>0?Math.min(100,Math.round(processMemoryUsed/processMemoryLimit*100)):null
   const uptimeText=running&&metricFresh?formatDuration(latestMetric.uptimeSeconds*1000):'—'
-  const metrics24h=useMemo(()=>{const cutoff=Date.now()-86_400_000;const rows=(metricsData?.metrics??[]).filter(metric=>new Date(metric.createdAt).getTime()>=cutoff);const source=rows.length?rows:(metricsData?.metrics??[]).slice(0,120);return [...source].reverse()},[metricsData?.metrics])
+  const metrics24h=(()=>{const cutoff=Date.now()-86_400_000;const rows=(metricsData?.metrics??[]).filter(metric=>new Date(metric.createdAt).getTime()>=cutoff);const source=rows.length?rows:(metricsData?.metrics??[]).slice(0,120);return [...source].reverse()})()
   const lastRestartOperation=(data?.operations??[]).find(operation=>operation.status==='completed'&&/restart|yeniden/i.test(operation.operation))
   const lastRestartText=lastRestartOperation?formatDuration(Date.now()-new Date(lastRestartOperation.createdAt).getTime()):'—'
   const coverSetting=settingsSnapshot?.settings?.coverImageUrl
@@ -329,17 +336,13 @@ export default function ServerPage(){
   const actualOnlineMode=typeof settingsSnapshot?.settings?.onlineMode==='boolean'?settingsSnapshot.settings.onlineMode:null
   const actualWhitelist=typeof settingsSnapshot?.settings?.whitelist==='boolean'?settingsSnapshot.settings.whitelist:null
   const securityModule=(key:string)=>securitySnapshot?.modules?.find(module=>module.key===key)
-  const consoleRows=logs.filter(row=>{const at=new Date(row.createdAt).getTime();return at>=consoleClearAt&&(consolePauseAt===null||at<=consolePauseAt)}).filter(row=>{const parsed=parseLog(row.line);return (consoleLevel==='all'||parsed.level===consoleLevel)&&(consoleQuery.trim()===''||row.line.toLowerCase().includes(consoleQuery.toLowerCase()))})
-  const agentConsoleRows=(consoleDiagnostics?.events??[]).filter(event=>{const at=new Date(event.at).getTime();const normalized=event.level==='error'?'ERROR':event.level==='warn'?'WARN':'INFO';return at>=consoleClearAt&&(consolePauseAt===null||at<=consolePauseAt)&&(consoleLevel==='all'||normalized===consoleLevel)&&(consoleQuery.trim()===''||event.message.toLowerCase().includes(consoleQuery.toLowerCase()))})
-  const startupStdout=(consoleDiagnostics?.startup?.stdout??[]).filter(line=>consoleQuery.trim()===''||line.toLowerCase().includes(consoleQuery.toLowerCase()))
-  const startupStderr=(consoleDiagnostics?.startup?.stderr??[]).filter(line=>consoleQuery.trim()===''||line.toLowerCase().includes(consoleQuery.toLowerCase()))
   const consoleJobs=(consoleActions?.actions??[]).filter(action=>['queued','running','completed','failed'].includes(action.status)).slice(0,12)
   const latestCrashJob=(consoleActions?.actions??[]).find(action=>action.type==='crash-reports'&&action.status==='completed')
   const crashReportRows=Array.isArray(latestCrashJob?.result?.reports)?latestCrashJob!.result!.reports as Array<Record<string,unknown>>:[]
   const latestLogExport=(consoleActions?.actions??[]).find(action=>action.type==='logs-export'&&action.status==='completed')
   const logExportUrl=typeof latestLogExport?.result?.downloadUrl==='string'?latestLogExport.result.downloadUrl:''
   const logExportSize=Number(latestLogExport?.result?.sizeBytes??0)
-  useEffect(()=>{if(section!=='console'||consolePauseAt!==null||!consoleAutoScroll)return;const el=consoleViewportRef.current;if(!el)return;el.scrollTop=el.scrollHeight},[section,consoleTab,consoleRows.length,agentConsoleRows.length,startupStdout.length,startupStderr.length,consolePauseAt,consoleAutoScroll])
+
   const logCutoff=logWindow==='24h'?Date.now()-86_400_000:logWindow==='7d'?Date.now()-7*86_400_000:0
   const filteredRecentLogs=[...logs].reverse().filter(row=>new Date(row.createdAt).getTime()>=logCutoff).filter(row=>{const parsed=parseLog(row.line);const tabOk=logTab==='server'||(logTab==='error'?parsed.level==='ERROR':/crash|exception|fatal|watchdog|tick loop/i.test(row.line));return tabOk&&(logLevel==='all'||parsed.level===logLevel)&&(logQuery.trim()===''||row.line.toLowerCase().includes(logQuery.toLowerCase()))}).slice(0,150)
   const heartbeatAge=node?.lastHeartbeat?Math.max(0,Math.round((Date.now()-new Date(node.lastHeartbeat).getTime())/1000)):null
