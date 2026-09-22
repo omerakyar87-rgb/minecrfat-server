@@ -287,10 +287,10 @@ function Support(){
   const topics=['Sunucu nasıl eklenir?','SFTP bilgilerine nasıl erişirim?','Yedekleri nasıl indiririm?','Oyuncu listesi nerede?','Destek talebi ne kadar sürede yanıtlanır?']
   return <>
     <section className="relative overflow-hidden border-b border-cyan-400/10 pt-[62px]">
-      <img src="/support-hero.webp" alt="" className="absolute inset-0 h-full w-full object-cover object-[50%_34%]"/>
+      <img src="/support-hero.webp" alt="" className="absolute inset-0 h-full w-full object-cover object-right-top"/>
       <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(2,11,20,.96)_0%,rgba(2,11,20,.90)_40%,rgba(2,11,20,.42)_68%,rgba(2,11,20,.20)_100%),linear-gradient(180deg,rgba(2,10,18,.04),rgba(2,10,18,.80))]"/>
-      <div className="pointer-events-none absolute right-[5%] top-[96px] z-10 hidden max-w-[360px] rotate-[-4deg] text-right lg:block">
-        <p className="text-[30px] font-medium italic leading-[1.22] tracking-[.01em] text-white/95 drop-shadow-[0_3px_14px_rgba(0,0,0,.65)]">“İyi bir sunucu,<br/>daima iyi dostluklar.”</p>
+      <div className="pointer-events-none absolute right-[4.5%] top-[132px] z-20 hidden max-w-[390px] rotate-[-4deg] text-right lg:block">
+        <p className="rounded-2xl bg-[#03101b]/35 px-5 py-4 text-[32px] font-semibold italic leading-[1.22] tracking-[.01em] text-white drop-shadow-[0_3px_18px_rgba(0,0,0,.95)] backdrop-blur-[2px] ring-1 ring-white/5">“İyi bir sunucu,<br/>daima iyi dostluklar.”</p>
       </div>
       <div className="relative mx-auto max-w-[1240px] px-4 pb-8 pt-10 sm:px-6 sm:pt-12 lg:pb-10 lg:pt-14">
         <div className="max-w-[690px]">
