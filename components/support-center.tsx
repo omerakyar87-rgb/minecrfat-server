@@ -23,7 +23,7 @@ const ALLOWED_ATTACHMENT_TYPES = new Set([
 ])
 
 
-type AppRole='manager'|'admin'|'guide'|'member'
+type AppRole='founder'|'manager'|'admin'|'guide'|'member'
 type ThreadType=string
 type ThreadStatus='pending'|'open'|'invited'|'closed'|'declined'
 type ThreadSummary={
