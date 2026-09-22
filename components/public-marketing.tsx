@@ -287,8 +287,11 @@ function Support(){
   const topics=['Sunucu nasıl eklenir?','SFTP bilgilerine nasıl erişirim?','Yedekleri nasıl indiririm?','Oyuncu listesi nerede?','Destek talebi ne kadar sürede yanıtlanır?']
   return <>
     <section className="relative overflow-hidden border-b border-cyan-400/10 pt-[62px]">
-      <img src="/support-hero.webp" alt="" className="absolute inset-0 h-full w-full object-cover object-center"/>
-      <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(2,11,20,.96)_0%,rgba(2,11,20,.92)_42%,rgba(2,11,20,.48)_70%,rgba(2,11,20,.30)_100%),linear-gradient(180deg,rgba(2,10,18,.10),rgba(2,10,18,.82))]"/>
+      <img src="/support-hero.webp" alt="" className="absolute inset-0 h-full w-full object-cover object-[50%_34%]"/>
+      <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(2,11,20,.96)_0%,rgba(2,11,20,.90)_40%,rgba(2,11,20,.42)_68%,rgba(2,11,20,.20)_100%),linear-gradient(180deg,rgba(2,10,18,.04),rgba(2,10,18,.80))]"/>
+      <div className="pointer-events-none absolute right-[5%] top-[96px] z-10 hidden max-w-[360px] rotate-[-4deg] text-right lg:block">
+        <p className="text-[30px] font-medium italic leading-[1.22] tracking-[.01em] text-white/95 drop-shadow-[0_3px_14px_rgba(0,0,0,.65)]">“İyi bir sunucu,<br/>daima iyi dostluklar.”</p>
+      </div>
       <div className="relative mx-auto max-w-[1240px] px-4 pb-8 pt-10 sm:px-6 sm:pt-12 lg:pb-10 lg:pt-14">
         <div className="max-w-[690px]">
           <Fade><h1 className="text-[38px] font-black tracking-[-.035em] text-white sm:text-[48px]">Her Zaman Yanınızdayız</h1><p className="mt-3 max-w-[630px] text-[14px] leading-6 text-slate-300 sm:text-[15px]">Sorularınız, önerileriniz veya yaşadığınız sorunlar için buradayız.</p></Fade>
