@@ -11,7 +11,7 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const SUPPORT_RULES_VERSION = '2026-09-10-v1'
-const STAFF_ROLES = new Set(['manager', 'admin', 'guide'])
+const STAFF_ROLES = new Set(['founder', 'manager', 'admin', 'guide'])
 const THREAD_TYPES = new Set(['support', 'bug', 'private'])
 const PRIORITIES = new Set(['low', 'normal', 'high', 'urgent'])
 const ALLOWED_ATTACHMENT_TYPES = new Set([
@@ -256,7 +256,7 @@ export async function GET(request: NextRequest) {
   const threads = await listThreads(actor).catch(()=>[] as ThreadRow[])
   const [memberResult, staffResult] = staff ? await Promise.all([
     pool.query<{id:string;name:string;role:string}>(`SELECT id,name,role FROM "user" WHERE approved=true AND role='member' ORDER BY name ASC LIMIT 500`),
-    pool.query<{id:string;name:string;role:string}>(`SELECT id,name,role FROM "user" WHERE approved=true AND role IN ('manager','admin','guide') ORDER BY name ASC LIMIT 200`),
+    pool.query<{id:string;name:string;role:string}>(`SELECT id,name,role FROM "user" WHERE approved=true AND role IN ('founder','manager','admin','guide') ORDER BY name ASC LIMIT 200`),
   ]) : [{ rows: [] as Array<{id:string;name:string;role:string}> }, { rows: [] as Array<{id:string;name:string;role:string}> }]
 
   const attentionCount = staff
