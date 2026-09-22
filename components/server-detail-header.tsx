@@ -1,8 +1,7 @@
 'use client'
 
-import { Menu, RefreshCw, Server } from 'lucide-react'
+import { Bell, Menu, MessageCircle, RefreshCw, Server } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { SupportCenter } from '@/components/support-center'
 
 type Actor={name:string;role:string}
 
@@ -32,7 +31,8 @@ export function ServerDetailHeader({
       </div>
 
       <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
-        <SupportCenter/>
+        <Button size="icon" variant="ghost" className="rounded-xl border border-cyan-400/10 bg-white/[.025] text-slate-300 hover:border-cyan-400/25 hover:bg-cyan-400/[.08] hover:text-cyan-200" onClick={()=>window.dispatchEvent(new CustomEvent('blockctrl:open-support',{detail:{view:'announcements'}}))} title="Duyurular" aria-label="Duyurular"><Bell className="size-4"/></Button>
+        <Button size="icon" variant="ghost" className="rounded-xl border border-cyan-400/10 bg-white/[.025] text-slate-300 hover:border-cyan-400/25 hover:bg-cyan-400/[.08] hover:text-cyan-200" onClick={()=>window.dispatchEvent(new CustomEvent('blockctrl:open-support',{detail:{view:'home'}}))} title="Destek ve sohbet" aria-label="Destek ve sohbet"><MessageCircle className="size-4"/></Button>
         <Button size="icon" variant="ghost" className="rounded-xl border border-cyan-400/10 bg-white/[.025] text-slate-300 hover:border-cyan-400/25 hover:bg-cyan-400/[.08] hover:text-cyan-200" onClick={onRefresh} title="Canlı veriyi yenile" aria-label="Canlı veriyi yenile"><RefreshCw className="size-4"/></Button>
         {actor&&<div className="ml-1 hidden items-center gap-2.5 border-l border-cyan-400/10 pl-3 sm:flex">
           <div className="grid size-9 place-items-center rounded-xl border border-cyan-400/15 bg-gradient-to-br from-cyan-500/20 to-blue-500/10 text-xs font-bold text-cyan-100">{actor.name.slice(0,1).toUpperCase()}</div>
