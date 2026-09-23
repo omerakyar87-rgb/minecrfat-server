@@ -8,6 +8,9 @@ const nextConfig = {
   compress: true,
   typescript: { ignoreBuildErrors: false },
   images: { unoptimized: true },
+  async rewrites() {
+    return [{ source: '/favicon.ico', destination: '/favicon.svg' }]
+  },
   async headers() {
     return [{
       source: '/(.*)',
