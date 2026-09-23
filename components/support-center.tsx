@@ -39,7 +39,9 @@ type SupportRequestType={id:string;title:string;description:string;color:string;
 type SupportHeroMedia={id:string;type:'image'|'video';url?:string;pathname?:string;caption?:string}
 type SupportSettings={title:string;description:string;transition:'fade'|'slide'|'zoom'|'none';intervalMs:number;media:SupportHeroMedia[];requestTypes:SupportRequestType[];migrationRequired?:boolean}
 type Announcement={id:string;title:string;status:'draft'|'scheduled'|'published'|'archived';blocks:InformationBlock[];publishAt:string|null;expireAt:string|null;createdAt:string;updatedAt:string;effectiveStatus?:string}
-type SupportSummary={actor:Actor;consent:{required:boolean;accepted:boolean;version:string};threads:ThreadSummary[];members:Array<{id:string;name:string;role:string}>;staff:Array<{id:string;name:string;role:string}>;attentionCount:number;information:InformationPage;supportSettings:SupportSettings;announcements:Announcement[];announcementUnread:number}
+type SupportSummary={actor:Actor;consent:{required:boolean;accepted:boolean;version:string};threads:ThreadSummary[];members:Array<{id:string;name:string;role:string}>;staff:Array<{id:string;name:string;role:string}>;attentionCount:number;information?:InformationPage;supportSettings?:SupportSettings;announcements?:Announcement[];announcementUnread?:number}
+const DEFAULT_INFORMATION:InformationPage={title:'Bilgilendirme',description:'',blocks:[],canEdit:false}
+const DEFAULT_SUPPORT_SETTINGS:SupportSettings={title:'Destek Merkezi',description:'İhtiyacınıza uygun destek türünü seçin.',transition:'fade',intervalMs:5000,media:[],requestTypes:[{id:'support',title:'Destek',description:'Sunucu veya panel desteği.',color:'#10b981',icon:'headphones',enabled:true},{id:'bug',title:'Hata bildirimi',description:'Teknik bir hatayı bildirin.',color:'#f59e0b',icon:'bug',enabled:true}]}
 type Attachment={id:string;threadId:string;messageId:string;filename:string;contentType:string;sizeBytes:string|number;createdAt:string}
 type ChatMessage={id:string;threadId:string;senderUserId:string;body:string;createdAt:string;senderName?:string|null;senderRole?:string|null;attachments:Attachment[]}
 type ThreadDetail={thread:ThreadSummary;messages:ChatMessage[];permissions:{canAccept:boolean;canSend:boolean;canClose:boolean;canRespondInvite:boolean}}
@@ -55,7 +57,7 @@ async function fetcher<T>(url:string){
   if(!response.ok)throw new Error(String(data.error??`İstek başarısız (${response.status})`))
   return data as T
 }
-function roleLabel(role:unknown){const r=String(role);return r==='manager'?'Yönetici':r==='admin'?'Admin':r==='guide'?'Rehber / Yetkili':'Üye'}
+function roleLabel(role:unknown){const r=String(role);return r==='founder'?'Founder':r==='manager'?'Yönetici':r==='admin'?'Admin':r==='guide'?'Rehber / Yetkili':'Üye'}
 function typeLabel(type:ThreadType,settings?:SupportSettings){if(type==='private')return 'Özel sohbet';return settings?.requestTypes.find(item=>item.id===type)?.title??type}
 function statusLabel(status:ThreadStatus){return status==='pending'?'Onay bekliyor':status==='open'?'Açık':status==='invited'?'Davet bekliyor':status==='declined'?'Reddedildi':'Kapalı'}
 function statusVariant(status:ThreadStatus):'default'|'secondary'|'destructive'|'outline'{return status==='open'?'default':status==='pending'||status==='invited'?'secondary':status==='declined'?'destructive':'outline'}
@@ -78,7 +80,10 @@ export function SupportCenter({showTriggers=true}:{showTriggers?:boolean}={}){
   const[error,setError]=useState<string|null>(null)
   const{data,mutate}=useSWR<SupportSummary>('/api/support',fetcher,{refreshInterval:open?3000:12000,revalidateOnFocus:true})
   const{data:detail,mutate:mutateDetail}=useSWR<ThreadDetail>(open&&selectedId?`/api/support?threadId=${encodeURIComponent(selectedId)}`:null,fetcher,{refreshInterval:2000,revalidateOnFocus:true})
-  const isStaff=!!data&&['manager','admin','guide'].includes(data.actor.role)
+  const isStaff=!!data&&['founder','manager','admin','guide'].includes(data.actor.role)
+  const information=data?.information??DEFAULT_INFORMATION
+  const supportSettings=data?.supportSettings??DEFAULT_SUPPORT_SETTINGS
+  const announcements=data?.announcements??[]
 
 
   useEffect(()=>{if(open&&data&&data.consent.required&&!data.consent.accepted)setView('info')},[open,data])
@@ -124,7 +129,7 @@ export function SupportCenter({showTriggers=true}:{showTriggers?:boolean}={}){
           </DialogHeader>
           {error&&<div className="mx-4 mt-3 flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"><AlertTriangle className="size-4 shrink-0"/>{error}</div>}
           {!data?<div className="grid flex-1 place-items-center text-sm text-muted-foreground">Destek sistemi yükleniyor...</div>:
-          data.consent.required&&!data.consent.accepted?<ConsentView busy={busy} error={error} information={data.information} accept={async()=>{const ok=await post({action:'accept-consent'});if(ok)setView('home')}}/>:
+          data.consent.required&&!data.consent.accepted?<ConsentView busy={busy} error={error} information={information} accept={async()=>{const ok=await post({action:'accept-consent'});if(ok)setView('home')}}/>:
           <div className="grid min-h-0 flex-1 md:grid-cols-[330px_minmax(0,1fr)]">
             <aside className="flex min-h-0 flex-col border-r bg-muted/10">
               <div className="space-y-2 border-b p-3">
@@ -141,13 +146,13 @@ export function SupportCenter({showTriggers=true}:{showTriggers?:boolean}={}){
               </div>
             </aside>
             <main className="min-h-0 overflow-hidden">
-              {view==='info'?<InformationPanel accepted={data.consent.accepted} information={data.information} canEdit={isStaff} busy={busy} post={post} refresh={async()=>{await mutate()}}/>:
-               view==='new-request'?<CreateRequest kind={selectedRequestType} config={data.supportSettings.requestTypes.find(item=>item.id===selectedRequestType)} busy={busy} post={post} select={selectThread} serverContext={serverContext}/>:
+              {view==='info'?<InformationPanel accepted={data.consent.accepted} information={information} canEdit={isStaff} busy={busy} post={post} refresh={async()=>{await mutate()}}/>:
+               view==='new-request'?<CreateRequest kind={selectedRequestType} config={supportSettings.requestTypes.find(item=>item.id===selectedRequestType)} busy={busy} post={post} select={selectThread} serverContext={serverContext}/>:
                view==='invite-private'?<PrivateInvite members={data.members} busy={busy} post={post} select={selectThread}/>:
-               view==='support-admin'&&isStaff?<SupportAdminPanel settings={data.supportSettings} busy={busy} post={post} refresh={async()=>{await mutate()}}/>:
-               view==='announcements-admin'&&isStaff?<AnnouncementAdminPanel announcements={data.announcements} busy={busy} post={post} refresh={async()=>{await mutate()}}/>:
-               view==='announcements'?<AnnouncementsPanel announcements={data.announcements} post={post}/>:
-               selectedId?<Conversation detail={detail} actor={data.actor} settings={data.supportSettings} busy={busy} post={post} refresh={async()=>{await Promise.all([mutate(),mutateDetail()])}}/>:<HomePanel actor={data.actor} isStaff={isStaff} pending={data.threads.filter(t=>t.type!=='private'&&t.status==='pending').length} settings={data.supportSettings}/>} 
+               view==='support-admin'&&isStaff?<SupportAdminPanel settings={supportSettings} busy={busy} post={post} refresh={async()=>{await mutate()}}/>:
+               view==='announcements-admin'&&isStaff?<AnnouncementAdminPanel announcements={announcements} busy={busy} post={post} refresh={async()=>{await mutate()}}/>:
+               view==='announcements'?<AnnouncementsPanel announcements={announcements} post={post}/>:
+               selectedId?<Conversation detail={detail} actor={data.actor} settings={supportSettings} busy={busy} post={post} refresh={async()=>{await Promise.all([mutate(),mutateDetail()])}}/>:<HomePanel actor={data.actor} isStaff={isStaff} pending={data.threads.filter(t=>t.type!=='private'&&t.status==='pending').length} settings={supportSettings}/>} 
             </main>
           </div>}
         </div>
@@ -336,7 +341,7 @@ function Conversation({detail,actor,settings,busy,post,refresh}:{detail?:ThreadD
     </div></div>
     <div className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-muted/5 p-4">{detail.messages.length?detail.messages.map(message=><MessageBubble key={message.id} message={message} mine={message.senderUserId===actor.id}/>):<div className="grid h-full place-items-center text-sm text-muted-foreground">Henüz mesaj yok.</div>}</div>
     {localError&&<div className="border-t border-destructive/20 bg-destructive/5 px-4 py-2 text-xs text-destructive">{localError}</div>}
-    {thread.status==='pending'&&!detail.permissions.canAccept?<div className="border-t bg-amber-500/5 px-4 py-3 text-sm text-amber-300"><Clock3 className="mr-1 inline size-4"/>Talebiniz destek ekibinin kabulünü bekliyor. Kabul edildikten sonra sohbet açılır.</div>:
+    {thread.status==='pending'&&!detail.permissions.canAccept?<div className="border-t bg-amber-500/5 px-4 py-3 text-sm text-amber-300"><Clock3 className="mr-1 inline size-4"/>Talebiniz destek ekibinin kabulün�� bekliyor. Kabul edildikten sonra sohbet açılır.</div>:
      thread.status==='invited'&&!detail.permissions.canRespondInvite?<div className="border-t bg-blue-500/5 px-4 py-3 text-sm text-blue-300"><Clock3 className="mr-1 inline size-4"/>Özel sohbet davetinin kabul edilmesi bekleniyor.</div>:
      thread.status==='closed'||thread.status==='declined'?<div className="border-t px-4 py-3 text-center text-sm text-muted-foreground">Bu sohbet {thread.status==='declined'?'reddedildi':'kapatıldı'}. Mesaj gönderilemez.</div>:
      detail.permissions.canSend?<div className="border-t p-3"><div className="flex gap-2"><textarea value={text} onChange={e=>setText(e.target.value)} maxLength={5000} rows={2} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();void send()}}} placeholder="Mesajınızı yazın..." className="min-h-12 flex-1 resize-none rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"/><Button className="self-end" size="icon" onClick={send} disabled={busy||(!text.trim()&&!files.length)} aria-label="Mesajı gönder"><Send/></Button></div><div className="mt-2 flex flex-wrap items-center justify-between gap-2"><label className="inline-flex cursor-pointer items-center gap-2 rounded-md border px-3 py-1.5 text-xs hover:bg-muted"><Paperclip className="size-3.5"/>Görsel / video ekle<input type="file" accept="image/jpeg,image/png,image/webp,image/gif,image/avif,image/heic,image/heif,video/mp4,video/webm,video/quicktime,video/x-m4v" multiple className="hidden" onChange={e=>setFiles(Array.from(e.target.files??[]).slice(0,MAX_ATTACHMENTS))}/></label><span className="text-xs text-muted-foreground">{files.length?`${files.length} dosya seçildi`:''}</span></div>{progress>0&&progress<100&&<Progress value={progress} className="mt-2"/>}{files.length>0&&<div className="mt-2 flex flex-wrap gap-1">{files.map(file=><Badge key={`${file.name}-${file.size}`} variant="secondary" className="max-w-52 truncate">{file.name}</Badge>)}</div>}</div>:
