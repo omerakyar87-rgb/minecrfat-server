@@ -21,6 +21,9 @@ const ALLOWED_ATTACHMENT_TYPES = new Set([
 const MAX_ATTACHMENT_BYTES = 100 * 1024 * 1024
 const MAX_ATTACHMENTS_PER_MESSAGE = 6
 
+const DEFAULT_INFORMATION = { title: 'Bilgilendirme', description: '', blocks: [] as unknown[] }
+const DEFAULT_SUPPORT_SETTINGS = { title: 'Destek Merkezi', description: 'İhtiyacınıza uygun destek türünü seçin.', transition: 'fade', intervalMs: 5000, media: [] as unknown[], requestTypes: [{ id: 'support', title: 'Destek', description: 'Sunucu veya panel desteği.', color: '#10b981', icon: 'headphones', enabled: true }, { id: 'bug', title: 'Hata bildirimi', description: 'Teknik bir hatayı bildirin.', color: '#f59e0b', icon: 'bug', enabled: true }] }
+
 function normalizedRole(role: unknown) {
   const value = String(role ?? '').toLowerCase()
   if (value === 'manager' || value === 'admin' || value === 'guide' || value === 'member') return value
@@ -255,18 +258,18 @@ export async function GET(request: NextRequest) {
     pool.query<{id:string;name:string;role:string}>(`SELECT id,name,role FROM "user" WHERE approved=true AND role IN ('manager','admin','guide') ORDER BY name ASC LIMIT 200`),
   ]) : [{ rows: [] as Array<{id:string;name:string;role:string}> }, { rows: [] as Array<{id:string;name:string;role:string}> }]
 
+  const [information, supportSettings, announcements, announcementUnread] = await Promise.all([
+    pool.query(`SELECT title,description,blocks,"updatedAt","updatedBy" FROM information_pages WHERE id='support' LIMIT 1`).then(result => ({ ...(result.rows[0] ?? DEFAULT_INFORMATION), canEdit: staff })).catch(() => ({ ...DEFAULT_INFORMATION, canEdit: staff })),
+    pool.query(`SELECT title,description,config FROM support_settings WHERE id='default' LIMIT 1`).then(result => { const row = result.rows[0]; const config = row?.config && typeof row.config === 'object' ? row.config : {}; return { ...DEFAULT_SUPPORT_SETTINGS, ...(row ? { title: row.title, description: row.description } : {}), ...config } }).catch(() => DEFAULT_SUPPORT_SETTINGS),
+    pool.query(`SELECT id,title,status,blocks,"publishAt","expireAt","createdAt","updatedAt" FROM announcements ${staff ? '' : `WHERE status='published' AND ("publishAt" IS NULL OR "publishAt"<=now()) AND ("expireAt" IS NULL OR "expireAt">now())`} ORDER BY COALESCE("publishAt","createdAt") DESC LIMIT 250`).then(result => result.rows).catch(() => []),
+    pool.query(`SELECT count(*)::int AS count FROM announcements a WHERE a.status='published' AND (a."publishAt" IS NULL OR a."publishAt"<=now()) AND (a."expireAt" IS NULL OR a."expireAt">now()) AND NOT EXISTS (SELECT 1 FROM announcement_reads r WHERE r."announcementId"=a.id AND r."userId"=$1)`, [actor.id]).then(result => Number(result.rows[0]?.count ?? 0)).catch(() => 0),
+  ])
+
   const attentionCount = staff
     ? threads.filter(t => t.type !== 'private' && t.status === 'pending').length + threads.filter(t => t.type === 'private' && t.status === 'invited' && t.targetUserId === actor.id).length
     : threads.filter(t => t.type === 'private' && t.status === 'invited' && t.targetUserId === actor.id).length
 
-  return NextResponse.json({
-    actor: { id: actor.id, name: actor.name, role: normalizedRole(actor.role) },
-    consent: { required: !staff, accepted: staff || accepted, version: SUPPORT_RULES_VERSION },
-    threads,
-    members: memberResult.rows,
-    staff: staffResult.rows,
-    attentionCount,
-  }, { headers: { 'Cache-Control': 'private, no-store' } })
+  return NextResponse.json({ actor: { id: actor.id, name: actor.name, role: normalizedRole(actor.role) }, consent: { required: !staff, accepted: staff || accepted, version: SUPPORT_RULES_VERSION }, threads, members: memberResult.rows, staff: staffResult.rows, attentionCount, information, supportSettings, announcements: Array.isArray(announcements) ? announcements : [], announcementUnread: Number.isFinite(announcementUnread) ? announcementUnread : 0 }, { headers: { 'Cache-Control': 'private, no-store' } })
 }
 
 async function insertMessage(threadId: string, senderUserId: string, body: string, attachments: Array<Record<string, unknown>> = []) {
