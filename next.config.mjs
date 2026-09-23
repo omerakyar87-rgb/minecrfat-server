@@ -1,12 +1,16 @@
 /** @type {import('next').NextConfig} */
 const csp = "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; form-action 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob: https:; font-src 'self' data: https:; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.vercel-storage.com https://*.neon.tech https://api.vercel.com; frame-src 'self' https:; worker-src 'self' blob:; report-uri /api/csp-report"
-const cspHeader = process.env.BLOCKCTRL_CSP_ENFORCE === 'true' ? 'Content-Security-Policy' : 'Content-Security-Policy-Report-Only'
+const cspEnforced = process.env.NODE_ENV === 'production' || process.env.BLOCKCTRL_CSP_ENFORCE === 'true'
+const cspHeader = cspEnforced ? 'Content-Security-Policy' : 'Content-Security-Policy-Report-Only'
 
 const nextConfig = {
   poweredByHeader: false,
   compress: true,
   typescript: { ignoreBuildErrors: false },
   images: { unoptimized: true },
+  async rewrites() {
+    return [{ source: '/favicon.ico', destination: '/favicon.svg' }]
+  },
   async headers() {
     return [{
       source: '/(.*)',

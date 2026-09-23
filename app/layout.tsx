@@ -10,6 +10,7 @@ export const metadata: Metadata = {
   title: 'BlockCtrl — Minecraft Sunucu Paneli',
   description: 'Vanilla, Fabric, Forge ve NeoForge Minecraft sunucularınızı tek panelden yönetin.',
   generator: 'v0.app',
+  icons: { icon: '/favicon.svg', shortcut: '/favicon.ico' },
 }
 
 export const viewport: Viewport = { colorScheme: 'dark', themeColor: '#101512', width: 'device-width', initialScale: 1 }
