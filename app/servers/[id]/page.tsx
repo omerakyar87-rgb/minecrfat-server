@@ -412,7 +412,7 @@ export default function ServerPage(){
 
 
 
-  return <main className="min-h-svh bg-[linear-gradient(180deg,rgba(2,11,22,.88),rgba(2,11,22,.96)),url('/blockctrl-panel-background.jpg')] bg-cover bg-center bg-fixed text-slate-100 selection:bg-cyan-400/30">
+  return <main className="min-h-svh bg-[#08111d] text-slate-100 selection:bg-sky-400/25">
     <a href="#server-main-content" className="bc-skip-link">Sunucu içeriğine geç</a>
     {actionConfirm.dialog}
     <SupportCenter showTriggers={false}/>
@@ -429,6 +429,8 @@ export default function ServerPage(){
         heartbeatHealthy={heartbeatHealthy}
         onlineNode={onlineNode}
         diskPct={diskPct}
+        serverCount={(data?.servers??[]).length}
+        serverLimit={50}
         onClose={()=>setOpen(false)}
         onSelect={key=>{setSection(key);setOpen(false);const params=new URLSearchParams(searchParams.toString());params.set('section',key);router.replace(`/servers/${id}?${params.toString()}`,{scroll:false})}}
         onBack={()=>router.push('/')}
@@ -457,7 +459,7 @@ export default function ServerPage(){
 
 
 
-        <div className="mx-auto w-full max-w-[1580px] space-y-5 p-3 sm:p-5 lg:p-6">
+        <div className="w-full space-y-3 p-3 sm:p-4 lg:p-4">
           {notice&&<div role="status" className="rounded-lg border border-sky-500/25 bg-[#0d2034]/35 px-4 py-3 text-sm text-sky-200">{notice}</div>}
 
 
@@ -468,31 +470,31 @@ export default function ServerPage(){
 
 
           {section==='overview'&&<>
-            <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_330px]">
+            <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_332px]">
               <div className="min-w-0 space-y-3">
                 <DashboardCard className="overflow-hidden p-0">
-                  <div className="flex flex-col gap-4 p-4 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="flex flex-col gap-4 p-3.5 lg:flex-row lg:items-center lg:justify-between">
                     <div className="flex min-w-0 flex-col items-start gap-4 sm:flex-row sm:items-center">
-                      {serverCoverUrl?<img src={serverCoverUrl} alt={`${server.name} kapak görseli`} className="size-[92px] shrink-0 rounded-xl border border-[#2a4662] object-cover shadow-[0_12px_32px_rgba(0,0,0,.34)]"/>:<div className="grid size-[92px] shrink-0 place-items-center rounded-xl border border-[#2a4662] bg-[radial-gradient(circle_at_30%_20%,rgba(34,197,94,.22),transparent_45%),#0b1927] text-emerald-300"><ServerIcon className="size-10"/></div>}
+                      {serverCoverUrl?<img src={serverCoverUrl} alt={`${server.name} kapak görseli`} className="size-[108px] shrink-0 rounded-lg border border-[#2a3f55] object-cover shadow-[0_8px_24px_rgba(0,0,0,.32)]"/>:<div className="grid size-[108px] shrink-0 place-items-center rounded-lg border border-[#2a3f55] bg-[#102033] text-emerald-300"><ServerIcon className="size-10"/></div>}
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                          <h2 className="truncate text-[24px] font-bold tracking-tight text-white">{server.name}</h2>
+                          <h2 className="truncate text-[23px] font-bold tracking-[-.02em] text-white">{server.name}</h2>
                           {canOpenSection('settings')&&<button type="button" onClick={()=>setSection('settings')} className="grid size-7 place-items-center rounded-md text-slate-500 transition hover:bg-white/[.05] hover:text-slate-200" aria-label="Sunucu ayarlarını aç"><Pencil className="size-3.5"/></button>}
                         </div>
-                        <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
+                        <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px]">
                           <span className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 font-semibold ${processState==='ok'?'border-emerald-400/25 bg-emerald-400/10 text-emerald-300':processState==='bad'?'border-red-500/30 bg-red-500/10 text-red-300':processState==='warn'?'border-amber-500/30 bg-amber-500/10 text-amber-300':'border-slate-600 bg-slate-700/20 text-slate-300'}`}><span className={`size-1.5 rounded-full ${processState==='ok'?'bg-emerald-400':processState==='bad'?'bg-red-400':processState==='warn'?'bg-amber-400':'bg-slate-500'}`}/>{processStatusLabel}</span>
                           <span className="rounded-md border border-[#253a52] bg-[#0b1928] px-2 py-1 text-slate-300">{server.loader} {server.mcVersion}</span>
                           <span className="rounded-md border border-[#253a52] bg-[#0b1928] px-2 py-1 text-slate-300">{node?.name??'Node doğrulanmadı'}</span>
                         </div>
-                        <button onClick={()=>{void navigator.clipboard.writeText(connectionAddress);setNotice('Sunucu adresi panoya kopyalandı.')}} className="mt-3 inline-flex max-w-full items-center gap-2 font-mono text-xs text-slate-300 transition hover:text-sky-300"><Network className="size-3.5 text-sky-400"/><span className="truncate">{connectionAddress}</span><Copy className="size-3.5 text-slate-500"/></button>
+                        <button onClick={()=>{void navigator.clipboard.writeText(connectionAddress);setNotice('Sunucu adresi panoya kopyalandı.')}} className="mt-2.5 inline-flex max-w-full items-center gap-2 text-[11px] text-slate-300 transition hover:text-sky-300"><Network className="size-3.5 text-sky-400"/><span className="truncate">{connectionAddress}</span><Copy className="size-3.5 text-slate-500"/></button>
                         <p className="mt-2 text-xs text-slate-500">Son yeniden başlatma: {lastRestartText}{running&&metricFresh?` · Çalışma süresi: ${uptimeText}`:''}</p>
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-2 lg:justify-end">
-                      {canStart&&<Button className="h-12 min-w-[88px] border border-emerald-400/25 bg-emerald-600 text-white shadow-[0_8px_24px_rgba(16,185,129,.14)] hover:bg-emerald-500" disabled={busy||running} onClick={()=>command('start')}><Play className="mr-2 size-4"/>Başlat</Button>}
-                      {canStop&&<Button className="h-12 min-w-[88px] border border-red-400/25 bg-red-600/90 text-white shadow-[0_8px_24px_rgba(220,38,38,.12)] hover:bg-red-500" disabled={busy||!running} onClick={()=>command('stop')}><Square className="mr-2 size-4"/>Durdur</Button>}
-                      {canRestart&&<Button className="h-12 min-w-[126px] border border-blue-400/30 bg-blue-600/90 text-white shadow-[0_8px_24px_rgba(37,99,235,.14)] hover:bg-blue-500" disabled={busy||!running} onClick={()=>command('restart')}><RefreshCw className="mr-2 size-4"/>Yeniden Başlat</Button>}
-                      <Button size="icon" variant="outline" className="size-12 border-[#29445f] bg-[#102138] text-slate-300 hover:border-sky-400/35 hover:bg-[#132943]" onClick={()=>setSection(canOpenSection('settings')?'settings':'logs')} aria-label="Diğer sunucu işlemleri"><MoreHorizontal className="size-5"/></Button>
+                      {canStart&&<Button className="h-[58px] min-w-[76px] rounded-md border border-emerald-400/25 bg-emerald-600 text-white shadow-none hover:bg-emerald-500" disabled={busy||running} onClick={()=>command('start')}><Play className="mr-2 size-4"/>Başlat</Button>}
+                      {canStop&&<Button className="h-[58px] min-w-[76px] rounded-md border border-red-400/25 bg-red-600/90 text-white shadow-none hover:bg-red-500" disabled={busy||!running} onClick={()=>command('stop')}><Square className="mr-2 size-4"/>Durdur</Button>}
+                      {canRestart&&<Button className="h-[58px] min-w-[138px] rounded-md border border-blue-400/30 bg-blue-600/90 text-white shadow-none hover:bg-blue-500" disabled={busy||!running} onClick={()=>command('restart')}><RefreshCw className="mr-2 size-4"/>Yeniden Başlat</Button>}
+                      <Button size="icon" variant="outline" className="size-[58px] rounded-md border-[#29445f] bg-[#102138] text-slate-300 hover:border-sky-400/35 hover:bg-[#132943]" onClick={()=>setSection(canOpenSection('settings')?'settings':'logs')} aria-label="Diğer sunucu işlemleri"><MoreHorizontal className="size-5"/></Button>
                     </div>
                   </div>
                 </DashboardCard>
