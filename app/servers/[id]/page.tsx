@@ -412,7 +412,7 @@ export default function ServerPage(){
 
 
 
-  return <main className="min-h-svh bg-[linear-gradient(180deg,rgba(2,11,22,.88),rgba(2,11,22,.96)),url('/blockctrl-panel-background.jpg')] bg-cover bg-center bg-fixed text-slate-100 selection:bg-cyan-400/30">
+  return <main className="min-h-svh bg-[#08111d] text-slate-100 selection:bg-sky-400/25">
     <a href="#server-main-content" className="bc-skip-link">Sunucu içeriğine geç</a>
     {actionConfirm.dialog}
     <SupportCenter showTriggers={false}/>
@@ -429,6 +429,8 @@ export default function ServerPage(){
         heartbeatHealthy={heartbeatHealthy}
         onlineNode={onlineNode}
         diskPct={diskPct}
+        serverCount={(data?.servers??[]).length}
+        serverLimit={50}
         onClose={()=>setOpen(false)}
         onSelect={key=>{setSection(key);setOpen(false);const params=new URLSearchParams(searchParams.toString());params.set('section',key);router.replace(`/servers/${id}?${params.toString()}`,{scroll:false})}}
         onBack={()=>router.push('/')}
@@ -457,7 +459,7 @@ export default function ServerPage(){
 
 
 
-        <div className="mx-auto w-full max-w-[1580px] space-y-5 p-3 sm:p-5 lg:p-6">
+        <div className="w-full space-y-3 p-3 sm:p-4 lg:p-4">
           {notice&&<div role="status" className="rounded-lg border border-sky-500/25 bg-[#0d2034]/35 px-4 py-3 text-sm text-sky-200">{notice}</div>}
 
 
@@ -468,31 +470,31 @@ export default function ServerPage(){
 
 
           {section==='overview'&&<>
-            <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_330px]">
+            <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_332px]">
               <div className="min-w-0 space-y-3">
                 <DashboardCard className="overflow-hidden p-0">
-                  <div className="flex flex-col gap-4 p-4 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="flex flex-col gap-4 p-3.5 lg:flex-row lg:items-center lg:justify-between">
                     <div className="flex min-w-0 flex-col items-start gap-4 sm:flex-row sm:items-center">
-                      {serverCoverUrl?<img src={serverCoverUrl} alt={`${server.name} kapak görseli`} className="size-[92px] shrink-0 rounded-xl border border-[#2a4662] object-cover shadow-[0_12px_32px_rgba(0,0,0,.34)]"/>:<div className="grid size-[92px] shrink-0 place-items-center rounded-xl border border-[#2a4662] bg-[radial-gradient(circle_at_30%_20%,rgba(34,197,94,.22),transparent_45%),#0b1927] text-emerald-300"><ServerIcon className="size-10"/></div>}
+                      {serverCoverUrl?<img src={serverCoverUrl} alt={`${server.name} kapak görseli`} className="size-[108px] shrink-0 rounded-lg border border-[#2a3f55] object-cover shadow-[0_8px_24px_rgba(0,0,0,.32)]"/>:<div className="grid size-[108px] shrink-0 place-items-center rounded-lg border border-[#2a3f55] bg-[#102033] text-emerald-300"><ServerIcon className="size-10"/></div>}
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                          <h2 className="truncate text-[24px] font-bold tracking-tight text-white">{server.name}</h2>
+                          <h2 className="truncate text-[23px] font-bold tracking-[-.02em] text-white">{server.name}</h2>
                           {canOpenSection('settings')&&<button type="button" onClick={()=>setSection('settings')} className="grid size-7 place-items-center rounded-md text-slate-500 transition hover:bg-white/[.05] hover:text-slate-200" aria-label="Sunucu ayarlarını aç"><Pencil className="size-3.5"/></button>}
                         </div>
-                        <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
+                        <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px]">
                           <span className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 font-semibold ${processState==='ok'?'border-emerald-400/25 bg-emerald-400/10 text-emerald-300':processState==='bad'?'border-red-500/30 bg-red-500/10 text-red-300':processState==='warn'?'border-amber-500/30 bg-amber-500/10 text-amber-300':'border-slate-600 bg-slate-700/20 text-slate-300'}`}><span className={`size-1.5 rounded-full ${processState==='ok'?'bg-emerald-400':processState==='bad'?'bg-red-400':processState==='warn'?'bg-amber-400':'bg-slate-500'}`}/>{processStatusLabel}</span>
                           <span className="rounded-md border border-[#253a52] bg-[#0b1928] px-2 py-1 text-slate-300">{server.loader} {server.mcVersion}</span>
                           <span className="rounded-md border border-[#253a52] bg-[#0b1928] px-2 py-1 text-slate-300">{node?.name??'Node doğrulanmadı'}</span>
                         </div>
-                        <button onClick={()=>{void navigator.clipboard.writeText(connectionAddress);setNotice('Sunucu adresi panoya kopyalandı.')}} className="mt-3 inline-flex max-w-full items-center gap-2 font-mono text-xs text-slate-300 transition hover:text-sky-300"><Network className="size-3.5 text-sky-400"/><span className="truncate">{connectionAddress}</span><Copy className="size-3.5 text-slate-500"/></button>
+                        <button onClick={()=>{void navigator.clipboard.writeText(connectionAddress);setNotice('Sunucu adresi panoya kopyalandı.')}} className="mt-2.5 inline-flex max-w-full items-center gap-2 text-[11px] text-slate-300 transition hover:text-sky-300"><Network className="size-3.5 text-sky-400"/><span className="truncate">{connectionAddress}</span><Copy className="size-3.5 text-slate-500"/></button>
                         <p className="mt-2 text-xs text-slate-500">Son yeniden başlatma: {lastRestartText}{running&&metricFresh?` · Çalışma süresi: ${uptimeText}`:''}</p>
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-2 lg:justify-end">
-                      {canStart&&<Button className="h-12 min-w-[88px] border border-emerald-400/25 bg-emerald-600 text-white shadow-[0_8px_24px_rgba(16,185,129,.14)] hover:bg-emerald-500" disabled={busy||running} onClick={()=>command('start')}><Play className="mr-2 size-4"/>Başlat</Button>}
-                      {canStop&&<Button className="h-12 min-w-[88px] border border-red-400/25 bg-red-600/90 text-white shadow-[0_8px_24px_rgba(220,38,38,.12)] hover:bg-red-500" disabled={busy||!running} onClick={()=>command('stop')}><Square className="mr-2 size-4"/>Durdur</Button>}
-                      {canRestart&&<Button className="h-12 min-w-[126px] border border-blue-400/30 bg-blue-600/90 text-white shadow-[0_8px_24px_rgba(37,99,235,.14)] hover:bg-blue-500" disabled={busy||!running} onClick={()=>command('restart')}><RefreshCw className="mr-2 size-4"/>Yeniden Başlat</Button>}
-                      <Button size="icon" variant="outline" className="size-12 border-[#29445f] bg-[#102138] text-slate-300 hover:border-sky-400/35 hover:bg-[#132943]" onClick={()=>setSection(canOpenSection('settings')?'settings':'logs')} aria-label="Diğer sunucu işlemleri"><MoreHorizontal className="size-5"/></Button>
+                      {canStart&&<Button className="h-[58px] min-w-[76px] rounded-md border border-emerald-400/25 bg-emerald-600 text-white shadow-none hover:bg-emerald-500" disabled={busy||running} onClick={()=>command('start')}><Play className="mr-2 size-4"/>Başlat</Button>}
+                      {canStop&&<Button className="h-[58px] min-w-[76px] rounded-md border border-red-400/25 bg-red-600/90 text-white shadow-none hover:bg-red-500" disabled={busy||!running} onClick={()=>command('stop')}><Square className="mr-2 size-4"/>Durdur</Button>}
+                      {canRestart&&<Button className="h-[58px] min-w-[138px] rounded-md border border-blue-400/30 bg-blue-600/90 text-white shadow-none hover:bg-blue-500" disabled={busy||!running} onClick={()=>command('restart')}><RefreshCw className="mr-2 size-4"/>Yeniden Başlat</Button>}
+                      <Button size="icon" variant="outline" className="size-[58px] rounded-md border-[#29445f] bg-[#102138] text-slate-300 hover:border-sky-400/35 hover:bg-[#132943]" onClick={()=>setSection(canOpenSection('settings')?'settings':'logs')} aria-label="Diğer sunucu işlemleri"><MoreHorizontal className="size-5"/></Button>
                     </div>
                   </div>
                 </DashboardCard>
@@ -581,8 +583,18 @@ export default function ServerPage(){
 
             <div className="grid gap-3 lg:grid-cols-3">
               <DashboardCard title="Sunucu Özellikleri">
-                <div className="grid gap-1 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2"><OverviewPropertyRow label="Oyun Modu" value={actualGamemode??'Doğrulanmadı'}/><OverviewPropertyRow label="Zorluk" value={actualDifficulty??'Doğrulanmadı'}/><OverviewPropertyRow label="Max Oyuncu" value={actualMaxPlayers===null?'Doğrulanmadı':String(actualMaxPlayers)}/><OverviewPropertyRow label="Online-Mode" value={actualOnlineMode===null?'Doğrulanmadı':actualOnlineMode?'Açık':'Kapalı'} good={actualOnlineMode===true}/><OverviewPropertyRow label="Whitelist" value={actualWhitelist===null?'Doğrulanmadı':actualWhitelist?'Açık':'Kapalı'} good={actualWhitelist===true}/><OverviewPropertyRow label="Dünya Adı" value={server.worldName??String(settingsSnapshot?.settings?.worldName??'Doğrulanmadı')}/></div>
+                <div className="grid gap-1 sm:grid-cols-2">
+                  <OverviewPropertyRow label="Oyun Modu" value={actualGamemode??'Doğrulanmadı'}/>
+                  <OverviewPropertyRow label="Zorluk" value={actualDifficulty??'Doğrulanmadı'}/>
+                  <OverviewPropertyRow label="Max Oyuncu" value={actualMaxPlayers===null?'Doğrulanmadı':String(actualMaxPlayers)}/>
+                  <OverviewPropertyRow label="Online-Mode" value={actualOnlineMode===null?'Doğrulanmadı':actualOnlineMode?'Açık':'Kapalı'} good={actualOnlineMode===true}/>
+                  <OverviewPropertyRow label="Whitelist" value={actualWhitelist===null?'Doğrulanmadı':actualWhitelist?'Açık':'Kapalı'} good={actualWhitelist===true}/>
+                  <OverviewPropertyRow label="Port" value={String(server.port)}/>
+                  <OverviewPropertyRow label="Dünya Adı" value={server.worldName??String(settingsSnapshot?.settings?.worldName??'Doğrulanmadı')}/>
+                  <OverviewPropertyRow label="Otomatik Yedek" value={activeBackupSchedules>0?'Açık':'Kapalı'} good={activeBackupSchedules>0}/>
+                </div>
               </DashboardCard>
+
 
 
 
@@ -1243,14 +1255,49 @@ export default function ServerPage(){
 
 
 
-function DashboardCard({title,subtitle,action,children,className=''}:{title?:string;subtitle?:string;action?:React.ReactNode;children?:React.ReactNode;className?:string}){return <section className={`rounded-2xl border border-cyan-400/15 bg-[linear-gradient(145deg,rgba(7,26,43,.90),rgba(3,15,27,.92))] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,.025),0_16px_44px_rgba(0,0,0,.18)] backdrop-blur-xl transition hover:border-cyan-400/20 ${className}`}>{(title||subtitle||action)&&<div className="mb-3.5 flex items-start justify-between gap-3"><div>{title&&<h4 className="text-sm font-semibold tracking-[-.01em] text-white">{title}</h4>}{subtitle&&<p className="mt-1 text-[11px] leading-4 text-slate-500">{subtitle}</p>}</div>{action}</div>}{children}</section>}
-function OverviewKpi({icon:Icon,title,value,detail,progress,tone='blue'}:{icon:React.ComponentType<{className?:string}>;title:string;value:string;detail:string;progress?:number;tone?:'blue'|'green'|'amber'}){const iconTone=tone==='green'?'bg-emerald-500/10 text-emerald-300':tone==='amber'?'bg-amber-500/10 text-amber-300':'bg-blue-500/10 text-blue-300';const barTone=tone==='green'?'bg-emerald-400':tone==='amber'?'bg-amber-400':'bg-blue-400';return <DashboardCard className="min-h-[104px] p-3"><div className="flex items-start gap-3"><div className={`grid size-9 shrink-0 place-items-center rounded-lg border border-white/[.04] ${iconTone}`}><Icon className="size-4.5"/></div><div className="min-w-0 flex-1"><p className="text-xs text-slate-500">{title}</p><p className="mt-1 truncate text-[16px] font-semibold text-white">{value}</p><p className="mt-0.5 truncate text-xs text-slate-600">{detail}</p>{progress!==undefined&&<div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-800"><div className={`h-full rounded-full ${barTone}`} style={{width:`${Math.max(0,Math.min(100,progress))}%`}}/></div>}</div></div></DashboardCard>}
+function DashboardCard({title,subtitle,action,children,className=''}:{title?:string;subtitle?:string;action?:React.ReactNode;children?:React.ReactNode;className?:string}){return <section className={`rounded-lg border border-[#1c3044] bg-[#0b1827] p-3.5 shadow-[0_8px_24px_rgba(0,0,0,.12)] transition hover:border-[#29445f] ${className}`}>{(title||subtitle||action)&&<div className="mb-3 flex items-start justify-between gap-3"><div>{title&&<h4 className="text-[13px] font-semibold tracking-[-.01em] text-white">{title}</h4>}{subtitle&&<p className="mt-1 text-[10px] leading-4 text-slate-500">{subtitle}</p>}</div>{action}</div>}{children}</section>}
+function OverviewKpi({icon:Icon,title,value,detail,progress,tone='blue'}:{icon:React.ComponentType<{className?:string}>;title:string;value:string;detail:string;progress?:number;tone?:'blue'|'green'|'amber'}){const iconTone=tone==='green'?'text-emerald-300':tone==='amber'?'text-amber-300':'text-sky-300';const barTone=tone==='green'?'bg-emerald-400':tone==='amber'?'bg-amber-400':'bg-sky-400';return <DashboardCard className="min-h-[96px] p-3"><div className="flex items-start gap-2.5"><div className={`grid size-8 shrink-0 place-items-center ${iconTone}`}><Icon className="size-5"/></div><div className="min-w-0 flex-1"><p className="text-[10px] text-slate-500">{title}</p><p className="mt-1 truncate text-[15px] font-semibold text-white">{value}</p><p className="mt-0.5 truncate text-[10px] text-slate-500">{detail}</p>{progress!==undefined&&<div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#26384c]"><div className={`h-full rounded-full ${barTone}`} style={{width:`${Math.max(0,Math.min(100,progress))}%`}}/></div>}</div></div></DashboardCard>}
 function chartPath(values:Array<number|null>,max:number){if(values.length<2||max<=0)return'';let path='';let drawing=false;values.forEach((value,index)=>{if(value===null||!Number.isFinite(value)){drawing=false;return}const x=18+(index/Math.max(1,values.length-1))*604;const y=164-(Math.max(0,Math.min(max,value))/max)*130;path+=`${drawing?' L':' M'} ${x.toFixed(1)} ${y.toFixed(1)}`;drawing=true});return path.trim()}
 function chartLabel(value:string){const date=new Date(value);return Number.isFinite(date.getTime())?date.toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'}):'—'}
-function TelemetryChart({metrics,mode}:{metrics:ServerMetric[];mode:'players'|'resources'}){if(!metrics.length)return <EmptyDashboardState text="Grafik için henüz gerçek telemetri örneği yok."/>;const playerValues=metrics.map(metric=>Number.isFinite(metric.players)?metric.players:null);const cpuValues=metrics.map(metric=>Number.isFinite(metric.cpuPercent)?metric.cpuPercent:null);const ramValues=metrics.map(metric=>metric.memoryTotalMb>0?Math.min(100,metric.memoryUsedMb/metric.memoryTotalMb*100):null);const diskValues=metrics.map(metric=>metric.diskTotalGb>0?Math.min(100,metric.diskUsedGb/metric.diskTotalGb*100):null);const maxPlayers=Math.max(5,...playerValues.filter((value):value is number=>value!==null));const mid=metrics[Math.floor(metrics.length/2)]??metrics[0];const first=metrics[0],last=metrics[metrics.length-1];return <div><div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500"><span>{metrics.length} gerçek örnek</span>{mode==='resources'?<div className="flex gap-3"><span className="flex items-center gap-1"><i className="size-2 rounded-full bg-cyan-400"/>CPU</span><span className="flex items-center gap-1"><i className="size-2 rounded-full bg-sky-400"/>RAM</span><span className="flex items-center gap-1"><i className="size-2 rounded-full bg-violet-400"/>Disk</span></div>:<span className="flex items-center gap-1"><i className="size-2 rounded-full bg-sky-400"/>Çevrimiçi oyuncu</span>}</div><svg viewBox="0 0 640 180" className="h-[170px] w-full" role="img" aria-label={mode==='players'?'Oyuncu aktivitesi grafiği':'Kaynak kullanımı grafiği'}>{[34,66.5,99,131.5,164].map(y=><line key={y} x1="18" x2="622" y1={y} y2={y} className="stroke-slate-800" strokeWidth="1"/>)}{mode==='players'?<><path d={chartPath(playerValues,maxPlayers)} fill="none" className="stroke-sky-400" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"/><path d={`${chartPath(playerValues,maxPlayers)} L 622 164 L 18 164 Z`} className="fill-sky-500/10"/></>:<><path d={chartPath(cpuValues,100)} fill="none" className="stroke-cyan-400" strokeWidth="2" strokeLinecap="round"/><path d={chartPath(ramValues,100)} fill="none" className="stroke-sky-400" strokeWidth="2" strokeLinecap="round"/><path d={chartPath(diskValues,100)} fill="none" className="stroke-violet-400" strokeWidth="2" strokeLinecap="round"/></>}</svg><div className="flex justify-between px-1 text-xs text-slate-600"><span>{chartLabel(first.createdAt)}</span><span>{chartLabel(mid.createdAt)}</span><span>{chartLabel(last.createdAt)}</span></div></div>}
-function OverviewPropertyRow({label,value,good}:{label:string;value:string;good?:boolean}){return <div className="flex items-center justify-between gap-3 rounded-lg bg-[#0a1826] px-3 py-2 text-xs"><span className="text-slate-500">{label}</span><span className={`max-w-[60%] truncate text-right font-medium ${good?'text-sky-300':'text-slate-200'}`}>{value}</span></div>}
-function OverviewStatusRow({label,state,value}:{label:string;state:'ok'|'warn'|'bad'|'neutral';value:string}){const dot=state==='ok'?'bg-emerald-400':state==='warn'?'bg-amber-400':state==='bad'?'bg-red-400':'bg-slate-500';const text=state==='ok'?'text-emerald-300':state==='warn'?'text-amber-300':state==='bad'?'text-red-300':'text-slate-400';return <div className="flex items-center gap-2 border-b border-[#172a3e] py-2 last:border-0"><span className={`size-2 shrink-0 rounded-full ${dot}`}/><span className="min-w-0 flex-1 truncate text-xs text-slate-400">{label}</span><span className={`text-xs font-medium ${text}`}>{value}</span></div>}
-function OverviewQuickButton({icon:Icon,label,onClick,disabled}:{icon:React.ComponentType<{className?:string}>;label:string;onClick?:()=>void;disabled?:boolean}){return <button type="button" onClick={onClick} disabled={disabled} className="group flex min-h-[72px] flex-col items-center justify-center gap-2 rounded-xl border border-cyan-400/12 bg-white/[.025] px-1.5 text-[11px] font-medium text-slate-300 transition hover:-translate-y-0.5 hover:border-cyan-400/30 hover:bg-cyan-400/[.055] hover:text-white disabled:cursor-not-allowed disabled:opacity-35"><Icon className="size-5 text-slate-400 transition group-hover:text-cyan-300"/>{label}</button>}
+function TelemetryChart({metrics,mode}:{metrics:ServerMetric[];mode:'players'|'resources'}){
+  if(!metrics.length)return <EmptyDashboardState text="Grafik için henüz gerçek telemetri örneği yok."/>
+  const playerValues=metrics.map(metric=>Number.isFinite(metric.players)?metric.players:null)
+  const cpuValues=metrics.map(metric=>Number.isFinite(metric.cpuPercent)?metric.cpuPercent:null)
+  const ramValues=metrics.map(metric=>metric.memoryTotalMb>0?Math.min(100,metric.memoryUsedMb/metric.memoryTotalMb*100):null)
+  const diskValues=metrics.map(metric=>metric.diskTotalGb>0?Math.min(100,metric.diskUsedGb/metric.diskTotalGb*100):null)
+  const maxPlayers=Math.max(5,...playerValues.filter((value):value is number=>value!==null))
+  const first=metrics[0],last=metrics[metrics.length-1]
+  const marks=[0,.25,.5,.75,1].map((ratio,index)=>metrics[Math.min(metrics.length-1,Math.round((metrics.length-1)*ratio))]??metrics[index]??first)
+  return <div>
+    <div className="mb-1 flex min-h-5 items-center justify-end gap-3 text-[10px] text-slate-400">
+      {mode==='resources'?<>
+        <span className="flex items-center gap-1"><i className="size-2 rounded-full bg-emerald-400"/>CPU</span>
+        <span className="flex items-center gap-1"><i className="size-2 rounded-full bg-sky-400"/>RAM</span>
+        <span className="flex items-center gap-1"><i className="size-2 rounded-full bg-violet-400"/>Disk</span>
+      </>:<span className="flex items-center gap-1"><i className="size-2 rounded-full bg-sky-400"/>Çevrimiçi Oyuncu</span>}
+    </div>
+    <div className="relative">
+      <svg viewBox="0 0 640 180" className="h-[156px] w-full" role="img" aria-label={mode==='players'?'Oyuncu aktivitesi grafiği':'Kaynak kullanımı grafiği'}>
+        {[34,66.5,99,131.5,164].map((y,index)=><g key={y}><line x1="18" x2="622" y1={y} y2={y} className="stroke-[#203247]" strokeWidth="1"/><text x="2" y={y+3} className="fill-slate-600 text-[9px]">{mode==='players'?Math.round(maxPlayers*(4-index)/4):100-index*25}</text></g>)}
+        {[18,169,320,471,622].map(x=><line key={x} x1={x} x2={x} y1="34" y2="164" className="stroke-[#16283a]" strokeWidth="1"/>)}
+        {mode==='players'?<>
+          <path d={`${chartPath(playerValues,maxPlayers)} L 622 164 L 18 164 Z`} className="fill-sky-500/15"/>
+          <path d={chartPath(playerValues,maxPlayers)} fill="none" className="stroke-sky-400" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"/>
+        </>:<>
+          <path d={`${chartPath(ramValues,100)} L 622 164 L 18 164 Z`} className="fill-sky-500/[.08]"/>
+          <path d={`${chartPath(diskValues,100)} L 622 164 L 18 164 Z`} className="fill-violet-500/[.08]"/>
+          <path d={chartPath(cpuValues,100)} fill="none" className="stroke-emerald-400" strokeWidth="2" strokeLinecap="round"/>
+          <path d={chartPath(ramValues,100)} fill="none" className="stroke-sky-400" strokeWidth="2" strokeLinecap="round"/>
+          <path d={chartPath(diskValues,100)} fill="none" className="stroke-violet-400" strokeWidth="2" strokeLinecap="round"/>
+        </>}
+      </svg>
+      <div className="flex justify-between px-1 text-[9px] text-slate-600">{marks.map((item,index)=><span key={index}>{item?chartLabel(item.createdAt):index===0?chartLabel(first.createdAt):chartLabel(last.createdAt)}</span>)}</div>
+    </div>
+  </div>
+}
+function OverviewPropertyRow({label,value,good}:{label:string;value:string;good?:boolean}){return <div className="flex items-center justify-between gap-3 rounded-md bg-[#102033] px-3 py-2 text-[10px]"><span className="text-slate-400">{label}</span><span className={`max-w-[60%] truncate text-right font-medium ${good?'text-emerald-300':'text-slate-200'}`}>{value}</span></div>}
+function OverviewStatusRow({label,state,value}:{label:string;state:'ok'|'warn'|'bad'|'neutral';value:string}){const dot=state==='ok'?'bg-emerald-400':state==='warn'?'bg-amber-400':state==='bad'?'bg-red-400':'bg-slate-500';const text=state==='ok'?'text-emerald-300':state==='warn'?'text-amber-300':state==='bad'?'text-red-300':'text-slate-400';return <div className="flex items-center gap-2 border-b border-[#1a2b3d] py-1.5 last:border-0"><span className={`size-2 shrink-0 rounded-full ${dot}`}/><span className="min-w-0 flex-1 truncate text-[10px] text-slate-400">{label}</span><span className={`text-[10px] font-medium ${text}`}>{value}</span></div>}
+function OverviewQuickButton({icon:Icon,label,onClick,disabled}:{icon:React.ComponentType<{className?:string}>;label:string;onClick?:()=>void;disabled?:boolean}){return <button type="button" onClick={onClick} disabled={disabled} className="group flex min-h-[68px] flex-col items-center justify-center gap-2 rounded-md border border-[#1f354b] bg-[#102033] px-1.5 text-[10px] font-medium text-slate-200 transition hover:border-sky-400/35 hover:bg-[#142842] hover:text-white disabled:cursor-not-allowed disabled:opacity-35"><Icon className="size-5 text-slate-300 transition group-hover:text-sky-300"/>{label}</button>}
 function CompactDashboardRow({left,middle,right,tone}:{left:string;middle:string;right:string;tone:'ok'|'warn'|'bad'|'info'}){const badge=tone==='ok'?'bg-sky-500/10 text-sky-300':tone==='warn'?'bg-amber-500/10 text-amber-300':tone==='bad'?'bg-red-500/10 text-red-300':'bg-sky-500/10 text-sky-300';return <div className="grid grid-cols-[minmax(72px,.7fr)_minmax(0,1.4fr)_auto] items-center gap-2 border-b border-[#172a3e] py-2 last:border-0"><span className={`w-fit max-w-full truncate rounded-md px-2 py-1 text-xs ${badge}`}>{left}</span><span className="truncate text-xs text-slate-300" title={middle}>{middle}</span><span className="whitespace-nowrap text-xs text-slate-600">{right}</span></div>}
 function EmptyDashboardState({text}:{text:string}){return <div className="rounded-lg border border-dashed border-[#24405c] bg-[#091725] p-5 text-center text-xs text-slate-500">{text}</div>}
 function OverviewTopStat({label,value,sub}:{label:string;value:string;sub:string}){return <div className="min-w-0 border-b border-[#203a55] p-3.5 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0"><p className="text-xs font-semibold uppercase tracking-[.16em] text-slate-500">{label}</p><p className="mt-1 truncate text-[15px] font-semibold text-white">{value}</p><p className="mt-0.5 truncate text-xs text-slate-600">{sub}</p></div>}
