@@ -16,6 +16,7 @@ export const SERVER_NAV=[
 
 export type ServerNavKey=(typeof SERVER_NAV)[number][0]
 export type ServerNavItem=(typeof SERVER_NAV)[number]
+const NAV_SECTIONS=['Sunucu','İçerik','Veri & otomasyon','Yönetim','Sistem'] as const
 
 type Props={
   open:boolean
@@ -61,6 +62,7 @@ export function ServerDetailNavigation({
     </div>
 
     <nav className="min-h-0 flex-1 overflow-y-auto px-2 pb-3" aria-label="Sunucu yönetimi">
+      <span className="sr-only">{NAV_SECTIONS.join(' · ')}</span>
       <div className="space-y-0.5">{items.map(([key,label,Icon])=><button
         key={key}
         aria-current={active===key?'page':undefined}
