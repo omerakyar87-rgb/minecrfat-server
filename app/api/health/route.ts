@@ -165,7 +165,7 @@ export async function GET() {
   }
 
 
-  health.security.cspMode=String(process.env.BLOCKCTRL_CSP_ENFORCE||'').toLowerCase()==='true'?'enforced':'report-only'
+  health.security.cspMode=(process.env.NODE_ENV==='production'||String(process.env.BLOCKCTRL_CSP_ENFORCE||'').toLowerCase()==='true')?'enforced':'report-only'
   health.security.status='ok'
 
 
