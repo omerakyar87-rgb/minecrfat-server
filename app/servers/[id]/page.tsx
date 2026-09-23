@@ -108,7 +108,7 @@ async function readJson(response:Response){
   try { return text ? JSON.parse(text) : {} }
   catch { throw new Error(response.ok ? 'Sunucudan geçersiz yanıt alındı' : `Sunucu hatası (${response.status}): ${text.slice(0,180)}`) }
 }
-const fetcher=(url:string)=>fetch(url,{cache:'no-store',headers:{accept:'application/json'}}).then(async r=>{const d=await readJson(r);if(!r.ok)throw new Error(d.error??'İstek başarısız');return d})
+const fetcher=(url:string)=>fetch(url,{cache:'no-store',headers:{accept:'application/json'}}).then(async r=>{const d=await readJson(r);if(!r.ok){const error=new Error(d.error??'İstek başarısız') as Error&{status?:number};error.status=r.status;throw error}return d})
 function visiblePoll(ms:number){return ()=>typeof document!=='undefined'&&document.visibilityState==='hidden'?0:ms}
 
 
@@ -143,6 +143,7 @@ async function directUploadFile(serverId:string,file:File,category:string,onProg
 export default function ServerPage(){
   const {id}=useParams<{id:string}>(); const router=useRouter(); const searchParams=useSearchParams()
   const {data,error,mutate}=useSWR<Panel>(`/api/panel?serverId=${id}`,fetcher,{refreshInterval:visiblePoll(5000),revalidateOnFocus:true})
+  useEffect(()=>{if((error as (Error&{status?:number})|undefined)?.status===401)router.replace(`/sign-in?next=${encodeURIComponent(`/servers/${id}`)}`)},[error,id,router])
   const server=data?.servers.find(s=>s.id===id); const node=data?.nodes?.find(n=>n.id===server?.nodeId)
   const manager=data?.serverAccess?.isManager===true; const fullAccess=data?.serverAccess?.fullAccess===true; const permission=data?.currentPermission??undefined
   const allowedSections=useMemo(()=>data?.allowedSections??(fullAccess?SERVER_NAV.map(([key])=>key):[]),[data?.allowedSections,fullAccess])
@@ -296,7 +297,7 @@ export default function ServerPage(){
   const startupStderr=(consoleDiagnostics?.startup?.stderr??[]).filter(line=>consoleQuery.trim()===''||line.toLowerCase().includes(consoleQuery.toLowerCase()))
   useEffect(()=>{if(section!=='console'||consolePauseAt!==null||!consoleAutoScroll)return;const el=consoleViewportRef.current;if(!el)return;el.scrollTop=el.scrollHeight},[section,consoleTab,consoleRows.length,agentConsoleRows.length,startupStdout.length,startupStderr.length,consolePauseAt,consoleAutoScroll])
 
-  if(error)return <main className="p-8 text-red-300">{error.message}</main>; if(!server)return <main className="p-8">Sunucu bulunamadı.</main>
+  if((error as (Error&{status?:number})|undefined)?.status===401)return <main className="min-h-svh bg-[#030c16] p-8 text-slate-300">Giriş sayfasına yönlendiriliyor...</main>; if(error)return <main className="p-8 text-red-300">{error.message}</main>; if(!data)return <main className="min-h-svh bg-[#030c16] p-8 text-slate-400">Sunucu bilgileri yükleniyor...</main>; if(!server)return <main className="p-8">Sunucu bulunamadı veya bu sunucuya erişiminiz yok.</main>
   if(!fullAccess&&data?.allowedSections&&data.allowedSections.length===0&&!permission?.canViewLostItems&&!permission?.canManageLostItems)return <main className="min-h-svh bg-[#06100d] p-8 text-slate-100"><div className="mx-auto max-w-xl rounded-xl border border-[#203a55] bg-[#0b1b2a] p-6"><Shield className="size-8 text-slate-500"/><h1 className="mt-4 text-xl font-semibold">Sunucu ayrıntı erişimi atanmadı</h1><p className="mt-2 text-sm text-slate-400">Bu sunucuda görüntüleyebileceğiniz bir yönetim bölümü bulunmuyor. Size özel kayıp eşya veya diğer izinler ana panelden kullanılabilir.</p><Button className="mt-5" variant="outline" onClick={()=>router.push('/')}><ArrowLeft className="mr-2 size-4"/>Sunuculara dön</Button></div></main>
   const running=server.status==='running'; const diskPct=node?.diskTotalGb?Math.round(node.diskUsedGb/node.diskTotalGb*100):0; const ramPct=node?.memoryTotalMb?Math.round(node.memoryUsedMb/node.memoryTotalMb*100):0
 
