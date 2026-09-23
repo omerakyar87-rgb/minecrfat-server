@@ -1,6 +1,11 @@
 import 'server-only'
 
+import { and, eq } from 'drizzle-orm'
+import { db } from '@/lib/db'
+import { agentCommands, servers } from '@/lib/db/schema'
+
 const REQUEST_TIMEOUT_MS = 8_000
+const BRIDGE_TIMEOUT_MS = 20_000
 
 function isPrivateOrMetadataHost(hostname: string) {
   const host = hostname.toLowerCase()
@@ -70,22 +75,98 @@ export function getNodeConfig(nodeId: string): NodeConfig {
   return { baseUrl, token }
 }
 
-export async function nodeFetch(nodeId: string, path: string, init: RequestInit = {}) {
-  const config = getNodeConfig(nodeId)
-  const headers = new Headers(init.headers)
-  headers.set('authorization', `Bearer ${config.token}`)
-  headers.set('x-node-id', nodeId)
-  headers.set('accept', 'application/json')
-  const endpoint = `${config.baseUrl}${path.startsWith('/') ? path : `/${path}`}`
-  const hostname = new URL(config.baseUrl).hostname
+function placeholderAgentUrl(baseUrl: string) {
   try {
-    const response = await fetch(endpoint, { ...init, headers, cache: 'no-store', signal: init.signal ?? AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
-    if (!response.ok) console.warn(`[node-bridge] ${hostname} ${response.status} ${path}`)
-    return response
+    const host = new URL(baseUrl).hostname.toLowerCase()
+    return host === 'agent.example.com' || host === 'example.com' || host.endsWith('.example.com') || host.endsWith('.invalid')
+  } catch {
+    return true
+  }
+}
+
+function bridgeBody(init: RequestInit) {
+  if (init.body == null) return {} as Record<string, unknown>
+  if (typeof init.body !== 'string') throw new Error('Bu agent işlemi polling köprüsü üzerinden taşınamıyor.')
+  try {
+    const parsed = JSON.parse(init.body)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {}
+  } catch {
+    throw new Error('Agent polling köprüsü yalnız JSON gövdeli işlemleri destekliyor.')
+  }
+}
+
+async function commandBridgeFetch(nodeId: string, path: string, init: RequestInit = {}) {
+  const method = String(init.method || 'GET').toUpperCase()
+  if (!['GET', 'POST', 'PATCH', 'DELETE'].includes(method)) throw new Error(`Agent polling köprüsü ${method} isteğini desteklemiyor.`)
+  const url = new URL(path.startsWith('/') ? path : `/${path}`, 'http://blockctrl-agent.local')
+  if (!url.pathname.startsWith('/internal/')) throw new Error('Agent polling köprüsü yalnız internal agent yollarını destekliyor.')
+  const body = bridgeBody(init)
+  const serverId = String(url.searchParams.get('serverId') ?? body.serverId ?? '')
+  if (!/^[0-9a-f-]{36}$/i.test(serverId)) throw new Error('Agent polling köprüsü için geçerli serverId gerekli.')
+
+  const server = (await db.select({ id: servers.id, userId: servers.userId, nodeId: servers.nodeId }).from(servers).where(and(eq(servers.id, serverId), eq(servers.nodeId, nodeId))).limit(1))[0]
+  if (!server) throw new Error('Agent polling köprüsü için sunucu/node eşleşmesi bulunamadı.')
+
+  const [command] = await db.insert(agentCommands).values({
+    userId: server.userId,
+    nodeId,
+    serverId,
+    type: 'bridge-request',
+    payload: {
+      path: url.pathname + url.search,
+      method,
+      body,
+    },
+  }).returning({ id: agentCommands.id })
+  if (!command) throw new Error('Agent polling köprüsü komutu oluşturulamadı.')
+
+  const deadline = Date.now() + BRIDGE_TIMEOUT_MS
+  while (Date.now() < deadline) {
+    const row = (await db.select({ status: agentCommands.status, result: agentCommands.result }).from(agentCommands).where(eq(agentCommands.id, command.id)).limit(1))[0]
+    if (!row) break
+    if (row.status === 'completed') {
+      return new Response(JSON.stringify(row.result ?? {}), { status: 200, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } })
+    }
+    if (row.status === 'failed') {
+      const result = row.result && typeof row.result === 'object' ? row.result as Record<string, unknown> : {}
+      return new Response(JSON.stringify({ error: String(result.error ?? 'Agent polling köprüsü işlemi başarısız') }), { status: 502, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } })
+    }
+    await new Promise(resolve => setTimeout(resolve, 300))
+  }
+
+  return new Response(JSON.stringify({ error: 'Agent polling köprüsü zaman aşımına uğradı.' }), { status: 504, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } })
+}
+
+export async function nodeFetch(nodeId: string, path: string, init: RequestInit = {}) {
+  let config: NodeConfig | null = null
+  let directError: unknown = null
+  try {
+    config = getNodeConfig(nodeId)
   } catch (error) {
-    const code = error instanceof Error && 'code' in error ? String((error as NodeJS.ErrnoException).code) : error instanceof DOMException && error.name === 'TimeoutError' ? 'ETIMEDOUT' : error instanceof Error ? error.name : 'UNKNOWN'
-    console.error(`[node-bridge] ${hostname} ${code} ${path}`)
-    throw error
+    directError = error
+  }
+
+  if (config && !placeholderAgentUrl(config.baseUrl)) {
+    const headers = new Headers(init.headers)
+    headers.set('authorization', `Bearer ${config.token}`)
+    headers.set('x-node-id', nodeId)
+    headers.set('accept', 'application/json')
+    const endpoint = `${config.baseUrl}${path.startsWith('/') ? path : `/${path}`}`
+    try {
+      const response = await fetch(endpoint, { ...init, headers, cache: 'no-store', signal: init.signal ?? AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
+      if (!response.ok) console.warn(`[node-bridge] ${new URL(config.baseUrl).hostname} ${response.status} ${path}`)
+      return response
+    } catch (error) {
+      directError = error
+      console.warn(`[node-bridge] direct agent unavailable; polling bridge fallback: ${path}`)
+    }
+  }
+
+  try {
+    return await commandBridgeFetch(nodeId, path, init)
+  } catch (bridgeError) {
+    if (directError instanceof Error) throw new Error(`${directError.message}; polling bridge: ${bridgeError instanceof Error ? bridgeError.message : 'başarısız'}`)
+    throw bridgeError
   }
 }
 
