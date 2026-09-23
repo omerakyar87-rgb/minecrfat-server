@@ -11,7 +11,8 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const SUPPORT_RULES_VERSION = '2026-09-10-v1'
-const STAFF_ROLES = new Set(['manager', 'admin', 'guide'])
+const STAFF_ROLES = ['founder', 'manager', 'admin', 'guide'] as const
+const STAFF_ROLE_SET = new Set<string>(STAFF_ROLES)
 const THREAD_TYPES = new Set(['support', 'bug', 'private'])
 const PRIORITIES = new Set(['low', 'normal', 'high', 'urgent'])
 const ALLOWED_ATTACHMENT_TYPES = new Set([
@@ -26,10 +27,10 @@ const DEFAULT_SUPPORT_SETTINGS = { title: 'Destek Merkezi', description: 'İhtiy
 
 function normalizedRole(role: unknown) {
   const value = String(role ?? '').toLowerCase()
-  if (value === 'manager' || value === 'admin' || value === 'guide' || value === 'member') return value
+  if (value === 'founder' || value === 'manager' || value === 'admin' || value === 'guide' || value === 'member') return value
   return 'member'
 }
-function isStaff(role: unknown) { return STAFF_ROLES.has(normalizedRole(role)) }
+function isStaff(role: unknown) { return STAFF_ROLE_SET.has(normalizedRole(role)) }
 function cleanText(value: unknown, max: number) { return String(value ?? '').trim().slice(0, max) }
 function bool(value: unknown) { return value === true }
 
