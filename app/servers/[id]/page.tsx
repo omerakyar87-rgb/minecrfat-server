@@ -583,8 +583,18 @@ export default function ServerPage(){
 
             <div className="grid gap-3 lg:grid-cols-3">
               <DashboardCard title="Sunucu Özellikleri">
-                <div className="grid gap-1 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2"><OverviewPropertyRow label="Oyun Modu" value={actualGamemode??'Doğrulanmadı'}/><OverviewPropertyRow label="Zorluk" value={actualDifficulty??'Doğrulanmadı'}/><OverviewPropertyRow label="Max Oyuncu" value={actualMaxPlayers===null?'Doğrulanmadı':String(actualMaxPlayers)}/><OverviewPropertyRow label="Online-Mode" value={actualOnlineMode===null?'Doğrulanmadı':actualOnlineMode?'Açık':'Kapalı'} good={actualOnlineMode===true}/><OverviewPropertyRow label="Whitelist" value={actualWhitelist===null?'Doğrulanmadı':actualWhitelist?'Açık':'Kapalı'} good={actualWhitelist===true}/><OverviewPropertyRow label="Dünya Adı" value={server.worldName??String(settingsSnapshot?.settings?.worldName??'Doğrulanmadı')}/></div>
+                <div className="grid gap-1 sm:grid-cols-2">
+                  <OverviewPropertyRow label="Oyun Modu" value={actualGamemode??'Doğrulanmadı'}/>
+                  <OverviewPropertyRow label="Zorluk" value={actualDifficulty??'Doğrulanmadı'}/>
+                  <OverviewPropertyRow label="Max Oyuncu" value={actualMaxPlayers===null?'Doğrulanmadı':String(actualMaxPlayers)}/>
+                  <OverviewPropertyRow label="Online-Mode" value={actualOnlineMode===null?'Doğrulanmadı':actualOnlineMode?'Açık':'Kapalı'} good={actualOnlineMode===true}/>
+                  <OverviewPropertyRow label="Whitelist" value={actualWhitelist===null?'Doğrulanmadı':actualWhitelist?'Açık':'Kapalı'} good={actualWhitelist===true}/>
+                  <OverviewPropertyRow label="Port" value={String(server.port)}/>
+                  <OverviewPropertyRow label="Dünya Adı" value={server.worldName??String(settingsSnapshot?.settings?.worldName??'Doğrulanmadı')}/>
+                  <OverviewPropertyRow label="Otomatik Yedek" value={activeBackupSchedules>0?'Açık':'Kapalı'} good={activeBackupSchedules>0}/>
+                </div>
               </DashboardCard>
+
 
 
 
@@ -1249,7 +1259,42 @@ function DashboardCard({title,subtitle,action,children,className=''}:{title?:str
 function OverviewKpi({icon:Icon,title,value,detail,progress,tone='blue'}:{icon:React.ComponentType<{className?:string}>;title:string;value:string;detail:string;progress?:number;tone?:'blue'|'green'|'amber'}){const iconTone=tone==='green'?'text-emerald-300':tone==='amber'?'text-amber-300':'text-sky-300';const barTone=tone==='green'?'bg-emerald-400':tone==='amber'?'bg-amber-400':'bg-sky-400';return <DashboardCard className="min-h-[96px] p-3"><div className="flex items-start gap-2.5"><div className={`grid size-8 shrink-0 place-items-center ${iconTone}`}><Icon className="size-5"/></div><div className="min-w-0 flex-1"><p className="text-[10px] text-slate-500">{title}</p><p className="mt-1 truncate text-[15px] font-semibold text-white">{value}</p><p className="mt-0.5 truncate text-[10px] text-slate-500">{detail}</p>{progress!==undefined&&<div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#26384c]"><div className={`h-full rounded-full ${barTone}`} style={{width:`${Math.max(0,Math.min(100,progress))}%`}}/></div>}</div></div></DashboardCard>}
 function chartPath(values:Array<number|null>,max:number){if(values.length<2||max<=0)return'';let path='';let drawing=false;values.forEach((value,index)=>{if(value===null||!Number.isFinite(value)){drawing=false;return}const x=18+(index/Math.max(1,values.length-1))*604;const y=164-(Math.max(0,Math.min(max,value))/max)*130;path+=`${drawing?' L':' M'} ${x.toFixed(1)} ${y.toFixed(1)}`;drawing=true});return path.trim()}
 function chartLabel(value:string){const date=new Date(value);return Number.isFinite(date.getTime())?date.toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'}):'—'}
-function TelemetryChart({metrics,mode}:{metrics:ServerMetric[];mode:'players'|'resources'}){if(!metrics.length)return <EmptyDashboardState text="Grafik için henüz gerçek telemetri örneği yok."/>;const playerValues=metrics.map(metric=>Number.isFinite(metric.players)?metric.players:null);const cpuValues=metrics.map(metric=>Number.isFinite(metric.cpuPercent)?metric.cpuPercent:null);const ramValues=metrics.map(metric=>metric.memoryTotalMb>0?Math.min(100,metric.memoryUsedMb/metric.memoryTotalMb*100):null);const diskValues=metrics.map(metric=>metric.diskTotalGb>0?Math.min(100,metric.diskUsedGb/metric.diskTotalGb*100):null);const maxPlayers=Math.max(5,...playerValues.filter((value):value is number=>value!==null));const mid=metrics[Math.floor(metrics.length/2)]??metrics[0];const first=metrics[0],last=metrics[metrics.length-1];return <div><div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500"><span>{metrics.length} gerçek örnek</span>{mode==='resources'?<div className="flex gap-3"><span className="flex items-center gap-1"><i className="size-2 rounded-full bg-cyan-400"/>CPU</span><span className="flex items-center gap-1"><i className="size-2 rounded-full bg-sky-400"/>RAM</span><span className="flex items-center gap-1"><i className="size-2 rounded-full bg-violet-400"/>Disk</span></div>:<span className="flex items-center gap-1"><i className="size-2 rounded-full bg-sky-400"/>Çevrimiçi oyuncu</span>}</div><svg viewBox="0 0 640 180" className="h-[170px] w-full" role="img" aria-label={mode==='players'?'Oyuncu aktivitesi grafiği':'Kaynak kullanımı grafiği'}>{[34,66.5,99,131.5,164].map(y=><line key={y} x1="18" x2="622" y1={y} y2={y} className="stroke-slate-800" strokeWidth="1"/>)}{mode==='players'?<><path d={chartPath(playerValues,maxPlayers)} fill="none" className="stroke-sky-400" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"/><path d={`${chartPath(playerValues,maxPlayers)} L 622 164 L 18 164 Z`} className="fill-sky-500/10"/></>:<><path d={chartPath(cpuValues,100)} fill="none" className="stroke-cyan-400" strokeWidth="2" strokeLinecap="round"/><path d={chartPath(ramValues,100)} fill="none" className="stroke-sky-400" strokeWidth="2" strokeLinecap="round"/><path d={chartPath(diskValues,100)} fill="none" className="stroke-violet-400" strokeWidth="2" strokeLinecap="round"/></>}</svg><div className="flex justify-between px-1 text-xs text-slate-600"><span>{chartLabel(first.createdAt)}</span><span>{chartLabel(mid.createdAt)}</span><span>{chartLabel(last.createdAt)}</span></div></div>}
+function TelemetryChart({metrics,mode}:{metrics:ServerMetric[];mode:'players'|'resources'}){
+  if(!metrics.length)return <EmptyDashboardState text="Grafik için henüz gerçek telemetri örneği yok."/>
+  const playerValues=metrics.map(metric=>Number.isFinite(metric.players)?metric.players:null)
+  const cpuValues=metrics.map(metric=>Number.isFinite(metric.cpuPercent)?metric.cpuPercent:null)
+  const ramValues=metrics.map(metric=>metric.memoryTotalMb>0?Math.min(100,metric.memoryUsedMb/metric.memoryTotalMb*100):null)
+  const diskValues=metrics.map(metric=>metric.diskTotalGb>0?Math.min(100,metric.diskUsedGb/metric.diskTotalGb*100):null)
+  const maxPlayers=Math.max(5,...playerValues.filter((value):value is number=>value!==null))
+  const first=metrics[0],last=metrics[metrics.length-1]
+  const marks=[0,.25,.5,.75,1].map((ratio,index)=>metrics[Math.min(metrics.length-1,Math.round((metrics.length-1)*ratio))]??metrics[index]??first)
+  return <div>
+    <div className="mb-1 flex min-h-5 items-center justify-end gap-3 text-[10px] text-slate-400">
+      {mode==='resources'?<>
+        <span className="flex items-center gap-1"><i className="size-2 rounded-full bg-emerald-400"/>CPU</span>
+        <span className="flex items-center gap-1"><i className="size-2 rounded-full bg-sky-400"/>RAM</span>
+        <span className="flex items-center gap-1"><i className="size-2 rounded-full bg-violet-400"/>Disk</span>
+      </>:<span className="flex items-center gap-1"><i className="size-2 rounded-full bg-sky-400"/>Çevrimiçi Oyuncu</span>}
+    </div>
+    <div className="relative">
+      <svg viewBox="0 0 640 180" className="h-[156px] w-full" role="img" aria-label={mode==='players'?'Oyuncu aktivitesi grafiği':'Kaynak kullanımı grafiği'}>
+        {[34,66.5,99,131.5,164].map((y,index)=><g key={y}><line x1="18" x2="622" y1={y} y2={y} className="stroke-[#203247]" strokeWidth="1"/><text x="2" y={y+3} className="fill-slate-600 text-[9px]">{mode==='players'?Math.round(maxPlayers*(4-index)/4):100-index*25}</text></g>)}
+        {[18,169,320,471,622].map(x=><line key={x} x1={x} x2={x} y1="34" y2="164" className="stroke-[#16283a]" strokeWidth="1"/>)}
+        {mode==='players'?<>
+          <path d={`${chartPath(playerValues,maxPlayers)} L 622 164 L 18 164 Z`} className="fill-sky-500/15"/>
+          <path d={chartPath(playerValues,maxPlayers)} fill="none" className="stroke-sky-400" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"/>
+        </>:<>
+          <path d={`${chartPath(ramValues,100)} L 622 164 L 18 164 Z`} className="fill-sky-500/[.08]"/>
+          <path d={`${chartPath(diskValues,100)} L 622 164 L 18 164 Z`} className="fill-violet-500/[.08]"/>
+          <path d={chartPath(cpuValues,100)} fill="none" className="stroke-emerald-400" strokeWidth="2" strokeLinecap="round"/>
+          <path d={chartPath(ramValues,100)} fill="none" className="stroke-sky-400" strokeWidth="2" strokeLinecap="round"/>
+          <path d={chartPath(diskValues,100)} fill="none" className="stroke-violet-400" strokeWidth="2" strokeLinecap="round"/>
+        </>}
+      </svg>
+      <div className="flex justify-between px-1 text-[9px] text-slate-600">{marks.map((item,index)=><span key={index}>{item?chartLabel(item.createdAt):index===0?chartLabel(first.createdAt):chartLabel(last.createdAt)}</span>)}</div>
+    </div>
+  </div>
+}
 function OverviewPropertyRow({label,value,good}:{label:string;value:string;good?:boolean}){return <div className="flex items-center justify-between gap-3 rounded-md bg-[#102033] px-3 py-2 text-[10px]"><span className="text-slate-400">{label}</span><span className={`max-w-[60%] truncate text-right font-medium ${good?'text-emerald-300':'text-slate-200'}`}>{value}</span></div>}
 function OverviewStatusRow({label,state,value}:{label:string;state:'ok'|'warn'|'bad'|'neutral';value:string}){const dot=state==='ok'?'bg-emerald-400':state==='warn'?'bg-amber-400':state==='bad'?'bg-red-400':'bg-slate-500';const text=state==='ok'?'text-emerald-300':state==='warn'?'text-amber-300':state==='bad'?'text-red-300':'text-slate-400';return <div className="flex items-center gap-2 border-b border-[#1a2b3d] py-1.5 last:border-0"><span className={`size-2 shrink-0 rounded-full ${dot}`}/><span className="min-w-0 flex-1 truncate text-[10px] text-slate-400">{label}</span><span className={`text-[10px] font-medium ${text}`}>{value}</span></div>}
 function OverviewQuickButton({icon:Icon,label,onClick,disabled}:{icon:React.ComponentType<{className?:string}>;label:string;onClick?:()=>void;disabled?:boolean}){return <button type="button" onClick={onClick} disabled={disabled} className="group flex min-h-[68px] flex-col items-center justify-center gap-2 rounded-md border border-[#1f354b] bg-[#102033] px-1.5 text-[10px] font-medium text-slate-200 transition hover:border-sky-400/35 hover:bg-[#142842] hover:text-white disabled:cursor-not-allowed disabled:opacity-35"><Icon className="size-5 text-slate-300 transition group-hover:text-sky-300"/>{label}</button>}
