@@ -271,7 +271,7 @@ export async function nodeFetch(nodeId: string, path: string, init: RequestInit 
   try {
     return await commandBridgeFetch(nodeId, path, init)
   } catch (bridgeError) {
-    if (directError instanceof Error) throw new Error(`${directError.message}; polling bridge: ${bridgeError instanceof Error ? bridgeError.message : 'başarısız'}`)
+    if (directError instanceof Error) throw new Error(`${directError.message}; polling bridge: ${bridgeError instanceof Error ? bridgeError.message : 'başarısız'}`, { cause: bridgeError })
     throw bridgeError
   }
 }
