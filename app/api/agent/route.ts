@@ -218,7 +218,8 @@ export async function POST(request:NextRequest){
             : null
             : command.type === 'start' || command.type === 'restart' ? 'crashed' : command.type === 'stop' ? 'stopped' : null
           if(nextStatus) await db.update(servers).set({status: nextStatus, installError: body.ok ? null : String(body.result?.error ?? 'Agent işlemi başarısız').slice(0, 500), updatedAt: new Date()}).where(and(eq(servers.id,command.serverId),eq(servers.nodeId,node.id)))
-          await db.insert(operationLogs).values({userId:node.userId,serverId:command.serverId,operation:command.type,status:body.ok?'completed':'failed',message:body.result?.error??null})
+          const commandPayload=(command.payload&&typeof command.payload==='object'?command.payload:{}) as Record<string,unknown>
+          if(commandPayload._bridgeRead!==true)await db.insert(operationLogs).values({userId:node.userId,serverId:command.serverId,operation:command.type,status:body.ok?'completed':'failed',message:body.result?.error??null})
         }
 
         if(body.ok&&command.serverId&&command.type==='restart'){

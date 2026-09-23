@@ -167,31 +167,161 @@ const managementAreas:Array<{title:string;description:string;icon:LucideIcon}> =
   {title:'Zamanlamalar',icon:FileClock,description:'Planlı bakım ve otomasyonlar'},
 ]
 
-const aboutValues:Array<{title:string;description:string;icon:LucideIcon}> = [
-  {title:'Görünürlük',description:'Sunucu, node ve agent durumunu tek bakışta anlaşılır hâle getirmek.',icon:Activity},
-  {title:'Kontrol',description:'Kritik işlemleri yetki sınırları ve işlem geçmişiyle yönetmek.',icon:ShieldCheck},
-  {title:'Kullanılabilirlik',description:'Teknik özellikleri anlaşılır, düzenli ve tutarlı arayüzlere taşımak.',icon:Layers3},
-  {title:'Genişleyebilirlik',description:'Farklı loader türleri, plugin/mod sistemleri ve yeni agent yetenekleri için esnek kalmak.',icon:Code2},
-]
+function Information(){
+  const coreFeatures:Array<{title:string;description:string;icon:LucideIcon;tone:string}> = [
+    {title:'Genel Bakış',description:'Sunucularınızın anlık durumunu görüntüleyin.',icon:Gauge,tone:'from-sky-500/25 to-blue-600/8'},
+    {title:'Konsol',description:'Gerçek zamanlı konsol erişimi ve komut yönetimi.',icon:Terminal,tone:'from-violet-500/25 to-fuchsia-600/7'},
+    {title:'Oyuncular',description:'Oyuncu listesi ve detaylı istatistikler.',icon:Users,tone:'from-emerald-500/25 to-teal-600/8'},
+    {title:'Dosyalar',description:'Tüm sunucu dosyalarınızı yönetin.',icon:Files,tone:'from-cyan-500/25 to-teal-500/7'},
+    {title:'Dünyalar',description:'Dünya yönetimi, yükleme ve geri yükleme.',icon:Globe2,tone:'from-orange-500/25 to-amber-600/8'},
+    {title:'Eklentiler / Modlar',description:'Kurulum, güncelleme ve yönetim.',icon:Package,tone:'from-lime-500/25 to-green-600/8'},
+    {title:'SFTP',description:'Güvenli dosya transferi.',icon:KeyRound,tone:'from-sky-500/25 to-cyan-600/8'},
+    {title:'Veritabanları',description:'MySQL, MariaDB ve diğerleri.',icon:Database,tone:'from-purple-500/25 to-indigo-600/8'},
+    {title:'Güvenlik',description:'Gelişmiş güvenlik araçları.',icon:ShieldCheck,tone:'from-red-500/25 to-rose-600/8'},
+    {title:'Ağ & Portlar',description:'Port yönetimi ve ağ ayarları.',icon:Network,tone:'from-cyan-500/25 to-blue-600/8'},
+    {title:'Yedekler',description:'Otomatik yedekleme ve indirme.',icon:FileClock,tone:'from-blue-500/25 to-sky-600/8'},
+    {title:'Zamanlanmış Görevler',description:'Otomatik görev planlama.',icon:RefreshCw,tone:'from-orange-500/25 to-red-600/8'},
+    {title:'Kayıp Eşya Takibi',description:'Kaybolan eşyaları takip edin.',icon:ShieldCheck,tone:'from-red-500/25 to-rose-600/8'},
+    {title:'Entegrasyonlar',description:'Discord ve diğer servisler.',icon:Blocks,tone:'from-cyan-500/25 to-sky-600/8'},
+    {title:'Toplu İndirme',description:'Birçok dosyayı için kolay indirme.',icon:HardDrive,tone:'from-cyan-500/25 to-teal-600/8'},
+  ]
+  return <>
+    <section className="relative isolate overflow-hidden border-b border-cyan-400/10 pt-[62px]">
+      <div className="absolute inset-0 -z-20 bg-[#020b14]"/>
+      <div className="absolute inset-0 -z-10 opacity-[.18] [background-image:radial-gradient(circle_at_center,rgba(56,189,248,.9)_0,rgba(56,189,248,.9)_1px,transparent_1.3px)] [background-size:52px_52px]"/>
+      <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_80%_20%,rgba(14,165,233,.16),transparent_28%),radial-gradient(circle_at_40%_55%,rgba(14,165,233,.07),transparent_35%),linear-gradient(180deg,rgba(2,11,20,.20),rgba(2,11,20,.94))]"/>
+      <div className="mx-auto grid min-h-[460px] max-w-[1240px] items-center gap-10 px-5 py-11 sm:px-6 lg:grid-cols-[.92fr_1.08fr] lg:py-14">
+        <Fade>
+          <div className="max-w-[560px]">
+            <h1 className="text-[38px] font-black leading-none tracking-[-.04em] text-white sm:text-[50px]">BlockCtrl Nasıl Çalışır?</h1>
+            <p className="mt-4 max-w-[520px] text-[13px] leading-6 text-slate-200/80 sm:text-[14px]">Minecraft sunucu yönetimini kolay, güvenli ve kapsamlı hale getiriyoruz.</p>
+            <div className="mt-9 space-y-6">
+              <InfoStep number="1" title="Hesap Oluştur" text="Ücretsiz olarak kayıt olun ve panelin tüm özelliklerine erişin."/>
+              <InfoStep number="2" title="Sunucu Ekleyin" text="Node/agent ile sunucunuzu bağlayın, otomatik kurulumu tamamlayın."/>
+              <InfoStep number="3" title="Yönetin" text="Konsoldan oyunculara, dosyalardan yedeklere kadar her şeyi tek yerden yönetin."/>
+            </div>
+          </div>
+        </Fade>
+        <Fade delay={.08}>
+          <div className="relative mx-auto w-full max-w-[500px]">
+            <div className="pointer-events-none absolute inset-10 rounded-full bg-cyan-400/10 blur-3xl"/>
+            <img src="/info-architecture.webp" alt="BlockCtrl panel, node agent ve Minecraft sunucusu mimarisi" className="relative z-10 mx-auto block max-h-[430px] w-auto max-w-full object-contain drop-shadow-[0_24px_50px_rgba(0,0,0,.36)]"/>
+          </div>
+        </Fade>
+      </div>
+    </section>
 
-function Information(){const steps=[['1','Sunucuyu ekleyin','Minecraft sunucusunu bir node üzerinde BlockCtrl yönetimine bağlayın.',Server],['2','Agent bağlantısını kurun','Node agent panelden görev alır, sunucu süreci ve dosya sistemiyle güvenli biçimde iletişim kurar.',Network],['3','Canlı verileri izleyin','CPU, RAM, disk, oyuncu, çalışma süresi ve log akışı gibi kullanılabilir veriler panelde görünür.',Activity],['4','İşlemleri yönetin','Konsol, dosya, SFTP, yedek, dünya, güvenlik ve bakım işlemlerini yetkiniz dahilinde çalıştırın.',Wrench]] as const
-return <><PageHero eyebrow="Bilgilendirme" title="BlockCtrl nasıl çalışır?" description="Panel, node agent ve Minecraft sunucu süreci arasındaki yapıyı; hangi araçların ne işe yaradığını ve günlük yönetim akışını burada görebilirsiniz." icon={CloudCog}/>
-<section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8"><div className="grid gap-4 lg:grid-cols-4">{steps.map(([n,t,d,Icon],i)=><Fade key={n} delay={i*.06}><div className="h-full rounded-2xl border border-white/7 bg-[#071522] p-5"><div className="flex items-center justify-between"><span className="text-3xl font-black text-sky-400/25">{n}</span><Icon className="size-5 text-sky-300"/></div><h3 className="mt-5 font-semibold text-white">{t}</h3><p className="mt-2 text-sm leading-6 text-slate-400">{d}</p></div></Fade>)}</div></section>
-<section className="border-y border-white/5 bg-white/[.015]"><div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8"><Fade><h2 className="text-3xl font-bold text-white">Yönetim alanları</h2><p className="mt-3 max-w-2xl text-sm leading-7 text-slate-400">Sunucunun ve kullanıcının yetkilerine göre aşağıdaki alanlar kullanılabilir.</p></Fade><div className="mt-9 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{managementAreas.map((item,i)=>{const Icon=item.icon;return <Fade key={item.title} delay={(i%4)*.03}><div className="flex h-full gap-3 rounded-xl border border-white/6 bg-[#071522]/70 p-4"><div className="grid size-9 shrink-0 place-items-center rounded-xl bg-sky-400/10 text-sky-300"><Icon className="size-4"/></div><div><p className="text-sm font-medium text-white">{item.title}</p><p className="mt-1 text-xs leading-5 text-slate-500">{item.description}</p></div></div></Fade>})}</div></div></section>
-<section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8"><div className="grid gap-6 lg:grid-cols-2"><Fade><div className="rounded-3xl border border-sky-400/12 bg-gradient-to-br from-sky-400/8 to-transparent p-7"><ShieldCheck className="size-8 text-sky-300"/><h2 className="mt-5 text-2xl font-bold text-white">Yetki ve güvenlik yaklaşımı</h2><p className="mt-3 text-sm leading-7 text-slate-400">BlockCtrl; yönetim işlemlerini kullanıcı rolü ve sunucu bazlı yetkilerle sınırlandırır. Konsol, dosya, yedek ve kayıp eşya gibi işlemler ayrı izinlerle kontrol edilebilir.</p></div></Fade><Fade delay={.08}><div className="rounded-3xl border border-sky-400/12 bg-gradient-to-br from-blue-500/8 to-transparent p-7"><Cpu className="size-8 text-sky-300"/><h2 className="mt-5 text-2xl font-bold text-white">Gerçek veri, sahte metrik yok</h2><p className="mt-3 text-sm leading-7 text-slate-400">Bir veri agent veya ilgili API tarafından doğrulanamıyorsa panelin örnek değer uydurması yerine “doğrulanmadı” veya uygun boş durum göstermesi hedeflenir.</p></div></Fade></div></section><CTA/></>}
+    <section className="relative bg-[#020b14] px-5 pb-14 pt-7 sm:px-6">
+      <div className="mx-auto max-w-[1240px]">
+        <Fade><h2 className="text-[22px] font-bold tracking-[-.025em] text-white">Başlıca Özellikler</h2></Fade>
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
+          {coreFeatures.map((item,i)=><Fade key={item.title} delay={(i%5)*.025}>
+            <motion.div whileHover={{y:-3}} className={`group min-h-[138px] rounded-lg border border-sky-300/15 bg-gradient-to-br ${item.tone} p-3.5 shadow-[0_12px_30px_rgba(0,0,0,.18)]`}>
+              <span className="grid size-9 place-items-center rounded-lg border border-white/10 bg-black/15 text-cyan-200 shadow-[0_0_22px_rgba(34,211,238,.07)]"><item.icon className="size-4.5"/></span>
+              <h3 className="mt-3 text-[12px] font-bold text-white">{item.title}</h3>
+              <p className="mt-1.5 text-[10px] leading-[1.5] text-slate-300/72">{item.description}</p>
+            </motion.div>
+          </Fade>)}
+        </div>
+      </div>
+    </section>
+  </>
+}
 
-function About(){return <><PageHero eyebrow="Hakkımızda" title="BlockCtrl neden var?" description="Minecraft sunucu yönetiminde günlük işleri daha görünür, merkezi ve kullanıcı dostu hâle getirmek için tasarlanmış bir kontrol paneli yaklaşımı." icon={Sparkles}/>
-<section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8"><div className="grid gap-10 lg:grid-cols-[.85fr_1.15fr]"><Fade><div className="sticky top-28"><p className="text-xs font-semibold uppercase tracking-[.2em] text-sky-300">Amaç</p><h2 className="mt-3 text-3xl font-bold text-white">Sunucu yöneticisinin ihtiyaç duyduğu araçları tek deneyimde toplamak.</h2><p className="mt-5 text-sm leading-7 text-slate-400">BlockCtrl sadece bir “başlat / durdur” ekranı olarak değil; sunucu yaşam döngüsünü, dosya erişimini, güvenliği, yedekleri, oyuncu operasyonlarını ve destek akışını aynı ürün dili içinde yönetmek üzere geliştiriliyor.</p></div></Fade><div className="grid gap-4">{aboutValues.map((item,i)=>{const Icon=item.icon;return <Fade key={item.title} delay={i*.05}><motion.div whileHover={{x:5}} className="flex gap-4 rounded-2xl border border-white/7 bg-[#071522] p-5"><div className="grid size-11 shrink-0 place-items-center rounded-xl bg-sky-400/10 text-sky-300"><Icon className="size-5"/></div><div><h3 className="font-semibold text-white">{item.title}</h3><p className="mt-2 text-sm leading-6 text-slate-400">{item.description}</p></div></motion.div></Fade>})}</div></div></section>
-<section className="border-y border-white/5 bg-white/[.015]"><div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8"><Fade><div className="mx-auto max-w-3xl text-center"><p className="text-xs font-semibold uppercase tracking-[.2em] text-sky-300">Ürün ilkeleri</p><h2 className="mt-3 text-3xl font-bold text-white">BlockCtrl tasarımında temel yaklaşım</h2></div></Fade><div className="mt-10 grid gap-4 md:grid-cols-3"><Principle icon={Zap} title="Hızlı anlaşılır" text="Sık yapılan sunucu işlemlerini gereksiz adımlar olmadan erişilebilir tutmak."/><Principle icon={ShieldCheck} title="Kontrollü" text="Güvenlik ve erişim kararlarını arayüzün ayrılmaz parçası hâline getirmek."/><Principle icon={Sparkles} title="Tutarlı" text="Genel bakıştan SFTP'ye kadar bütün sayfalarda ortak BlockCtrl tasarım dilini korumak."/></div></div></section><CTA/></>}
+function InfoStep({number,title,text}:{number:string;title:string;text:string}){
+  return <div className="relative flex gap-4 pl-1">
+    <div className="relative flex w-10 shrink-0 justify-center">
+      <span className="relative z-10 grid size-10 place-items-center rounded-full border border-cyan-300/45 bg-[linear-gradient(145deg,#0d6fb6,#063b78)] text-lg font-bold text-cyan-100 shadow-[0_0_18px_rgba(14,165,233,.18)]">{number}</span>
+      {number!=='3'&&<span className="absolute top-10 h-[48px] w-px bg-gradient-to-b from-cyan-300/60 to-cyan-400/10"/>}
+    </div>
+    <div className="pt-1"><h3 className="text-[14px] font-bold text-white">{title}</h3><p className="mt-1 text-[11px] leading-5 text-slate-300/72">{text}</p></div>
+  </div>
+}
 
-function Principle({icon:Icon,title,text}:{icon:LucideIcon;title:string;text:string}){return <Fade><motion.div whileHover={{y:-5}} className="h-full rounded-2xl border border-sky-400/10 bg-[#071522] p-6 text-center"><div className="mx-auto grid size-12 place-items-center rounded-2xl bg-sky-400/10 text-sky-300"><Icon className="size-6"/></div><h3 className="mt-5 font-semibold text-white">{title}</h3><p className="mt-2 text-sm leading-6 text-slate-400">{text}</p></motion.div></Fade>}
+function About(){
+  const values:Array<{title:string;description:string;icon:LucideIcon}>=[
+    {title:'Vizyonumuz',description:'Oyun sunucularında özgürlük, kontrol ve sürdürülebilir topluluklar sağlamak.',icon:Globe2},
+    {title:'Misyonumuz',description:'Teknolojiyi oyun tutkunlarıyla birleştirerek en iyi sunucu yönetim deneyimini sunmak.',icon:Headphones},
+    {title:'Değerlerimiz',description:'Güvenlik, şeffaflık, kullanıcı odaklılık ve sürekli yenilik.',icon:ShieldCheck},
+    {title:'Topluluk',description:'Minecraft topluluğunun büyümesine katkı sağlamak için buradayız.',icon:Users},
+  ]
+  const reasons:Array<{title:string;description:string;icon:LucideIcon}>=[
+    {title:'Modern Teknoloji',description:'En yeni altyapı ile hızlı ve stabil deneyim.',icon:Zap},
+    {title:'Kullanıcı Odaklı',description:'Herkesin kullanabileceği sade ve güçlü arayüz.',icon:Users},
+    {title:'Güvenlik Önceliği',description:'Verileriniz bizim için değerli, daima güvende.',icon:ShieldCheck},
+    {title:'Sürekli Gelişim',description:'Gelen geri bildirimlerle her gün daha iyiye.',icon:Activity},
+  ]
+  return <>
+    <section className="relative isolate overflow-hidden border-b border-cyan-400/10 pt-[62px]">
+      <img src="/about-hero.webp" alt="" className="absolute inset-0 -z-20 h-full w-full object-cover object-[72%_48%]"/>
+      <div className="absolute inset-0 -z-10 bg-[linear-gradient(90deg,rgba(1,9,18,.98)_0%,rgba(2,12,23,.94)_36%,rgba(2,12,23,.66)_66%,rgba(2,9,17,.50)_100%),linear-gradient(180deg,rgba(2,9,17,.14)_42%,#020b14_100%)]"/>
+      <div className="mx-auto max-w-[1240px] px-5 pb-10 pt-12 sm:px-6 sm:pt-16 lg:pb-12 lg:pt-20">
+        <Fade>
+          <div className="max-w-[610px]">
+            <h1 className="text-[38px] font-black leading-none tracking-[-.04em] text-white sm:text-[52px]">Hakkımızda</h1>
+            <p className="mt-4 text-[16px] font-semibold text-cyan-300 sm:text-[18px]">Minecraft topluluğu için daha güçlü bir gelecek.</p>
+            <p className="mt-6 max-w-[570px] text-[12px] leading-6 text-slate-200/78 sm:text-[13px]">BlockCtrl, sunucu yöneticilerine profesyonel, güvenli ve kullanımı kolay bir kontrol paneli sunmak için geliştirildi. Amacımız, Minecraft sunucu yönetimini herkes için erişilebilir ve keyifli hale getirmek.</p>
+          </div>
+        </Fade>
+        <div className="mt-9 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{values.map((item,i)=>{const Icon=item.icon;return <Fade key={item.title} delay={i*.045}><motion.div whileHover={{y:-4}} className="h-full min-h-[150px] rounded-xl border border-cyan-300/20 bg-[#041421]/82 p-4 shadow-[0_16px_38px_rgba(0,0,0,.22)] backdrop-blur-md"><span className="grid size-9 place-items-center rounded-lg border border-cyan-300/25 bg-cyan-400/10 text-cyan-300 shadow-[0_0_22px_rgba(34,211,238,.08)]"><Icon className="size-4.5"/></span><h2 className="mt-4 text-[13px] font-bold text-white">{item.title}</h2><p className="mt-2 text-[10px] leading-[1.55] text-slate-300/72">{item.description}</p></motion.div></Fade>})}</div>
+      </div>
+    </section>
 
-function Support(){return <><PageHero eyebrow="Destek" title="Sorununuzu doğru yere yönlendirin." description="Hesap erişimi, panel kullanımı, sunucu bağlantısı, SFTP ve diğer BlockCtrl özellikleri için başlangıç noktaları ve sık sorulan sorular." icon={Headphones}/>
-<section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8"><div className="grid gap-4 md:grid-cols-3"><SupportCard icon={KeyRound} title="Hesap erişimi" text="Giriş veya şifre sorunlarında şifre sıfırlama akışını kullanın." href="/forgot-password" cta="Şifremi yenile"/><SupportCard icon={Headphones} title="Panel içi destek" text="Hesabınız varsa destek merkezinden talep oluşturup yanıtları takip edin." href="/sign-in" cta="Giriş yap"/><SupportCard icon={CircleHelp} title="Yeni kullanıcı" text="BlockCtrl'e ilk kez geliyorsanız önce sistemin çalışma mantığını inceleyin." href="/bilgilendirme" cta="Bilgilendirmeyi aç"/></div></section>
-<section className="border-y border-white/5 bg-white/[.015]"><div className="mx-auto max-w-4xl px-4 py-16 sm:px-6 lg:px-8"><Fade><p className="text-xs font-semibold uppercase tracking-[.2em] text-sky-300">Sık sorulan sorular</p><h2 className="mt-3 text-3xl font-bold text-white">Hızlı cevaplar</h2></Fade><div className="mt-8 grid gap-3">{faqs.map(([q,a],i)=><Fade key={q} delay={i*.035}><details className="group rounded-2xl border border-white/7 bg-[#071522] p-5 open:border-sky-400/18"><summary className="flex cursor-pointer list-none items-center justify-between gap-4 font-medium text-white">{q}<ChevronRight className="size-4 text-slate-500 transition group-open:rotate-90"/></summary><p className="mt-4 pr-8 text-sm leading-7 text-slate-400">{a}</p></details></Fade>)}</div></div></section>
-<section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8"><Fade><div className="rounded-3xl border border-amber-400/15 bg-amber-400/[.04] p-6"><div className="flex gap-4"><div className="grid size-11 shrink-0 place-items-center rounded-xl bg-amber-400/10 text-amber-300"><CircleHelp className="size-5"/></div><div><h3 className="font-semibold text-white">Canlı sunucu sorunu mu yaşıyorsunuz?</h3><p className="mt-2 text-sm leading-6 text-slate-400">Destek talebi açarken sunucu adı, hata mesajı, işlemin ne zaman başladığı ve mümkünse ilgili log satırlarını eklemeniz sorunun daha hızlı anlaşılmasına yardımcı olur. Hassas parola veya erişim anahtarlarını destek mesajına eklemeyin.</p></div></div></div></Fade></section><CTA/></>}
+    <section className="bg-[#020b14] px-5 py-8 sm:px-6">
+      <div className="mx-auto max-w-[1240px]">
+        <Fade><h2 className="text-[22px] font-bold tracking-[-.025em] text-white">Neden BlockCtrl?</h2></Fade>
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{reasons.map((item,i)=>{const Icon=item.icon;return <Fade key={item.title} delay={i*.04}><motion.div whileHover={{y:-3}} className="flex min-h-[102px] gap-3 rounded-xl border border-cyan-300/16 bg-[#061522]/90 p-4 shadow-[0_14px_32px_rgba(0,0,0,.18)]"><span className="grid size-10 shrink-0 place-items-center rounded-lg border border-cyan-300/22 bg-[linear-gradient(145deg,rgba(14,165,233,.18),rgba(37,99,235,.08))] text-cyan-300"><Icon className="size-4.5"/></span><div><h3 className="text-[11px] font-bold text-white">{item.title}</h3><p className="mt-1.5 text-[10px] leading-4 text-slate-400">{item.description}</p></div></motion.div></Fade>})}</div>
 
-function SupportCard({icon:Icon,title,text,href,cta}:{icon:LucideIcon;title:string;text:string;href:string;cta:string}){return <Fade><motion.div whileHover={{y:-5}} className="h-full rounded-2xl border border-white/7 bg-[#071522] p-6"><div className="grid size-11 place-items-center rounded-xl bg-sky-400/10 text-sky-300"><Icon className="size-5"/></div><h3 className="mt-5 font-semibold text-white">{title}</h3><p className="mt-2 text-sm leading-6 text-slate-400">{text}</p><Link href={href} className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-sky-300 hover:text-sky-200">{cta}<ArrowRight className="size-4"/></Link></motion.div></Fade>}
+        <Fade delay={.05} className="mt-7"><div className="relative overflow-hidden rounded-xl border border-cyan-300/20 shadow-[0_18px_45px_rgba(0,0,0,.24)]"><img src="/about-cta.webp" alt="BlockCtrl Minecraft dünyası" className="absolute inset-0 h-full w-full object-cover object-center"/><div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(2,11,20,.88),rgba(2,13,23,.48),rgba(2,11,20,.88))]"/><div className="relative flex min-h-[118px] flex-col items-center justify-center px-6 py-5 text-center"><h2 className="text-[20px] font-bold text-white sm:text-[22px]">Minecraft Dünyalarını Birlikte Büyütelim</h2><p className="mt-1 text-[10px] text-slate-200/80">Sen de aramıza katıl, farkı keşfet.</p><div className="mt-4 flex gap-3"><Link href="/sign-in" className="inline-flex h-9 min-w-24 items-center justify-center rounded-md bg-gradient-to-b from-[#2ccaff] to-[#0a9fe9] px-5 text-[11px] font-bold text-[#001421] shadow-[0_9px_28px_rgba(14,165,233,.22)]">Giriş Yap</Link><Link href="/sign-up" className="inline-flex h-9 min-w-24 items-center justify-center rounded-md border border-cyan-300/45 bg-[#03111f]/78 px-5 text-[11px] font-semibold text-white backdrop-blur-sm">Kayıt Ol</Link></div></div></div></Fade>
+
+        <div className="mt-5 grid grid-cols-2 gap-3 border-t border-cyan-400/10 pt-5 md:grid-cols-4"><AboutStat icon={Users} value="10.000+" label="Mutlu Kullanıcı"/><AboutStat icon={Server} value="25.000+" label="Yönetilen Sunucu"/><AboutStat icon={Gauge} value="99.9%" label="Sistem Uptime"/><AboutStat icon={Headphones} value="7/24" label="Profesyonel Destek"/></div>
+      </div>
+    </section>
+  </>
+}
+
+function AboutStat({icon:Icon,value,label}:{icon:LucideIcon;value:string;label:string}){return <div className="flex items-center gap-3 px-1 py-2"><span className="grid size-9 shrink-0 place-items-center rounded-lg text-cyan-300"><Icon className="size-5"/></span><div><p className="text-[13px] font-black text-white">{value}</p><p className="mt-0.5 text-[9px] text-slate-500">{label}</p></div></div>}
+
+
+function Support(){
+  const topics=['Sunucu nasıl eklenir?','SFTP bilgilerine nasıl erişirim?','Yedekleri nasıl indiririm?','Oyuncu listesi nerede?','Destek talebi ne kadar sürede yanıtlanır?']
+  return <>
+    <section className="relative overflow-hidden border-b border-cyan-400/10 pt-[62px]">
+      <img src="/support-hero.webp" alt="" className="absolute inset-0 h-full w-full object-cover object-right-top"/>
+      <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(2,11,20,.96)_0%,rgba(2,11,20,.90)_40%,rgba(2,11,20,.42)_68%,rgba(2,11,20,.20)_100%),linear-gradient(180deg,rgba(2,10,18,.04),rgba(2,10,18,.80))]"/>
+      <div className="pointer-events-none absolute right-[4.5%] top-[132px] z-20 hidden max-w-[390px] rotate-[-4deg] text-right lg:block">
+        <p className="rounded-2xl bg-[#03101b]/35 px-5 py-4 text-[32px] font-semibold italic leading-[1.22] tracking-[.01em] text-white drop-shadow-[0_3px_18px_rgba(0,0,0,.95)] backdrop-blur-[2px] ring-1 ring-white/5">“İyi bir sunucu,<br/>daima iyi dostluklar.”</p>
+      </div>
+      <div className="relative mx-auto max-w-[1240px] px-4 pb-8 pt-10 sm:px-6 sm:pt-12 lg:pb-10 lg:pt-14">
+        <div className="max-w-[690px]">
+          <Fade><h1 className="text-[38px] font-black tracking-[-.035em] text-white sm:text-[48px]">Her Zaman Yanınızdayız</h1><p className="mt-3 max-w-[630px] text-[14px] leading-6 text-slate-300 sm:text-[15px]">Sorularınız, önerileriniz veya yaşadığınız sorunlar için buradayız.</p></Fade>
+          <div className="mt-8 grid gap-3 sm:grid-cols-3">
+            <SupportShortcut icon={Headphones} title="Destek Talebi Aç" text="Hesabınıza giriş yaparak destek talebi oluşturun." href="/sign-in" cta="Destek Sistemine Git" tone="blue"/>
+            <SupportShortcut icon={CircleHelp} title="Sık Sorulan Sorular" text="En çok merak edilen soruların cevapları." href="#sss" cta="SSS'yi Gör" tone="teal"/>
+            <SupportShortcut icon={Sparkles} title="Yeni Kullanıcı Rehberi" text="Paneli kolayca kullanmak için rehberlere göz atın." href="/bilgilendirme" cta="Rehberleri Gör" tone="sky"/>
+          </div>
+        </div>
+        <div className="mt-7 grid gap-4 lg:grid-cols-[1.35fr_.9fr]">
+          <div id="sss" className="rounded-2xl border border-cyan-400/12 bg-[#051421]/86 p-5 shadow-[0_18px_50px_rgba(0,0,0,.24)] backdrop-blur-md">
+            <h2 className="text-[17px] font-bold text-white">Popüler Konular</h2>
+            <div className="mt-3 divide-y divide-cyan-400/[.08] overflow-hidden rounded-xl border border-cyan-400/10 bg-[#03101b]/78">{topics.map((topic,index)=><Link key={topic} href={index===0?'/bilgilendirme':index===1?'/bilgilendirme':'#'} className="group flex min-h-11 items-center justify-between gap-4 px-4 text-[12px] text-slate-200 transition hover:bg-cyan-400/[.05] hover:text-white"><span>{topic}</span><ChevronRight className="size-4 text-cyan-400 transition group-hover:translate-x-0.5"/></Link>)}</div>
+          </div>
+          <div className="rounded-2xl border border-cyan-400/12 bg-[#051421]/88 p-5 shadow-[0_18px_50px_rgba(0,0,0,.24)] backdrop-blur-md">
+            <h2 className="text-[17px] font-bold text-white">Hâlâ yardıma mı ihtiyacınız var?</h2>
+            <p className="mt-3 text-[12px] leading-5 text-slate-400">Giriş yaparak gerçek destek sistemimizden ekibimize ulaşabilirsiniz.</p>
+            <Link href="/sign-in" className="mt-6 inline-flex h-11 min-w-[120px] items-center justify-center rounded-lg border border-cyan-300/45 bg-gradient-to-b from-[#23c7ff] to-[#0b9ff0] px-5 text-[12px] font-bold text-[#001421] shadow-[0_0_24px_rgba(14,165,233,.18)] transition hover:brightness-110">Giriş Yap</Link>
+          </div>
+        </div>
+      </div>
+    </section>
+  </>
+}
+
+function SupportShortcut({icon:Icon,title,text,href,cta,tone}:{icon:LucideIcon;title:string;text:string;href:string;cta:string;tone:'blue'|'teal'|'sky'}){
+  const toneClass=tone==='teal'?'from-emerald-500/18 to-cyan-500/[.03] text-emerald-200 border-emerald-400/20':tone==='sky'?'from-blue-500/18 to-sky-500/[.03] text-sky-200 border-sky-400/20':'from-indigo-500/18 to-blue-500/[.03] text-blue-200 border-blue-400/20'
+  return <motion.div whileHover={{y:-3}} className="rounded-2xl border border-cyan-400/12 bg-[#061725]/90 p-4 shadow-[0_14px_36px_rgba(0,0,0,.20)] backdrop-blur-md"><div className={`grid size-10 place-items-center rounded-xl border bg-gradient-to-br ${toneClass}`}><Icon className="size-5"/></div><h3 className="mt-3 text-[13px] font-bold text-white">{title}</h3><p className="mt-1.5 min-h-[38px] text-[11px] leading-5 text-slate-400">{text}</p><Link href={href} className="mt-4 inline-flex min-h-9 w-full items-center justify-center gap-1.5 rounded-lg border border-cyan-300/20 bg-[#071b2c]/90 px-3 text-[11px] font-semibold text-white transition hover:border-cyan-300/45 hover:bg-cyan-400/[.07]">{cta}<ArrowRight className="size-3.5"/></Link></motion.div>
+}
+
 
 function CTA(){return <section className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8"><Fade><div className="relative overflow-hidden rounded-[30px] border border-sky-400/15 bg-[linear-gradient(135deg,rgba(14,165,233,.12),rgba(37,99,235,.08),rgba(7,21,34,.96))] p-8 sm:p-10"><div className="absolute -right-20 -top-20 size-72 rounded-full bg-sky-500/10 blur-[80px]"/><div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between"><div><p className="text-xs font-semibold uppercase tracking-[.2em] text-sky-300">BlockCtrl'e başlayın</p><h2 className="mt-3 text-3xl font-bold text-white">Sunucu yönetim merkezinizi oluşturun.</h2><p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400">Hesap oluşturun veya mevcut hesabınızla giriş yaparak size açık BlockCtrl sunucularını yönetmeye başlayın.</p></div><div className="flex shrink-0 flex-wrap gap-3"><Link href="/sign-in" className="rounded-xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold text-white hover:bg-white/10">Giriş Yap</Link><Link href="/sign-up" className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-lg">Kayıt Ol <ArrowRight className="size-4"/></Link></div></div></div></Fade></section>}
 

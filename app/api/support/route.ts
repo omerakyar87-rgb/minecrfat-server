@@ -41,8 +41,12 @@ async function currentActor() {
 }
 
 async function consentAccepted(userId: string) {
-  const result = await pool.query<{ version: string }>(`SELECT version FROM support_consents WHERE "userId"=$1 LIMIT 1`, [userId])
-  return result.rows[0]?.version === SUPPORT_RULES_VERSION
+  try {
+    const result = await pool.query<{ version: string }>(`SELECT version FROM support_consents WHERE "userId"=$1 LIMIT 1`, [userId])
+    return result.rows[0]?.version === SUPPORT_RULES_VERSION
+  } catch {
+    return false
+  }
 }
 
 async function requireConsent(actor: NonNullable<Awaited<ReturnType<typeof currentActor>>>) {
@@ -253,10 +257,10 @@ export async function GET(request: NextRequest) {
   if (attachmentId) return attachmentResponse(request, actor, attachmentId)
   if (threadId) return threadDetail(actor, threadId)
 
-  const threads = await listThreads(actor)
+  const threads = await listThreads(actor).catch(()=>[] as ThreadRow[])
   const [memberResult, staffResult] = staff ? await Promise.all([
     pool.query<{id:string;name:string;role:string}>(`SELECT id,name,role FROM "user" WHERE approved=true AND role='member' ORDER BY name ASC LIMIT 500`),
-    pool.query<{id:string;name:string;role:string}>(`SELECT id,name,role FROM "user" WHERE approved=true AND role IN ('manager','admin','guide') ORDER BY name ASC LIMIT 200`),
+    pool.query<{id:string;name:string;role:string}>(`SELECT id,name,role FROM "user" WHERE approved=true AND role IN ('founder','manager','admin','guide') ORDER BY name ASC LIMIT 200`),
   ]) : [{ rows: [] as Array<{id:string;name:string;role:string}> }, { rows: [] as Array<{id:string;name:string;role:string}> }]
 
   const [information, supportSettings, announcements, announcementUnread] = await Promise.all([
