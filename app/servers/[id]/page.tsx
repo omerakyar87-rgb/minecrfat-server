@@ -156,8 +156,9 @@ export default function ServerPage(){
   const canReadMetrics=fullAccess||allowedSections.includes('overview')||allowedSections.includes('players')||allowedSections.includes('console')
   const {data:metricsData}=useSWR<MetricsData>(canReadMetrics?`/api/metrics?serverId=${id}&limit=240`:null,fetcher,{refreshInterval:15000})
   const {data:playersOverview}=useSWR<PlayersOverviewData>(canReadMetrics?`/api/players?serverId=${id}`:null,fetcher,{refreshInterval:5000,revalidateOnFocus:true})
-  const {data:lostItemsData,mutate:mutateLostItems}=useSWR<LostItemsData>(section==='lost-items'?`/api/lost-items?serverId=${id}`:null,fetcher,{refreshInterval:7000,revalidateOnFocus:true})
+  
   const [section,setSection]=useState<ServerNavKey>('overview'); const [open,setOpen]=useState(false); const [busy,setBusy]=useState(false); const [notice,setNotice]=useState('')
+  const {data:lostItemsData,mutate:mutateLostItems}=useSWR<LostItemsData>(section==='lost-items'?`/api/lost-items?serverId=${id}`:null,fetcher,{refreshInterval:7000,revalidateOnFocus:true})
   const actionConfirm=useActionConfirm()
   const [settingsTab,setSettingsTab]=useState<'general'|'security'|'performance'|'anticheat'|'backup'>('general'); const [selectedUserId,setSelectedUserId]=useState('')
   const [uiSecurity,setUiSecurity]=useState({startupScan:true,bruteForce:true,commandLog:true,fileFilter:true,proxyControl:true,movement:true,reach:true,speed:true,xray:true,crashRecovery:true,performanceMonitor:true,autoCleanup:true})
