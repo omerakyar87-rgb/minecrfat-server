@@ -305,17 +305,15 @@ async function commandBridgeFetch(nodeId: string, path: string, init: RequestIni
   }
 
   if (pathname === '/internal/worlds/status' && method === 'GET') {
+    try { const polled=await runPolledCommand(server,'worlds-status'); if(Array.isArray(polled.worlds))return jsonResponse(polled) } catch (error) { if(!unsupportedCommand(error)) console.warn('[node-bridge] worlds-status polling failed; legacy disk discovery will be used') }
+    const inventory=await legacyInventory(server); const discovered=legacyWorldsFromInventory(server,inventory); if(discovered.worlds.length)return jsonResponse(discovered)
     const rows = await db.select().from(worldsTable).where(eq(worldsTable.serverId, server.id))
-    return jsonResponse({
-      worlds: rows.map(row => ({ name: row.name, isActive: row.isActive, sizeMb: row.sizeMb, seed: row.seed ?? null, prepared: false, templateId: null, templateName: null, updatedAt: row.createdAt?.toISOString?.() ?? null })),
-      activeWorld: server.worldName,
-      scannedAt: new Date().toISOString(),
-      source: 'database-fallback',
-    })
+    return jsonResponse({ worlds: rows.map(row => ({ name: row.name, folderName:row.name, environment:row.name.endsWith('_nether')?'the_nether':row.name.endsWith('_the_end')?'the_end':'overworld', isActive: row.isActive, sizeMb: row.sizeMb, sizeBytes:Math.round(row.sizeMb*1048576), seed: row.seed ?? null, prepared:false, updatedAt:row.createdAt?.toISOString?.()??null, source:'database-last-resort' })), activeWorld:server.worldName, defaultWorld:server.worldName, scannedAt:new Date().toISOString(), source:'database-last-resort' })
   }
 
   if (pathname === '/internal/players/status' && method === 'GET') {
-    return jsonResponse(await runPolledCommand(server, 'player-details'))
+    try { return jsonResponse(await runPolledCommand(server, 'player-details')) }
+    catch (error) { if (!unsupportedCommand(error)) throw error; return jsonResponse(await legacyPlayers(server)) }
   }
   if (pathname === '/internal/players/action' && method === 'POST') {
     return jsonResponse(await runPolledCommand(server, 'player-action', body, BRIDGE_TIMEOUT_MS, false))
@@ -329,18 +327,21 @@ async function commandBridgeFetch(nodeId: string, path: string, init: RequestIni
   }
 
   if (pathname === '/internal/content/inventory' && method === 'GET') {
-    const result = await runPolledCommand(server, 'file-inventory')
-    return jsonResponse(result)
+    try { return jsonResponse(await runPolledCommand(server,'file-inventory')) }
+    catch (error) { if(!unsupportedCommand(error))throw error; return jsonResponse(await legacyInventory(server)) }
   }
   if (pathname === '/internal/content/read' && method === 'GET') {
-    const result = await runPolledCommand(server, 'file-read', { path: String(url.searchParams.get('path') ?? '') })
-    return jsonResponse({ ...result, size: Number(result.sizeBytes ?? 0) })
+    const target=String(url.searchParams.get('path')??'')
+    try { const result=await runPolledCommand(server,'file-read',{path:target}); return jsonResponse({...result,size:Number(result.sizeBytes??0)}) }
+    catch (error) { if(!unsupportedCommand(error))throw error; return jsonResponse(await runPolledCommand(server,'read-file',{path:target})) }
   }
   if (pathname === '/internal/content/write' && method === 'POST') {
-    return jsonResponse(await runPolledCommand(server, 'file-write', { path: body.path, content: body.content }, BRIDGE_TIMEOUT_MS, false))
+    try { return jsonResponse(await runPolledCommand(server,'file-write',{path:body.path,content:body.content},BRIDGE_TIMEOUT_MS,false)) }
+    catch (error) { if(!unsupportedCommand(error))throw error; return jsonResponse(await runPolledCommand(server,'write-file',{path:body.path,content:body.content},BRIDGE_TIMEOUT_MS,false)) }
   }
   if (pathname === '/internal/content/delete' && method === 'POST') {
-    return jsonResponse(await runPolledCommand(server, 'file-delete', { path: body.path }, BRIDGE_TIMEOUT_MS, false))
+    try { return jsonResponse(await runPolledCommand(server,'file-delete',{path:body.path},BRIDGE_TIMEOUT_MS,false)) }
+    catch (error) { if(!unsupportedCommand(error))throw error; return jsonResponse(await runPolledCommand(server,'delete-file',{path:body.path},BRIDGE_TIMEOUT_MS,false)) }
   }
 
   if (pathname === '/internal/console/status' && method === 'GET') {
@@ -351,6 +352,15 @@ async function commandBridgeFetch(nodeId: string, path: string, init: RequestIni
     return jsonResponse({ ...live, startup: startup.startup ?? { stdout: [], stderr: [] } })
   }
 
+  if (pathname === '/internal/backups/list' && method === 'GET') {
+    try { return jsonResponse(await runPolledCommand(server,'backup-list')) }
+    catch (error) { if(!unsupportedCommand(error))console.warn('[node-bridge] backup-list failed; using history fallback'); return jsonResponse({backups:await legacyBackupRows(server),source:'polling-history-fallback'}) }
+  }
+  if (pathname === '/internal/backups/create' && method === 'POST') {
+    const payload={label:String(body.label??'manual'),kind:String(body.kind??'full')}
+    try { return jsonResponse(await runPolledCommand(server,'backup',payload,45_000,false),201) }
+    catch (error) { if(!unsupportedCommand(error))throw error; return jsonResponse(await runPolledCommand(server,'CREATE_BACKUP',payload,45_000,false),201) }
+  }
   if (pathname === '/internal/sftp/status' && method === 'GET') return jsonResponse(await runPolledCommand(server, 'sftp-test'))
   if (pathname === '/internal/sftp/provision' && method === 'POST') return jsonResponse(await runPolledCommand(server, 'provision-sftp', {}, BRIDGE_TIMEOUT_MS, false), 201)
   if (pathname === '/internal/sftp/enable' && method === 'POST') return jsonResponse(await runPolledCommand(server, 'sftp-enable', {}, BRIDGE_TIMEOUT_MS, false))
