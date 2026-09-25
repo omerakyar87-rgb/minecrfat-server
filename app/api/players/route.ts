@@ -160,8 +160,7 @@ export async function GET(request:NextRequest){
     })
   }
 
-  const count=(await db.select({id:serverPlayers.id}).from(serverPlayers).where(eq(serverPlayers.serverId,serverId)).limit(1)).length
-  if(nodeFresh(node)&&(refresh||count===0)){
+  if(nodeFresh(node)){
     try{runtime=await fetchRuntime(x.server);await syncSnapshot(x.server,runtime)}catch(error){runtimeError=nodeDiagnosticMessage(error)}
   }else if(!nodeFresh(node))runtimeError='Node çevrimdışı veya heartbeat güncel değil.'
   const rows=await db.select().from(serverPlayers).where(eq(serverPlayers.serverId,serverId)).orderBy(desc(serverPlayers.isOnline),desc(serverPlayers.lastSeenAt),desc(serverPlayers.updatedAt)).limit(1000)
