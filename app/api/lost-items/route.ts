@@ -58,7 +58,7 @@ export async function POST(request:NextRequest){try{await ensurePanelSchema();co
     const nextMeta={...meta,itemTrackingEnabled:true,itemTrackingMode:String(meta.itemTrackingMode??'death-snapshot')==='disabled'?'death-snapshot':String(meta.itemTrackingMode??'death-snapshot'),trackerAdapter:meta.trackerAdapter??'agent-fallback'}
     const [write]=await db.insert(agentCommands).values({userId:result.server.userId,nodeId:result.server.nodeId,serverId,type:'write-file',payload:{path:'blockctrl.json',content:JSON.stringify(nextMeta,null,2),requestedBy:actor.id},status:'queued'}).returning({id:agentCommands.id})
     await db.update(servers).set({itemTrackingEnabled:true,updatedAt:new Date()}).where(eq(servers.id,serverId))
-    let restartId:number|null=null
+    let restartId:string|null=null
     if(result.server.status==='running'){
       const [restart]=await db.insert(agentCommands).values({userId:result.server.userId,nodeId:result.server.nodeId,serverId,type:'restart',payload:{reason:'repair-item-tracker',itemTrackingEnabled:true,requestedBy:actor.id},status:'queued'}).returning({id:agentCommands.id})
       restartId=restart.id
