@@ -77,6 +77,7 @@ type SecuritySnapshot = { summary?:{score:number|null;activeThreats:number;lastS
 type ServerMetric = { id:number; serverId:string; cpuPercent:number; memoryUsedMb:number; memoryTotalMb:number; diskUsedGb:number; diskTotalGb:number; tps:number|null; mspt:number|null; players:number; uptimeSeconds:number; createdAt:string }
 type MetricsData = { metrics:ServerMetric[] }
 type PlayersOverviewData = { summary?: { online?: number; maxPlayers?: number|null }; nodeOnline?: boolean; runtimeSynced?: boolean; runtimeError?: string|null }
+type LostItemsData = { items:LostItemRow[]; trackingEnabled:boolean; diagnostics?:{state:string;message:string;runtimeEnabled?:boolean;mode?:string|null;adapter?:unknown;runtimeError?:string|null} }
 type AgentConsoleEvent = { at:string; level:'info'|'warn'|'error'; message:string; serverId:string|null }
 type AgentActionRow = { id:number; type:string; status:string; createdAt:string; result?:Record<string,unknown>|null }
 type AgentActionsData = { actions:AgentActionRow[] }
@@ -155,6 +156,7 @@ export default function ServerPage(){
   const canReadMetrics=fullAccess||allowedSections.includes('overview')||allowedSections.includes('players')||allowedSections.includes('console')
   const {data:metricsData}=useSWR<MetricsData>(canReadMetrics?`/api/metrics?serverId=${id}&limit=240`:null,fetcher,{refreshInterval:15000})
   const {data:playersOverview}=useSWR<PlayersOverviewData>(canReadMetrics?`/api/players?serverId=${id}`:null,fetcher,{refreshInterval:5000,revalidateOnFocus:true})
+  const {data:lostItemsData,mutate:mutateLostItems}=useSWR<LostItemsData>(section==='lost-items'?`/api/lost-items?serverId=${id}`:null,fetcher,{refreshInterval:7000,revalidateOnFocus:true})
   const [section,setSection]=useState<ServerNavKey>('overview'); const [open,setOpen]=useState(false); const [busy,setBusy]=useState(false); const [notice,setNotice]=useState('')
   const actionConfirm=useActionConfirm()
   const [settingsTab,setSettingsTab]=useState<'general'|'security'|'performance'|'anticheat'|'backup'>('general'); const [selectedUserId,setSelectedUserId]=useState('')
@@ -372,7 +374,7 @@ export default function ServerPage(){
   const portState=(port:number|null,enabled:boolean|null):'open'|'closed'|'unknown'=>{if(port===null||enabled===false)return'closed';if(enabled===null)return'unknown';if(!securityPortScanFresh)return'unknown';return observedPort(port)?'open':'closed'}
   const minecraftPortState:'open'|'closed'|'unknown'=securityPortScanFresh?(observedPort(server.port)?'open':'closed'):'unknown'
   const requestedPort=Number(newPort);const portChangeValid=Number.isInteger(requestedPort)&&requestedPort>=1024&&requestedPort<=65535&&requestedPort!==server.port
-  const lostItems=(data?.lostItems??[]).filter(item=>item.serverId===id)
+  const lostItems=(lostItemsData?.items??data?.lostItems??[]).filter(item=>item.serverId===id)
   const lostReasons:string[]=[...new Set<string>(lostItems.map(item=>String(item.reason)).filter(Boolean))].sort()
   const lostRangeMs=lostRange==='24h'?86_400_000:lostRange==='7d'?7*86_400_000:lostRange==='30d'?30*86_400_000:null
   const filteredLostItems=lostItems.filter(item=>{const query=lostQuery.trim().toLowerCase();const age=Date.now()-new Date(item.occurredAt).getTime();const rangeOk=lostRangeMs===null||(age>=0&&age<=lostRangeMs);const queryOk=!query||`${item.playerName??''} ${item.itemName} ${item.itemId} ${item.world} ${item.reason} ${server.name}`.toLowerCase().includes(query);return queryOk&&rangeOk&&(lostReason==='all'||item.reason===lostReason)})
@@ -1039,7 +1041,12 @@ export default function ServerPage(){
 
 
           {section==='lost-items'&&<>
-            <PageHeading title="Kayıp Eşya Takibi" text="Sunucunuzda kaybolan eşyaları gerçek tracker kayıtlarından inceleyin, filtreleyin ve yetkiniz varsa oyuncuya geri verin." right={<div className="flex items-center gap-2"><div className="flex items-center gap-2 rounded-lg border border-[#23405e] bg-[#0d1c2c] px-3 py-2 text-xs text-slate-400"><span className={`size-2 rounded-full ${trackerState==='ok'?'bg-cyan-400':trackerState==='warn'?'bg-amber-400':'bg-slate-500'}`}/>{trackerLabel}</div><Button size="sm" variant="outline" className="h-9 border-[#294762] bg-[#0c1b2a] text-slate-200 hover:bg-[#122b43]" onClick={()=>setSection('settings')}><Settings2 className="mr-2 size-4"/>Ayarlar</Button></div>}/>
+            <PageHeading title="Kayıp Eşya Takibi" text="Sunucunuzda kaybolan eşyaları gerçek tracker kayıtlarından inceleyin, filtreleyin ve yetkiniz varsa oyuncuya geri verin." right={<div className="flex items-center gap-2"><div className="flex items-center gap-2 rounded-lg border border-[#23405e] bg-[#0d1c2c] px-3 py-2 text-xs text-slate-400"><span className={`size-2 rounded-full ${trackerState==='ok'?'bg-cyan-400':trackerState==='warn'?'bg-amber-400':'bg-slate-500'}`}/>
+            {lostItemsData?.diagnostics&&lostItemsData.diagnostics.state!=='ready'&&<div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-950/20 px-4 py-3 text-xs text-amber-100">
+              <div><b>Tracker kontrolü:</b> {lostItemsData.diagnostics.message}</div>
+              {canManageLostItems&&<Button size="sm" className="bg-amber-500 text-amber-950 hover:bg-amber-400" disabled={busy} onClick={async()=>{setBusy(true);setNotice('');try{const response=await fetch('/api/lost-items',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'repair-tracker',serverId:id})});const body=await readJson(response);if(!response.ok)throw new Error(body.error??'Tracker onarımı başlatılamadı');setNotice(body.restartCommandId?'Tracker onarımı kuyruğa alındı; Minecraft yeniden başlatılacak.':'Tracker onarımı kuyruğa alındı.');setTimeout(()=>void Promise.all([mutate(),mutateLostItems()]),2500)}catch(error){setNotice(error instanceof Error?error.message:'Tracker onarımı başlatılamadı')}finally{setBusy(false)}}><RefreshCw className="mr-2 size-3.5"/>Takibi Onar</Button>}
+            </div>}
+{trackerLabel}</div><Button size="sm" variant="outline" className="h-9 border-[#294762] bg-[#0c1b2a] text-slate-200 hover:bg-[#122b43]" onClick={()=>setSection('settings')}><Settings2 className="mr-2 size-4"/>Ayarlar</Button></div>}/>
 
 
 
