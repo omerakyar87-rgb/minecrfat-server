@@ -77,6 +77,7 @@ const managedPids=new Map<string,number>()
 const stopping=new Set<string>()
 const trackerTokens=new Map<string,string>()
 const playerUuidCache=new Map<string,string>()
+const playerPresenceCache=new Map<string,{playerName:string;playerUuid:string|null;isOnline:boolean;at:number}>()
 const playerReconciledServers=new Set<string>()
 type DownloadTokenMeta={path:string;filename:string;expiresAt:number;temporary:boolean}
 const downloadTokens=new Map<string,DownloadTokenMeta>()
@@ -597,9 +598,9 @@ function playerPresenceFromLine(serverId:string,line:string){
   const uuid=line.match(/UUID of player\s+([A-Za-z0-9_]{1,16})\s+is\s+([0-9a-f-]{32,36})/i)
   if(uuid)playerUuidCache.set(`${serverId}:${uuid[1].toLowerCase()}`,uuid[2])
   const joined=line.match(/\]:\s*([A-Za-z0-9_]{1,16}) joined the game\b/i)
-  if(joined)return{event:'join' as const,playerName:joined[1],playerUuid:playerUuidCache.get(`${serverId}:${joined[1].toLowerCase()}`)??null}
+if(joined){const playerUuid=playerUuidCache.get(`${serverId}:${joined[1].toLowerCase()}`)??null;playerPresenceCache.set(`${serverId}:${joined[1].toLowerCase()}`,{playerName:joined[1],playerUuid,isOnline:true,at:Date.now()});return{event:'join' as const,playerName:joined[1],playerUuid}}
   const left=line.match(/\]:\s*([A-Za-z0-9_]{1,16}) left the game\b/i)
-  if(left)return{event:'leave' as const,playerName:left[1],playerUuid:playerUuidCache.get(`${serverId}:${left[1].toLowerCase()}`)??null}
+  if(left){const playerUuid=playerUuidCache.get(`${serverId}:${left[1].toLowerCase()}`)??null;playerPresenceCache.set(`${serverId}:${left[1].toLowerCase()}`,{playerName:left[1],playerUuid,isOnline:false,at:Date.now()});return{event:'leave' as const,playerName:left[1],playerUuid}}
   return null
 }
 async function reportServerLogLine(serverId:string,stream:'stdout'|'stderr',line:string,state:LogTailState){
@@ -800,7 +801,7 @@ async function queryOnlinePlayers(id:string){
   if(!pid)return{verified:true,names:[] as string[],count:0,maxPlayers:configuredMax,source:'server-stopped'}
   if(!existsSync(join(serverDir(id),'.blockctrl-stdin')))return{verified:false,names:[] as string[],count:null as number|null,maxPlayers:configuredMax,source:'control-channel-unavailable'}
   const stdout=join(serverDir(id),'.blockctrl-stdout.log');const offset=(await stat(stdout).catch(()=>null))?.size??0
-  try{await writeConsole(id,'list')}catch(error){return{verified:false,names:[] as string[],count:null as number|null,maxPlayers:configuredMax,source:error instanceof Error?error.message:'list-command-failed'}}
+  try{await writeConsole(id,'list')}catch{const names=[...playerPresenceCache.values()].filter(row=>row.isOnline&&row.at>Date.now()-120_000).map(row=>row.playerName);return{verified:names.length>0,names,count:names.length,maxPlayers:configuredMax,source:names.length?'log-presence-fallback':'online-query-unavailable'}}
   const deadline=Date.now()+2500
   while(Date.now()<deadline){
     await new Promise(resolve=>setTimeout(resolve,150))
@@ -809,7 +810,7 @@ async function queryOnlinePlayers(id:string){
     const hit=matches.at(-1)
     if(hit){const names=String(hit[3]??'').split(',').map(name=>name.trim()).filter(name=>/^[A-Za-z0-9_]{1,16}$/.test(name));return{verified:true,names,count:Number(hit[1]),maxPlayers:Number(hit[2])||configuredMax,source:'minecraft-list'}}
   }
-  return{verified:false,names:[] as string[],count:null as number|null,maxPlayers:configuredMax,source:'list-timeout'}
+  const names=[...playerPresenceCache.values()].filter(row=>row.isOnline&&row.at>Date.now()-120_000).map(row=>row.playerName);return{verified:names.length>0,names,count:names.length,maxPlayers:configuredMax,source:names.length?'log-presence-fallback':'online-query-timeout'}
 }
 async function playersStatus(id:string){
   if(!validServerId(id))throw new Error('Geçersiz serverId')

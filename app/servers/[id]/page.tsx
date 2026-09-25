@@ -76,6 +76,7 @@ type SecurityEvent = { id?:string; severity?:string; source?:string; event?:stri
 type SecuritySnapshot = { summary?:{score:number|null;activeThreats:number;lastScanAt:string|null}; modules?:Array<{key:string;status:string;enabled?:boolean;detail?:string}>; policies?:{active:string|null}; snapshot?:Record<string,any>|null; events?:SecurityEvent[] }
 type ServerMetric = { id:number; serverId:string; cpuPercent:number; memoryUsedMb:number; memoryTotalMb:number; diskUsedGb:number; diskTotalGb:number; tps:number|null; mspt:number|null; players:number; uptimeSeconds:number; createdAt:string }
 type MetricsData = { metrics:ServerMetric[] }
+type PlayersOverviewData = { summary?: { online?: number; maxPlayers?: number|null }; nodeOnline?: boolean; runtimeSynced?: boolean; runtimeError?: string|null }
 type AgentConsoleEvent = { at:string; level:'info'|'warn'|'error'; message:string; serverId:string|null }
 type AgentActionRow = { id:number; type:string; status:string; createdAt:string; result?:Record<string,unknown>|null }
 type AgentActionsData = { actions:AgentActionRow[] }
@@ -153,6 +154,7 @@ export default function ServerPage(){
   const {data:securitySnapshot}=useSWR<SecuritySnapshot>((fullAccess||allowedSections.includes('security'))?`/api/security?serverId=${id}`:null,fetcher,{refreshInterval:visiblePoll(20000),revalidateOnFocus:true})
   const canReadMetrics=fullAccess||allowedSections.includes('overview')||allowedSections.includes('players')||allowedSections.includes('console')
   const {data:metricsData}=useSWR<MetricsData>(canReadMetrics?`/api/metrics?serverId=${id}&limit=240`:null,fetcher,{refreshInterval:15000})
+  const {data:playersOverview}=useSWR<PlayersOverviewData>(canReadMetrics?`/api/players?serverId=${id}`:null,fetcher,{refreshInterval:5000,revalidateOnFocus:true})
   const [section,setSection]=useState<ServerNavKey>('overview'); const [open,setOpen]=useState(false); const [busy,setBusy]=useState(false); const [notice,setNotice]=useState('')
   const actionConfirm=useActionConfirm()
   const [settingsTab,setSettingsTab]=useState<'general'|'security'|'performance'|'anticheat'|'backup'>('general'); const [selectedUserId,setSelectedUserId]=useState('')
@@ -315,7 +317,8 @@ export default function ServerPage(){
   const latestMetric=metricsData?.metrics?.[0]??null
   const metricAge=latestMetric?Math.max(0,Math.round((Date.now()-new Date(latestMetric.createdAt).getTime())/1000)):null
   const metricFresh=!!latestMetric&&metricAge!==null&&metricAge<60
-  const displayedPlayerCount=running?(metricFresh?latestMetric.players:server.playerCount):0
+  const livePlayerCount=playersOverview?.summary?.online
+  const displayedPlayerCount=running?(typeof livePlayerCount==='number'?livePlayerCount:(metricFresh?latestMetric.players:server.playerCount)):0
   const processCpu=running&&metricFresh?latestMetric.cpuPercent:null
   const processMemoryUsed=running&&metricFresh?latestMetric.memoryUsedMb:null
   const processMemoryLimit=running&&metricFresh&&latestMetric.memoryTotalMb>0?latestMetric.memoryTotalMb:server.memoryMb
