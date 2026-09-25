@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getPanelActor } from '@/lib/api-auth'
-import { and, eq } from 'drizzle-orm'
+import { and, desc, eq } from 'drizzle-orm'
 import { db, ensurePanelSchema } from '@/lib/db'
-import { agentCommands, auditLog, nodes, serverPermissions, servers, worlds } from '@/lib/db/schema'
+import { agentCommands, auditLog, backups, nodes, serverPermissions, servers, worlds } from '@/lib/db/schema'
 import { nodeDiagnosticMessage, nodeFetch } from '@/lib/node-bridge'
 import { WORLD_TEMPLATE_MAP, WORLD_TEMPLATES, WORLD_TEMPLATE_CATEGORIES } from '@/lib/world-templates'
 
@@ -26,8 +26,10 @@ export async function GET(request:NextRequest){
   const serverId=request.nextUrl.searchParams.get('serverId')??'';const x=await access(serverId,a);if(!x||!x.canView)return NextResponse.json({error:'Dünyalar bölümüne erişiminiz yok'},{status:403})
   const node=(await db.select({status:nodes.status,lastHeartbeat:nodes.lastHeartbeat}).from(nodes).where(eq(nodes.id,x.server.nodeId)).limit(1))[0]
   let packageIds:string[]=[];let runtimeWorlds:any[]|undefined;let runtimeSynced=false;let runtimeError:string|null=null
+  const backupRows=await db.select({worldName:worlds.name,createdAt:backups.createdAt}).from(backups).innerJoin(worlds,eq(backups.worldId,worlds.id)).where(and(eq(worlds.serverId,serverId),eq(backups.userId,x.server.userId))).orderBy(desc(backups.createdAt)).limit(100)
+  const latestBackupByWorld=new Map<string,Date>();for(const row of backupRows){if(!latestBackupByWorld.has(row.worldName))latestBackupByWorld.set(row.worldName,row.createdAt)}
   if(nodeFresh(node)){
-    try{const [packages,status]=await Promise.all([directJson(x.server.nodeId,`/internal/worlds/templates?serverId=${encodeURIComponent(serverId)}`),directJson(x.server.nodeId,`/internal/worlds/status?serverId=${encodeURIComponent(serverId)}`)]);packageIds=Array.isArray(packages.packages)?packages.packages.map(String):[];runtimeWorlds=Array.isArray(status.worlds)?status.worlds:[];runtimeSynced=true}catch(error){runtimeError=nodeDiagnosticMessage(error)}
+    try{const [packages,status]=await Promise.all([directJson(x.server.nodeId,`/internal/worlds/templates?serverId=${encodeURIComponent(serverId)}`),directJson(x.server.nodeId,`/internal/worlds/status?serverId=${encodeURIComponent(serverId)}`)]);packageIds=Array.isArray(packages.packages)?packages.packages.map(String):[];runtimeWorlds=Array.isArray(status.worlds)?status.worlds.map((world:any)=>({...world,lastBackupAt:latestBackupByWorld.get(String(world.name))?.toISOString()??null,isActive:String(world.name)===String(status.defaultWorld??x.server.worldName)})):[];runtimeSynced=true}catch(error){runtimeError=nodeDiagnosticMessage(error)}
   }else runtimeError='Node çevrimdışı veya heartbeat güncel değil.'
   const packageSet=new Set(packageIds)
   const templates=WORLD_TEMPLATES.map(template=>({
