@@ -62,10 +62,8 @@ export async function POST(request:NextRequest){
     ids.push(stop.id)
   }
   for(const item of prepared){
-    const backupTarget=item.target+'.bak-'+Date.now()
-    const [backup]=await db.insert(agentCommands).values({userId:x.server.userId,nodeId:x.server.nodeId,serverId,type:'move-file',payload:{from:item.target,to:backupTarget,optional:true,requestedBy:actor.id},status:'queued'}).returning({id:agentCommands.id})
     const [write]=await db.insert(agentCommands).values({userId:x.server.userId,nodeId:x.server.nodeId,serverId,type:'write-file',payload:{path:item.target,pathname:item.pathname,filename:item.file.fileName,source:item.file.source??null,projectId:item.file.projectId??null,versionId:item.file.versionId??null,requestedBy:actor.id},status:'queued'}).returning({id:agentCommands.id})
-    ids.push(backup.id,write.id)
+    ids.push(write.id)
   }
   if(x.server.status==='running'&&body.restartAfter!==false){
     const [start]=await db.insert(agentCommands).values({userId:x.server.userId,nodeId:x.server.nodeId,serverId,type:'start',payload:{reason:'marketplace-install',requestedBy:actor.id},status:'queued'}).returning({id:agentCommands.id})
