@@ -63,7 +63,7 @@
 
 
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import useSWR from 'swr'
 import { Archive, ChevronDown, ChevronRight, Copy, Download, FilePlus2, FileText, Folder, FolderPlus, Move, Pencil, RefreshCw, Save, ShieldCheck, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
