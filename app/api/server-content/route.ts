@@ -26,6 +26,23 @@ function safeRelativePath(value: unknown) {
   return path.split('/').filter(part => part && part !== '.').join('/')
 }
 
+function normalizeInventory(data: Record<string, unknown>, scopedWorld = '') {
+  const raw = Array.isArray(data.items) ? data.items : []
+  const rows = raw.map(item => item && typeof item === 'object' ? item as Record<string, unknown> : {}).filter(item => item.path)
+  const worldRoots = new Set<string>()
+  for (const item of rows) {
+    const path=String(item.path??'').replace(/\\/g,'/'); const parts=path.split('/').filter(Boolean); if(parts.length===2&&parts[1].toLowerCase()==='level.dat')worldRoots.add(parts[0])
+  }
+  if(scopedWorld)worldRoots.add(scopedWorld)
+  const items=[] as Array<Record<string,unknown>>
+  for(const item of rows){
+    const path=String(item.path??'').replace(/\\/g,'/');const parts=path.split('/').filter(Boolean);if(!parts.length)continue;const first=parts[0].toLowerCase();const directory=item.directory===true||String(item.type??'').toLowerCase()==='folder';let category=''
+    if(first==='mods')category='mods';else if(first==='plugins')category=!directory&&parts.length===2&&path.toLowerCase().endsWith('.jar')?'plugins':'plugin-config';else if(first==='config'||first==='configs')category='config';else if(first==='resourcepacks'||first==='resource-packs')category='resource-packs';else if(worldRoots.has(parts[0]))category=parts.length===1?'worlds':'world-file';else continue
+    if(scopedWorld&&category!=='mods'&&category!=='plugins'&&category!=='plugin-config'&&category!=='config'&&category!=='resource-packs'&&parts[0]!==scopedWorld)continue
+    items.push({name:String(item.name??parts.at(-1)??''),path,category,directory,size:Number(item.size??item.sizeBytes??0)||0,updatedAt:String(item.updatedAt??item.modifiedAt??new Date().toISOString()),editable:item.editable===true,source:'disk'})
+  }
+  return {...data,items}
+}
 async function nodeJson(nodeId: string, path: string, init: RequestInit = {}) {
   const response = await nodeFetch(nodeId, path, init)
   const text = await response.text()
@@ -51,8 +68,9 @@ export async function GET(request: NextRequest) {
       const data = await nodeJson(server.nodeId, `/internal/content/read?serverId=${encodeURIComponent(server.id)}&path=${encodeURIComponent(path)}`)
       return NextResponse.json(data)
     }
-    const data = await nodeJson(server.nodeId, `/internal/content/inventory?serverId=${encodeURIComponent(server.id)}`)
-    return NextResponse.json({ ...data, serverRunning: server.status === 'running' })
+    const world=request.nextUrl.searchParams.get('world')??''
+    const data = await nodeJson(server.nodeId, `/internal/content/inventory?serverId=${encodeURIComponent(server.id)}${world?`&world=${encodeURIComponent(world)}`:''}`)
+    return NextResponse.json({ ...normalizeInventory(data,world), serverRunning: server.status === 'running' })
   } catch (error) {
     return NextResponse.json({ error: nodeDiagnosticMessage(error), items: [] }, { status: 502 })
   }
