@@ -1,4 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getPanelActor } from '@/lib/api-auth'
+import { db } from '@/lib/db'
+import { servers } from '@/lib/db/schema'
+import { eq } from 'drizzle-orm'
+import { nodeFetch } from '@/lib/node-bridge'
 import { neoForgePrefix } from '@/lib/neoforge-version'
 
 export const revalidate = 0
@@ -134,6 +139,15 @@ async function curseforgePlan(projectId:string,kind:AddonKind,loader:string,mcVe
   }
   await walk(projectId,0)
   return plan
+}
+
+export async function POST(request: NextRequest) {
+  const actor=await getPanelActor();if(!actor?.approved)return NextResponse.json({error:'Yetkisiz veya onaysız kullanıcı'},{status:actor?403:401})
+  const body=await request.json().catch(()=>({})) as Record<string,unknown>;const serverId=String(body.serverId??'');const kind=addonKind(String(body.kind??'mods'));const loader=normalizeLoader(String(body.loader??'vanilla'));const files=Array.isArray(body.files)?body.files:[]
+  const server=(await db.select().from(servers).where(eq(servers.id,serverId)).limit(1))[0];if(!server||server.userId!==actor.id)return NextResponse.json({error:'Sunucu bulunamadı veya erişim yok'},{status:403})
+  if(loader==='vanilla'||!files.length||files.length>24)return NextResponse.json({error:'Geçersiz veya uyumsuz kurulum planı'},{status:400})
+  if(!['ready','stopped','failed','crashed'].includes(server.status))return NextResponse.json({error:'Kurulum için sunucuyu tamamen durdurun.'},{status:409})
+  try{const response=await nodeFetch(server.nodeId,'/internal/addons/install',{method:'POST',body:JSON.stringify({serverId,kind,files})});const data=await response.json().catch(()=>({}));return NextResponse.json(data,{status:response.status,headers:{'Cache-Control':'private, no-store'}})}catch(error){return NextResponse.json({error:error instanceof Error?error.message:'Kurulum başarısız'},{status:502})}
 }
 
 export async function GET(request: NextRequest) {
