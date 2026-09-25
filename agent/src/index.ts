@@ -2312,7 +2312,28 @@ async function consoleDiagnostics(serverId:string){
 
 
 function runProcess(program:string,args:string[],cwd:string){return new Promise<void>((resolveProcess,reject)=>{const child=spawn(program,args,{cwd,stdio:'pipe'});let output='';child.stdout?.on('data',chunk=>output+=String(chunk));child.stderr?.on('data',chunk=>output+=String(chunk));child.on('error',reject);child.on('exit',code=>code===0?resolveProcess():reject(new Error(`${program} exited ${code}: ${output.slice(-2000)}`)))})}
-async function listBackups(id:string){if(!validServerId(id))throw new Error('Geçersiz serverId');const root=resolve(DATA_DIR,'backups');const entries=await readdir(root,{withFileTypes:true,encoding:'utf8'}).catch(()=>[] as any[]);const rows=[];for(const entry of entries){if(!entry.isFile()||!/^([0-9a-f-]{36})-.*\.tar\.gz$/i.test(entry.name))continue;const info=await stat(join(root,entry.name)).catch(()=>null);if(info)rows.push({path:entry.name,name:entry.name,sizeBytes:info.size,createdAt:info.birthtime.toISOString(),modifiedAt:info.mtime.toISOString(),source:'node-disk',status:'completed',type:entry.name.includes('-scheduled-')?'scheduled':'manual'})}rows.sort((a,b)=>Date.parse(b.modifiedAt)-Date.parse(a.modifiedAt));return{backups:rows,source:'agent-backup-disk-scan',scannedAt:new Date().toISOString()}}
+async function listBackups(id:string){
+  if(!validServerId(id))throw new Error('Geçersiz serverId')
+  const rows:Array<Record<string,unknown>>=[]
+  const globalRoot=resolve(DATA_DIR,'backups')
+  for(const entry of await readdir(globalRoot,{withFileTypes:true,encoding:'utf8'}).catch(()=>[] as any[])){
+    if(!entry.isFile()||!entry.name.startsWith(`${id}-`)||!(/\.(tar\.gz|tgz|zip|gz)$/i.test(entry.name)))continue
+    const full=join(globalRoot,entry.name);const info=await stat(full).catch(()=>null)
+    if(info)rows.push({path:entry.name,name:entry.name,sizeBytes:info.size,createdAt:info.birthtime.toISOString(),modifiedAt:info.mtime.toISOString(),source:'node-backup-root',status:'completed',type:entry.name.includes('-scheduled-')?'scheduled':'manual',restorable:true})
+  }
+  const serverRoot=serverDir(id)
+  for(const folder of ['backups','backup']){
+    const dir=join(serverRoot,folder)
+    for(const entry of await readdir(dir,{withFileTypes:true,encoding:'utf8'}).catch(()=>[] as any[])){
+      if(!entry.isFile()||!(/\.(tar\.gz|tgz|zip|gz)$/i.test(entry.name)))continue
+      const full=join(dir,entry.name);const info=await stat(full).catch(()=>null)
+      if(info)rows.push({path:`${folder}/${entry.name}`,name:entry.name,sizeBytes:info.size,createdAt:info.birthtime.toISOString(),modifiedAt:info.mtime.toISOString(),source:'server-backup-folder',status:'completed',type:'external',restorable:false})
+    }
+  }
+  const seen=new Set<string>()
+  const backups=rows.filter(row=>{const key=String(row.path??row.name??'');if(!key||seen.has(key))return false;seen.add(key);return true}).sort((a,b)=>Date.parse(String(b.modifiedAt??b.createdAt??''))-Date.parse(String(a.modifiedAt??a.createdAt??'')))
+  return{backups,source:'agent-backup-disk-scan',scannedAt:new Date().toISOString()}
+}
 async function createBackup(id:string,label='manual',kind='full'){if(!validServerId(id))throw new Error('Geçersiz serverId');if(isServerRunningKnown(id))throw new Error('Yedek için sunucuyu tamamen durdurun');const source=serverDir(id);const root=resolve(DATA_DIR,'backups');await mkdir(root,{recursive:true});const safeLabel=label.replace(/[^A-Za-z0-9_-]/g,'_').slice(0,40)||'manual';const target=join(root,`${id}-${Date.now()}-${safeLabel}.tar.gz`);const entries=kind==='world'?['world','world_nether','world_the_end']:kind==='config'?['server.properties','whitelist.json','ops.json','banned-players.json','banned-ips.json']:kind==='addons'?['mods','plugins']:['.'];await runProcess('tar',['-czf',target,'--exclude=.blockctrl-pid','-C',source,...entries],DATA_DIR);const info=await stat(target);return{path:basename(target),name:basename(target),sizeBytes:info.size,createdAt:info.birthtime.toISOString(),modifiedAt:info.mtime.toISOString(),source:'node-agent',status:'completed',type:safeLabel==='scheduled'?'scheduled':'manual'}}
 async function fullDiskInventory(id:string){
   if(!validServerId(id))throw new Error('Geçersiz serverId')
