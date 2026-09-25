@@ -3,7 +3,7 @@ import { getPanelActor } from '@/lib/api-auth'
 import { and, desc, eq } from 'drizzle-orm'
 import { db, ensurePanelSchema } from '@/lib/db'
 import { agentCommands, auditLog, serverPermissions, serverSettings, servers } from '@/lib/db/schema'
-import { getNodeConfig } from '@/lib/node-bridge'
+import { getNodeConfig, nodeFetch, nodeDiagnosticMessage } from '@/lib/node-bridge'
 
 
 
@@ -89,7 +89,19 @@ function allowed(x:NonNullable<Awaited<ReturnType<typeof access>>>,action:string
 
 
 
-export async function GET(request:NextRequest){await ensurePanelSchema();const a=await actor();if(!a)return NextResponse.json({error:'Unauthorized'},{status:401});if(!a.approved)return NextResponse.json({error:'Approval required'},{status:403});const serverId=request.nextUrl.searchParams.get('serverId')||'';const x=await access(serverId,a);if(!x)return NextResponse.json({error:'Forbidden'},{status:403});const [rows,settingsRow]=await Promise.all([db.select().from(agentCommands).where(eq(agentCommands.serverId,serverId)).orderBy(desc(agentCommands.createdAt)).limit(100),db.select().from(serverSettings).where(eq(serverSettings.serverId,serverId)).limit(1).then(rows=>rows[0])]);const caps=new Set([...(settingsRow?.capabilities??[]),...BASE_CAPS]);const supportedActions=[...SAFE_ACTIONS].filter(action=>{const agentType=ACTION_AGENT_TYPE[action]??action;const required=ACTION_CAP[action];return IMPLEMENTED_AGENT_ACTIONS.has(agentType)&&(!required||caps.has(required))&&allowed(x,action)});const visibleRows=rows.filter(r=>canReadAction(x,r.type));const canFiles=x.manager||permissionSections(x).includes('files')||!!x.permission?.canFiles;const fileIndex=canFiles?visibleRows.find(r=>r.type==='file-inventory'&&r.status==='completed')?.result??null:null;const withDownload=(row:typeof visibleRows[number])=>{const raw=(row.result&&typeof row.result==='object'?row.result:{}) as Record<string,unknown>;let base='';try{base=getNodeConfig(row.nodeId).baseUrl}catch{}const token=String(raw.downloadToken??'');const files=Array.isArray(raw.files)?raw.files.map(item=>{const data=(item&&typeof item==='object'?item:{}) as Record<string,unknown>;const childToken=String(data.downloadToken??'');return{...data,downloadUrl:base&&childToken?`${base}/public/download/${encodeURIComponent(childToken)}`:undefined}}):undefined;return{...row,result:{...raw,downloadUrl:base&&token?`${base}/public/download/${encodeURIComponent(token)}`:undefined,files}}};const bundles=canFiles?visibleRows.filter(r=>['bulk-download','folder-download','file-download'].includes(r.type)).slice(0,20).map(withDownload):[];const actions=visibleRows.map(row=>['logs-export','folder-download','file-download'].includes(row.type)?withDownload(row):row);return NextResponse.json({actions,fileIndex,bundles,supportedActions},{headers:{'Cache-Control':'private, no-store'}})}
+export async function GET(request:NextRequest){await ensurePanelSchema();const a=await actor();if(!a)return NextResponse.json({error:'Unauthorized'},{status:401});if(!a.approved)return NextResponse.json({error:'Approval required'},{status:403});const serverId=request.nextUrl.searchParams.get('serverId')||'';const x=await access(serverId,a);if(!x)return NextResponse.json({error:'Forbidden'},{status:403});const [rows,settingsRow]=await Promise.all([db.select().from(agentCommands).where(eq(agentCommands.serverId,serverId)).orderBy(desc(agentCommands.createdAt)).limit(100),db.select().from(serverSettings).where(eq(serverSettings.serverId,serverId)).limit(1).then(rows=>rows[0])]);const caps=new Set([...(settingsRow?.capabilities??[]),...BASE_CAPS]);const supportedActions=[...SAFE_ACTIONS].filter(action=>{const agentType=ACTION_AGENT_TYPE[action]??action;const required=ACTION_CAP[action];return IMPLEMENTED_AGENT_ACTIONS.has(agentType)&&(!required||caps.has(required))&&allowed(x,action)});const visibleRows=rows.filter(r=>canReadAction(x,r.type));const canFiles=x.manager||permissionSections(x).includes('files')||!!x.permission?.canFiles;let fileIndex=canFiles?visibleRows.find(r=>r.type==='file-inventory'&&r.status==='completed')?.result??null:null
+  let inventoryError: string | null = null
+  if (canFiles && !fileIndex) {
+    try {
+      const response = await nodeFetch(x.server.nodeId, `/internal/content/inventory?serverId=${encodeURIComponent(serverId)}`)
+      const body = await response.json().catch(() => ({})) as Record<string, unknown>
+      if (!response.ok) throw new Error(String(body.error ?? `Inventory alınamadı (${response.status})`))
+      fileIndex = body
+    } catch (error) {
+      inventoryError = nodeDiagnosticMessage(error)
+    }
+  }
+  const withDownload=(row:typeof visibleRows[number])=>{const raw=(row.result&&typeof row.result==='object'?row.result:{}) as Record<string,unknown>;let base='';try{base=getNodeConfig(row.nodeId).baseUrl}catch{}const token=String(raw.downloadToken??'');const files=Array.isArray(raw.files)?raw.files.map(item=>{const data=(item&&typeof item==='object'?item:{}) as Record<string,unknown>;const childToken=String(data.downloadToken??'');return{...data,downloadUrl:base&&childToken?`${base}/public/download/${encodeURIComponent(childToken)}`:undefined}}):undefined;return{...row,result:{...raw,downloadUrl:base&&token?`${base}/public/download/${encodeURIComponent(token)}`:undefined,files}}};const bundles=canFiles?visibleRows.filter(r=>['bulk-download','folder-download','file-download'].includes(r.type)).slice(0,20).map(withDownload):[];const actions=visibleRows.map(row=>['logs-export','folder-download','file-download'].includes(row.type)?withDownload(row):row);return NextResponse.json({actions,fileIndex,inventoryError,bundles,supportedActions},{headers:{'Cache-Control':'private, no-store'}})}
 
 
 
