@@ -155,7 +155,7 @@ export async function GET(request:NextRequest){
     const migrationMessage='Kalıcı oyuncu geçmişi için 0015_server_players migrationı henüz uygulanmamış.'
     return noStore({
       players,
-      summary:{total:players.length,online:players.filter(row=>row.isOnline).length,banned:players.filter(row=>row.banned).length,ops:players.filter(row=>row.isOp).length,whitelisted:players.filter(row=>row.whitelisted).length,lastSyncAt:runtime?.syncedAt??null,maxPlayers:runtime?.maxPlayers??null,whitelistEnabled:runtime?.whitelistEnabled??null},
+      summary:{total:players.length,online:runtime?.onlineVerified===false&&runtime.playerCount!=null?Math.max(0,Number(runtime.playerCount)||0):players.filter(row=>row.isOnline).length,banned:players.filter(row=>row.banned).length,ops:players.filter(row=>row.isOp).length,whitelisted:players.filter(row=>row.whitelisted).length,lastSyncAt:runtime?.syncedAt??null,maxPlayers:runtime?.maxPlayers??null,whitelistEnabled:runtime?.whitelistEnabled??null},
       nodeOnline:nodeFresh(node),runtimeSynced:!!runtime,runtimeError:[migrationMessage,runtimeError].filter(Boolean).join(' '),canManage:x.canManage,storageReady:false,expectedMigration:'0015_server_players',
     })
   }
@@ -167,7 +167,7 @@ export async function GET(request:NextRequest){
   const players=rows.map(presentRow);const latestSync=rows.reduce<Date|null>((latest,row)=>!row.lastSyncAt?latest:!latest||row.lastSyncAt>latest?row.lastSyncAt:latest,null)
   return noStore({
     players,
-    summary:{total:players.length,online:players.filter(row=>row.isOnline).length,banned:players.filter(row=>row.banned).length,ops:players.filter(row=>row.isOp).length,whitelisted:players.filter(row=>row.whitelisted).length,lastSyncAt:latestSync?.toISOString()??runtime?.syncedAt??null,maxPlayers:runtime?.maxPlayers??null,whitelistEnabled:runtime?.whitelistEnabled??null},
+    summary:{total:players.length,online:runtime?.onlineVerified===false&&runtime.playerCount!=null?Math.max(0,Number(runtime.playerCount)||0):players.filter(row=>row.isOnline).length,banned:players.filter(row=>row.banned).length,ops:players.filter(row=>row.isOp).length,whitelisted:players.filter(row=>row.whitelisted).length,lastSyncAt:latestSync?.toISOString()??runtime?.syncedAt??null,maxPlayers:runtime?.maxPlayers??null,whitelistEnabled:runtime?.whitelistEnabled??null},
     nodeOnline:nodeFresh(node),runtimeSynced:!!runtime,runtimeError,canManage:x.canManage,storageReady:true,expectedMigration:'0015_server_players',
   })
 }
