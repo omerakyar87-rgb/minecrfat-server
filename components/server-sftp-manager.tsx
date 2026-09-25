@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { AlertTriangle, CheckCircle2, Clipboard, Eye, EyeOff, KeyRound, Laptop, Network, Power, RefreshCw, ShieldCheck, Users, XCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
@@ -34,6 +34,7 @@ export function ServerSftpManager({serverId,host,nodeOnline,sftp,onRefresh}:Prop
   const [showPassword,setShowPassword]=useState(true)
   const [sessions,setSessions]=useState<Session[]>([])
   const [checks,setChecks]=useState<Checks|null>(null)
+  const discoveredOnce=useRef(false)
 
   async function post(action:string,extra:Record<string,unknown>={}){
     setBusy(action);setNotice('')
@@ -55,6 +56,19 @@ export function ServerSftpManager({serverId,host,nodeOnline,sftp,onRefresh}:Prop
       return data
     }catch(error){setNotice(error instanceof Error?error.message:'SFTP işlemi başarısız');return null}finally{setBusy('')}
   }
+
+  useEffect(()=>{
+    if(!nodeOnline||sftp||discoveredOnce.current)return
+    discoveredOnce.current=true
+    void (async()=>{
+      try{
+        const response=await fetch('/api/panel',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'test-sftp',serverId}),cache:'no-store'})
+        const data=await readJson(response)
+        if(data.status)setChecks(data.status)
+        if(data.discovered||response.ok)await onRefresh?.()
+      }catch{}
+    })()
+  },[nodeOnline,sftp,serverId,onRefresh])
 
   async function loadSessions(setBusyState=true){
     if(setBusyState)setBusy('list-sftp-sessions')
