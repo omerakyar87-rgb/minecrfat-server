@@ -295,9 +295,13 @@ async function commandBridgeFetch(nodeId: string, path: string, init: RequestIni
   const pathname = url.pathname
 
   if (pathname === '/internal/settings/status' && method === 'GET') {
-    const result = await runPolledCommand(server, 'read-file', { path: 'server.properties' })
+    const [result,metaRaw] = await Promise.all([
+      runPolledCommand(server, 'read-file', { path: 'server.properties' }),
+      legacyReadFile(server, 'blockctrl.json'),
+    ])
     const content = String(result.content ?? '')
-    return jsonResponse({ ready: true, properties: safeProperties(content), meta: {}, running: null, readAt: new Date().toISOString(), source: 'polling-bridge' })
+    let meta:Record<string,unknown>={};try{meta=metaRaw?JSON.parse(metaRaw) as Record<string,unknown>:{} }catch{meta={}}
+    return jsonResponse({ ready: true, properties: safeProperties(content), meta, runtime:{itemTrackingEnabled:meta.itemTrackingEnabled===true,itemTrackingMode:String(meta.itemTrackingMode??'disabled'),trackerAdapter:String(meta.trackerAdapter??'legacy-agent')}, running: server.status==='running', readAt: new Date().toISOString(), source: 'polling-bridge' })
   }
 
   if (pathname === '/internal/worlds/templates' && method === 'GET') {
