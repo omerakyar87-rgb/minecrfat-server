@@ -63,7 +63,7 @@
 
 
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 import useSWR from 'swr'
 import { Archive, ChevronDown, ChevronRight, Copy, Download, FilePlus2, FileText, Folder, FolderPlus, Move, Pencil, RefreshCw, Save, ShieldCheck, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -152,6 +152,7 @@ export function ServerBulkDownload({serverId,running=false,canEdit=true}:{server
  const visible=useMemo(()=>items.filter(item=>categoryMatches(item,cat)).filter(item=>{const parts=item.path.split('/');for(let i=1;i<parts.length;i++)if(collapsed.includes(parts.slice(0,i).join('/')))return false;return true}),[items,cat,collapsed])
  const chosen=items.filter(x=>selected.includes(x.path));const total=chosen.reduce((a,x)=>a+(x.sizeBytes||0),0)
  const editable=canEdit&&!running
+ const createAllowed=canEdit
  async function queue(action:string,payload:Record<string,unknown>={},confirm=false,refresh=false){
    setBusy(action);setNotice('')
    try{
@@ -197,15 +198,15 @@ export function ServerBulkDownload({serverId,running=false,canEdit=true}:{server
      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-[#203a55] bg-[#0b191f] p-3">
        <div className="flex flex-wrap gap-1">{cats.map(x=><button key={x} onClick={()=>setCat(x)} className={`rounded-md border px-3 py-2 text-xs ${cat===x?'border-sky-500/50 bg-sky-500/10 text-sky-300':'border-[#28445f] text-slate-400 hover:text-white'}`}>{x}</button>)}</div>
        <div className="ml-auto flex flex-wrap gap-2">
-         <Button size="sm" variant="outline" disabled={!!busy||!supported.has('file-inventory')} onClick={()=>queue('file-inventory')}><RefreshCw className={`mr-2 size-4 ${busy==='file-inventory'?'animate-spin':''}`}/>Diski yenile</Button>
-         {supported.has('folder-create')&&<Button size="sm" variant="outline" disabled={!editable||!!busy} onClick={()=>void createFolder()}><FolderPlus className="mr-2 size-4"/>Klasör</Button>}
-         {supported.has('file-create')&&<Button size="sm" variant="outline" disabled={!editable||!!busy} onClick={()=>void createFile()}><FilePlus2 className="mr-2 size-4"/>Dosya</Button>}
+         <Button size="sm" variant="outline" disabled={!!busy} onClick={()=>void mutate()}><RefreshCw className={`mr-2 size-4 ${busy==='file-inventory'?'animate-spin':''}`}/>Diski yenile</Button>
+         {supported.has('folder-create')&&<Button size="sm" variant="outline" disabled={!createAllowed||!!busy} onClick={()=>void createFolder()}><FolderPlus className="mr-2 size-4"/>Klasör</Button>}
+         {supported.has('file-create')&&<Button size="sm" variant="outline" disabled={!createAllowed||!!busy} onClick={()=>void createFile()}><FilePlus2 className="mr-2 size-4"/>Dosya</Button>}
        </div>
      </div>
-     {running&&<div className="rounded-lg border border-amber-400/20 bg-amber-400/[.06] px-4 py-3 text-xs text-amber-200">Dosya sistemi değişiklikleri güvenlik için sunucu durdurulduğunda açılır. Listeleme ve indirme çalışmaya devam eder.</div>}
+     {running&&<div className="rounded-lg border border-amber-400/20 bg-amber-400/[.06] px-4 py-3 text-xs text-amber-200">Listeleme, indirme ve yeni dosya/klasör oluşturma sunucu çalışırken kullanılabilir. Mevcut dosyayı değiştirme, taşıma ve silme işlemleri güvenlik için sunucu durdurulduğunda açılır.</div>}
      {error&&<div className="rounded-lg border border-red-400/20 bg-red-400/[.06] px-4 py-3 text-xs text-red-200">{error.message}</div>}
      {!error&&!data?.fileIndex&&data?.inventoryError&&<div className="rounded-lg border border-amber-400/20 bg-amber-400/[.06] px-4 py-3 text-xs text-amber-200">Disk envanteri henüz alınamadı: {data.inventoryError}. Agent bağlantısını ve sunucu klasörünü kontrol edin; sahte dosya gösterilmiyor.</div>}
-     {!error&&!data?.fileIndex&&!data?.inventoryError&&<div className="rounded-lg border border-sky-400/20 bg-sky-400/[.06] px-4 py-3 text-xs text-sky-200">Disk envanteri agent kuyruğundan bekleniyor. “Diski yenile” ile gerçek taramayı başlatın.</div>}
+     {!error&&!data?.fileIndex&&!data?.inventoryError&&<div className="rounded-lg border border-sky-400/20 bg-sky-400/[.06] px-4 py-3 text-xs text-sky-200">Gerçek disk envanteri Oracle agent üzerinden okunuyor. “Diski yenile” ile canlı taramayı tekrar başlatabilirsiniz.</div>}
      {notice&&<div role="status" className="rounded-lg border border-sky-500/25 bg-sky-500/[.06] px-4 py-3 text-xs text-sky-200">{notice}</div>}
      <div className="overflow-x-auto rounded-xl border border-[#203a55] bg-[#0b191f]">
        <table className="w-full min-w-[980px] text-left text-xs">
@@ -224,7 +225,7 @@ export function ServerBulkDownload({serverId,running=false,canEdit=true}:{server
              {supported.has('file-permissions')&&<Button size="sm" variant="outline" className="h-7 px-2 text-[10px]" disabled={!editable||!!busy} onClick={()=>void chmodItem(item)}><ShieldCheck className="mr-1 size-3"/>İzin</Button>}
              {supported.has('file-delete')&&<Button size="sm" variant="outline" className="h-7 px-2 text-[10px] text-red-300" disabled={!editable||!!busy} onClick={()=>void deleteItem(item)}><Trash2 className="mr-1 size-3"/>Sil</Button>}
            </div></td>
-         </tr>})}{!visible.length&&<tr><td colSpan={7} className="p-10 text-center text-slate-500">Dosya envanteri henüz hazır değil. “Diski yenile” ile Agent taramasını başlatın.</td></tr>}</tbody>
+         </tr>})}{!visible.length&&<tr><td colSpan={7} className="p-10 text-center text-slate-500">Dosya envanteri henüz hazır değil. “Diski yenile” ile Oracle sunucu diskini tekrar tarayın.</td></tr>}</tbody>
        </table>
        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[#203a55] px-4 py-3 text-[10px] text-slate-500"><span>{visible.length} öğe · {selected.length} seçili {data?.fileIndex?.truncated?'· liste sınırlandı':''}</span><span>{data?.fileIndex?.scannedAt?`Son tarama: ${new Date(data.fileIndex.scannedAt).toLocaleString('tr-TR')}`:'Henüz taranmadı'}</span></div>
      </div>
