@@ -134,7 +134,7 @@ import { Button } from '@/components/ui/button'
 type Item={path:string;name:string;type?:string;sizeBytes?:number;modifiedAt?:string;permissions?:string}
 type Bundle={id:string;status:string;createdAt:string;result?:{filename?:string;sizeBytes?:number;downloadUrl?:string;downloadToken?:string;progress?:number;expiresAt?:string;files?:Array<{filename?:string;sizeBytes?:number;downloadUrl?:string;downloadToken?:string;expiresAt?:string}>}}
 type ActionRow={id:string|number;type:string;status:string;result?:Record<string,unknown>|null}
-type ActionData={fileIndex?:{items?:Item[];scannedAt?:string;truncated?:boolean};bundles?:Bundle[];supportedActions?:string[];actions?:ActionRow[]}
+type ActionData={fileIndex?:{items?:Item[];scannedAt?:string;truncated?:boolean;source?:string};inventoryError?:string|null;bundles?:Bundle[];supportedActions?:string[];actions?:ActionRow[]}
 const fetcher=async(u:string)=>{const r=await fetch(u,{cache:'no-store'});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||'Dosya işlemleri alınamadı');return d}
 const cats=['Tümü','Mods','Config','Worlds','Plugins','Backups','Logs','Server files']
 function size(bytes=0){if(!bytes)return'—';if(bytes<1024)return `${bytes} B`;if(bytes<1048576)return `${(bytes/1024).toFixed(1)} KB`;if(bytes<1073741824)return `${(bytes/1048576).toFixed(1)} MB`;return `${(bytes/1073741824).toFixed(2)} GB`}
@@ -204,6 +204,8 @@ export function ServerBulkDownload({serverId,running=false,canEdit=true}:{server
      </div>
      {running&&<div className="rounded-lg border border-amber-400/20 bg-amber-400/[.06] px-4 py-3 text-xs text-amber-200">Dosya sistemi değişiklikleri güvenlik için sunucu durdurulduğunda açılır. Listeleme ve indirme çalışmaya devam eder.</div>}
      {error&&<div className="rounded-lg border border-red-400/20 bg-red-400/[.06] px-4 py-3 text-xs text-red-200">{error.message}</div>}
+     {!error&&!data?.fileIndex&&data?.inventoryError&&<div className="rounded-lg border border-amber-400/20 bg-amber-400/[.06] px-4 py-3 text-xs text-amber-200">Disk envanteri henüz alınamadı: {data.inventoryError}. Agent bağlantısını ve sunucu klasörünü kontrol edin; sahte dosya gösterilmiyor.</div>}
+     {!error&&!data?.fileIndex&&!data?.inventoryError&&<div className="rounded-lg border border-sky-400/20 bg-sky-400/[.06] px-4 py-3 text-xs text-sky-200">Disk envanteri agent kuyruğundan bekleniyor. “Diski yenile” ile gerçek taramayı başlatın.</div>}
      {notice&&<div role="status" className="rounded-lg border border-sky-500/25 bg-sky-500/[.06] px-4 py-3 text-xs text-sky-200">{notice}</div>}
      <div className="overflow-x-auto rounded-xl border border-[#203a55] bg-[#0b191f]">
        <table className="w-full min-w-[980px] text-left text-xs">
