@@ -307,6 +307,26 @@ async function legacyBackupRows(server: PollServer) {
     legacyListFiles(server,'backup'),
   ])
   const rows:Array<Record<string,unknown>>=[]
+  try{
+    const legacyList=await runPolledCommand(server,'LIST_BACKUPS',{},15_000)
+    const discovered=Array.isArray(legacyList.backups)?legacyList.backups:Array.isArray(legacyList.items)?legacyList.items:[]
+    for(const raw of discovered){
+      if(!raw||typeof raw!=='object')continue
+      const item=raw as Record<string,unknown>
+      const path=String(item.path??item.filename??item.name??'').trim()
+      if(!path)continue
+      const name=String(item.name??item.filename??path.split(/[\\/]/).pop()??path)
+      rows.push({
+        name,path,
+        sizeBytes:Math.max(0,Number(item.sizeBytes??item.size??0)||0),
+        createdAt:String(item.createdAt??item.modifiedAt??new Date().toISOString()),
+        source:String(item.source??'legacy-node-backups'),
+        type:String(item.type??(name.toLowerCase().includes('scheduled')?'scheduled':'external')),
+        status:String(item.status??'completed'),
+        restorable:item.restorable!==false,
+      })
+    }
+  }catch{}
   for(const command of commands){
     if(!['backup','CREATE_BACKUP','CREATE_WORLD_BACKUP','backup-copy'].includes(command.type))continue
     const result=command.result&&typeof command.result==='object'?command.result as Record<string,unknown>:{}
@@ -333,7 +353,7 @@ async function legacyBackupRows(server: PollServer) {
         sizeBytes:Math.max(0,Number(latest.sizeBytes??0)||0),
         createdAt:String(latest.modifiedAt??new Date().toISOString()),
         source:'node-backup-root',
-        type:'external',
+        type:filename.toLowerCase().includes('scheduled')?'scheduled':'external',
         status:'completed',
         restorable:true,
         verified:true,

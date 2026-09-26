@@ -119,8 +119,18 @@ async function dispatchDueSchedules(nodeId:string,nodeUserId:string){
     let previousHashes:Record<string,string>={}
     if(securityTask&&type!=='port-scan'){try{const q=await pool.query(`SELECT "lastSnapshot" FROM server_security WHERE "serverId"=$1 LIMIT 1`,[server.id]);const hashes=q.rows[0]?.lastSnapshot?.hashes;if(hashes&&typeof hashes==='object')previousHashes=hashes}catch{}}
     const payload=securityTask?{serverPort:server.port,previousHashes,scheduleId:schedule.id}:{memoryMb:server.memoryMb,loader:server.loader,mcVersion:server.mcVersion,loaderVersion:server.loaderVersion,port:server.port,worldName:server.worldName,label:'scheduled',kind:'full',scheduleId:schedule.id}
-    await db.insert(agentCommands).values({userId:nodeUserId,nodeId,serverId:server.id,type,payload})
-    await db.insert(operationLogs).values({userId:nodeUserId,serverId:server.id,operation:`scheduled-${type}`,status:'queued'})
+    if(type==='backup'&&server.status==='running'){
+      const base=Date.now()
+      await db.insert(agentCommands).values([
+        {userId:nodeUserId,nodeId,serverId:server.id,type:'stop',payload:{reason:'scheduled-backup-auto-stop',scheduleId:schedule.id},createdAt:new Date(base)},
+        {userId:nodeUserId,nodeId,serverId:server.id,type:'backup',payload:{...payload,autoRestart:true},createdAt:new Date(base+50)},
+        {userId:nodeUserId,nodeId,serverId:server.id,type:'start',payload:{...payload,reason:'scheduled-backup-auto-restart'},createdAt:new Date(base+100)},
+      ])
+      await db.insert(operationLogs).values({userId:nodeUserId,serverId:server.id,operation:'scheduled-backup',status:'queued',message:'Sunucu güvenli biçimde durdurulacak, otomatik yedek alınacak ve yeniden başlatılacak.'})
+    }else{
+      await db.insert(agentCommands).values({userId:nodeUserId,nodeId,serverId:server.id,type,payload})
+      await db.insert(operationLogs).values({userId:nodeUserId,serverId:server.id,operation:`scheduled-${type}`,status:'queued'})
+    }
   }
 }
 
