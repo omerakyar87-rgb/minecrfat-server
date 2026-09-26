@@ -1,6 +1,6 @@
 import 'server-only'
 
-import { and, eq } from 'drizzle-orm'
+import { and, desc, eq } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { agentCommands, servers, worlds as worldsTable } from '@/lib/db/schema'
 
@@ -152,6 +152,134 @@ async function runPolledCommand(
   throw new Error(`Agent polling komutu zaman aşımına uğradı: ${type}`)
 }
 
+type PollServer = { id: string; userId: string; nodeId: string; worldName: string; playerCount: number; status: string }
+
+function unsupportedCommand(error: unknown) {
+  return /unsupported command|desteklenmeyen.*(komut|işlem)|henüz.*desteklenmiyor/i.test(error instanceof Error ? error.message : String(error ?? ''))
+}
+
+async function legacyReadFile(server: PollServer, path: string) {
+  try {
+    const result = await runPolledCommand(server, 'read-file', { path }, 12_000)
+    return typeof result.content === 'string' ? result.content : ''
+  } catch { return '' }
+}
+
+async function legacyJsonList(server: PollServer, path: string) {
+  const raw = await legacyReadFile(server, path)
+  if (!raw) return [] as Array<Record<string, unknown>>
+  try {
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed.filter(item => item && typeof item === 'object') as Array<Record<string, unknown>> : []
+  } catch { return [] as Array<Record<string, unknown>> }
+}
+
+type LegacyFile = { name: string; path: string; directory: boolean; size: number; updatedAt?: string | null }
+
+async function legacyListFiles(server: PollServer, path = '.') {
+  try {
+    const result = await runPolledCommand(server, 'list-files', { path }, 12_000)
+    return (Array.isArray(result.files) ? result.files : []).map(raw => {
+      const item = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {}
+      return { name: String(item.name ?? ''), path: String(item.path ?? ''), directory: item.directory === true, size: Math.max(0, Number(item.size ?? 0) || 0), updatedAt: item.updatedAt ? String(item.updatedAt) : null }
+    }).filter(item => item.name && item.path) as LegacyFile[]
+  } catch { return [] as LegacyFile[] }
+}
+
+function legacyFileType(path: string, directory: boolean) {
+  if (directory) return 'Folder'
+  const dot = path.lastIndexOf('.')
+  const ext = dot >= 0 ? path.slice(dot + 1).toUpperCase() : ''
+  return ext && ext.length <= 8 ? ext : 'File'
+}
+
+function legacyCategory(path: string, directory: boolean) {
+  const normalized = path.replaceAll('\\\\', '/').replace(/^\.?\//, '')
+  const parts = normalized.toLowerCase().split('/').filter(Boolean)
+  const first = parts[0] ?? ''
+  if (first === 'mods') return 'mods'
+  if (first === 'plugins') return !directory && parts.length === 2 && normalized.toLowerCase().endsWith('.jar') ? 'plugins' : 'plugin-config'
+  if (first === 'config' || first === 'configs') return 'config'
+  if (first === 'resourcepacks' || first === 'resource-packs') return 'resource-packs'
+  if (first === 'backups' || first === 'backup') return 'backups'
+  if (first === 'logs') return 'logs'
+  if (first === 'world' || first.endsWith('_nether') || first.endsWith('_the_end')) return 'worlds'
+  return 'server-files'
+}
+
+function legacyEditable(path: string, directory: boolean, size: number) {
+  return !directory && size <= 512 * 1024 && /\.(yml|yaml|json|properties|toml|ini|cfg|conf|txt|md|log|xml|mcmeta|mcfunction)$/i.test(path)
+}
+
+async function legacyInventory(server: PollServer) {
+  const found = new Map<string, LegacyFile>()
+  const add = (items: LegacyFile[]) => { for (const item of items) if (item.path && !item.path.startsWith('.blockctrl-')) found.set(item.path.replaceAll('\\\\', '/'), item) }
+  const root = await legacyListFiles(server, '.')
+  add(root)
+  const skipped = new Set(['libraries','versions','.cache','.downloads','.direct-uploads','.blockctrl-quarantine'])
+  const firstDirs = root.filter(item => item.directory && !skipped.has(item.name.toLowerCase())).slice(0, 40)
+  const firstRows = await Promise.all(firstDirs.map(dir => legacyListFiles(server, dir.path)))
+  firstRows.forEach(add)
+  const worldRoots = new Set<string>()
+  firstDirs.forEach((dir, index) => {
+    const children = firstRows[index] ?? []
+    const lower = dir.name.toLowerCase()
+    if (children.some(child => child.name.toLowerCase() === 'level.dat') || lower === server.worldName.toLowerCase() || lower.endsWith('_nether') || lower.endsWith('_the_end')) worldRoots.add(dir.path)
+  })
+  const deepTargets: string[] = []
+  for (const rows of firstRows) for (const child of rows) {
+    if (!child.directory) continue
+    const first = child.path.split('/')[0]?.toLowerCase()
+    if (worldRoots.has(child.path.split('/')[0]) || first === 'plugins' || first === 'config' || first === 'configs') deepTargets.push(child.path)
+  }
+  const uniqueDeep = [...new Set(deepTargets)].slice(0, 80)
+  const deepRows = await Promise.all(uniqueDeep.map(target => legacyListFiles(server, target)))
+  deepRows.forEach(add)
+  const items = [...found.values()].map(item => ({
+    path: item.path.replaceAll('\\\\', '/'), name: item.name, type: legacyFileType(item.path, item.directory), category: legacyCategory(item.path, item.directory), directory: item.directory,
+    sizeBytes: item.directory ? 0 : item.size, modifiedAt: item.updatedAt ?? null, permissions: null, editable: legacyEditable(item.path, item.directory, item.size), source: 'legacy-agent-disk',
+  })).sort((a,b) => a.path.localeCompare(b.path, 'tr'))
+  return { items, scannedAt: new Date().toISOString(), truncated: uniqueDeep.length >= 80, source: 'legacy-polling-disk' }
+}
+
+function safePlayerNameFallback(value: unknown) {
+  const name = String(value ?? '').trim()
+  return /^[A-Za-z0-9_]{1,16}$/.test(name) ? name : null
+}
+
+async function legacyPlayers(server: PollServer) {
+  const [cache, ops, whitelist, bans, properties] = await Promise.all([legacyJsonList(server, 'usercache.json'), legacyJsonList(server, 'ops.json'), legacyJsonList(server, 'whitelist.json'), legacyJsonList(server, 'banned-players.json'), legacyReadFile(server, 'server.properties')])
+  const props: Record<string,string> = {}
+  for (const line of properties.split(/\r?\n/)) { const trimmed=line.trim(); const at=trimmed.indexOf('='); if(trimmed && !trimmed.startsWith('#') && at>0) props[trimmed.slice(0,at)]=trimmed.slice(at+1) }
+  const rows = new Map<string, Record<string, unknown>>()
+  const ensure = (rawName: unknown, rawUuid?: unknown) => {
+    const playerName=safePlayerNameFallback(rawName); if(!playerName) return null; const key=playerName.toLowerCase();
+    const row=rows.get(key) ?? {playerName,playerUuid:null,isOnline:false,isOp:false,whitelisted:false,banned:false,banReason:null,banExpiresAt:null};
+    const uuid=String(rawUuid ?? '').trim(); if(uuid && !row.playerUuid) row.playerUuid=uuid; rows.set(key,row); return row
+  }
+  for(const item of cache) ensure(item.name,item.uuid)
+  for(const item of whitelist){const row=ensure(item.name,item.uuid);if(row)row.whitelisted=true}
+  for(const item of ops){const row=ensure(item.name,item.uuid);if(row){row.isOp=true;row.opLevel=Number(item.level)||null;row.bypassesPlayerLimit=item.bypassesPlayerLimit===true}}
+  for(const item of bans){const row=ensure(item.name,item.uuid);if(row){row.banned=true;row.banReason=String(item.reason??'').slice(0,300)||null;const expires=String(item.expires??'');row.banExpiresAt=expires&&expires.toLowerCase()!=='forever'&&!Number.isNaN(Date.parse(expires))?new Date(expires).toISOString():null}}
+  return { running:server.status==='running', onlineVerified:false, onlineSource:'panel-player-count-fallback', onlineNames:[], playerCount:Math.max(0,server.playerCount||0), maxPlayers:Math.max(0,Number(props['max-players']??0)||0)||null, whitelistEnabled:String(props['white-list']??'false')==='true', players:[...rows.values()].sort((a,b)=>String(a.playerName).localeCompare(String(b.playerName),'tr')), syncedAt:new Date().toISOString(), source:'legacy-player-files' }
+}
+
+function legacyWorldsFromInventory(server: PollServer, inventory: Awaited<ReturnType<typeof legacyInventory>>) {
+  const items=Array.isArray(inventory.items)?inventory.items:[]
+  const roots=new Map<string,{hasLevel:boolean;bytes:number;modifiedAt:string|null}>()
+  for(const item of items){const path=String(item.path??'');const first=path.split('/')[0];if(!first)continue;const state=roots.get(first)??{hasLevel:false,bytes:0,modifiedAt:null};if(path.toLowerCase()===(first.toLowerCase()+'/level.dat'))state.hasLevel=true;if(!item.directory)state.bytes+=Math.max(0,Number(item.sizeBytes??0)||0);if(item.modifiedAt&&(!state.modifiedAt||Date.parse(String(item.modifiedAt))>Date.parse(state.modifiedAt)))state.modifiedAt=String(item.modifiedAt);roots.set(first,state)}
+  const worlds=[...roots.entries()].filter(([name,state])=>state.hasLevel||name===server.worldName||name.endsWith('_nether')||name.endsWith('_the_end')).map(([name,state])=>{const lower=name.toLowerCase();const environment=lower.endsWith('_nether')||lower==='nether'?'the_nether':lower.endsWith('_the_end')||lower==='end'?'the_end':'overworld';return{name,folderName:name,environment,sizeMb:Number((state.bytes/1048576).toFixed(2)),sizeBytes:state.bytes,seed:null,isActive:name===server.worldName,defaultWorld:name===server.worldName,prepared:false,hasLevelDat:state.hasLevel,modifiedAt:state.modifiedAt,source:'legacy-polling-disk'}}).sort((a,b)=>Number(b.isActive)-Number(a.isActive)||a.name.localeCompare(b.name,'tr'))
+  return {worlds,defaultWorld:server.worldName,activeWorld:server.worldName,scannedAt:new Date().toISOString(),source:'legacy-polling-disk'}
+}
+
+async function legacyBackupRows(server: PollServer) {
+  const [commands,serverBackups,serverBackupSingular]=await Promise.all([db.select({type:agentCommands.type,result:agentCommands.result,createdAt:agentCommands.createdAt}).from(agentCommands).where(and(eq(agentCommands.serverId,server.id),eq(agentCommands.status,'completed'))).orderBy(desc(agentCommands.createdAt)).limit(250),legacyListFiles(server,'backups'),legacyListFiles(server,'backup')])
+  const rows:Array<Record<string,unknown>>=[]
+  for(const command of commands){if(!['backup','CREATE_BACKUP','CREATE_WORLD_BACKUP','backup-copy'].includes(command.type))continue;const result=command.result&&typeof command.result==='object'?command.result as Record<string,unknown>:{};const path=String(result.path??result.filename??'');if(path)rows.push({name:path.split(/[\\/]/).pop()||path,path,sizeBytes:Number(result.sizeBytes??0)||0,createdAt:command.createdAt.toISOString(),source:'command-history',status:'completed',restorable:true})}
+  for(const item of [...serverBackups,...serverBackupSingular]){if(item.directory||!(/\.(zip|tar|tar\.gz|tgz|gz)$/i.test(item.name)))continue;rows.push({name:item.name,path:item.path,sizeBytes:item.size,createdAt:item.updatedAt,source:'server-disk',status:'completed',restorable:false})}
+  const seen=new Set<string>();return rows.filter(row=>{const key=String(row.path??row.name??'');if(!key||seen.has(key))return false;seen.add(key);return true}).sort((a,b)=>Date.parse(String(b.createdAt??''))-Date.parse(String(a.createdAt??'')))
+}
+
 async function commandBridgeFetch(nodeId: string, path: string, init: RequestInit = {}) {
   const method = String(init.method || 'GET').toUpperCase()
   if (!['GET', 'POST', 'PATCH', 'DELETE'].includes(method)) throw new Error(`Agent polling köprüsü ${method} isteğini desteklemiyor.`)
@@ -161,15 +289,19 @@ async function commandBridgeFetch(nodeId: string, path: string, init: RequestIni
   const serverId = String(url.searchParams.get('serverId') ?? body.serverId ?? '')
   if (!/^[0-9a-f-]{36}$/i.test(serverId)) throw new Error('Agent polling köprüsü için geçerli serverId gerekli.')
 
-  const server = (await db.select({ id: servers.id, userId: servers.userId, nodeId: servers.nodeId, worldName: servers.worldName }).from(servers).where(and(eq(servers.id, serverId), eq(servers.nodeId, nodeId))).limit(1))[0]
+  const server = (await db.select({ id: servers.id, userId: servers.userId, nodeId: servers.nodeId, worldName: servers.worldName, playerCount: servers.playerCount, status: servers.status }).from(servers).where(and(eq(servers.id, serverId), eq(servers.nodeId, nodeId))).limit(1))[0]
   if (!server) throw new Error('Agent polling köprüsü için sunucu/node eşleşmesi bulunamadı.')
 
   const pathname = url.pathname
 
   if (pathname === '/internal/settings/status' && method === 'GET') {
-    const result = await runPolledCommand(server, 'read-file', { path: 'server.properties' })
+    const [result,metaRaw] = await Promise.all([
+      runPolledCommand(server, 'read-file', { path: 'server.properties' }),
+      legacyReadFile(server, 'blockctrl.json'),
+    ])
     const content = String(result.content ?? '')
-    return jsonResponse({ ready: true, properties: safeProperties(content), meta: {}, running: null, readAt: new Date().toISOString(), source: 'polling-bridge' })
+    let meta:Record<string,unknown>={};try{meta=metaRaw?JSON.parse(metaRaw) as Record<string,unknown>:{} }catch{meta={}}
+    return jsonResponse({ ready: true, properties: safeProperties(content), meta, runtime:{itemTrackingEnabled:meta.itemTrackingEnabled===true,itemTrackingMode:String(meta.itemTrackingMode??'disabled'),trackerAdapter:String(meta.trackerAdapter??'legacy-agent')}, running: server.status==='running', readAt: new Date().toISOString(), source: 'polling-bridge' })
   }
 
   if (pathname === '/internal/worlds/templates' && method === 'GET') {
@@ -177,17 +309,15 @@ async function commandBridgeFetch(nodeId: string, path: string, init: RequestIni
   }
 
   if (pathname === '/internal/worlds/status' && method === 'GET') {
+    try { const polled=await runPolledCommand(server,'worlds-status'); if(Array.isArray(polled.worlds))return jsonResponse(polled) } catch (error) { if(!unsupportedCommand(error)) console.warn('[node-bridge] worlds-status polling failed; legacy disk discovery will be used') }
+    const inventory=await legacyInventory(server); const discovered=legacyWorldsFromInventory(server,inventory); if(discovered.worlds.length)return jsonResponse(discovered)
     const rows = await db.select().from(worldsTable).where(eq(worldsTable.serverId, server.id))
-    return jsonResponse({
-      worlds: rows.map(row => ({ name: row.name, isActive: row.isActive, sizeMb: row.sizeMb, seed: row.seed ?? null, prepared: false, templateId: null, templateName: null, updatedAt: row.createdAt?.toISOString?.() ?? null })),
-      activeWorld: server.worldName,
-      scannedAt: new Date().toISOString(),
-      source: 'database-fallback',
-    })
+    return jsonResponse({ worlds: rows.map(row => ({ name: row.name, folderName:row.name, environment:row.name.endsWith('_nether')?'the_nether':row.name.endsWith('_the_end')?'the_end':'overworld', isActive: row.isActive, sizeMb: row.sizeMb, sizeBytes:Math.round(row.sizeMb*1048576), seed: row.seed ?? null, prepared:false, updatedAt:row.createdAt?.toISOString?.()??null, source:'database-last-resort' })), activeWorld:server.worldName, defaultWorld:server.worldName, scannedAt:new Date().toISOString(), source:'database-last-resort' })
   }
 
   if (pathname === '/internal/players/status' && method === 'GET') {
-    return jsonResponse(await runPolledCommand(server, 'player-details'))
+    try { return jsonResponse(await runPolledCommand(server, 'player-details')) }
+    catch (error) { if (!unsupportedCommand(error)) throw error; return jsonResponse(await legacyPlayers(server)) }
   }
   if (pathname === '/internal/players/action' && method === 'POST') {
     return jsonResponse(await runPolledCommand(server, 'player-action', body, BRIDGE_TIMEOUT_MS, false))
@@ -201,18 +331,21 @@ async function commandBridgeFetch(nodeId: string, path: string, init: RequestIni
   }
 
   if (pathname === '/internal/content/inventory' && method === 'GET') {
-    const result = await runPolledCommand(server, 'file-inventory')
-    return jsonResponse(result)
+    try { return jsonResponse(await runPolledCommand(server,'file-inventory')) }
+    catch (error) { if(!unsupportedCommand(error))throw error; return jsonResponse(await legacyInventory(server)) }
   }
   if (pathname === '/internal/content/read' && method === 'GET') {
-    const result = await runPolledCommand(server, 'file-read', { path: String(url.searchParams.get('path') ?? '') })
-    return jsonResponse({ ...result, size: Number(result.sizeBytes ?? 0) })
+    const target=String(url.searchParams.get('path')??'')
+    try { const result=await runPolledCommand(server,'file-read',{path:target}); return jsonResponse({...result,size:Number(result.sizeBytes??0)}) }
+    catch (error) { if(!unsupportedCommand(error))throw error; return jsonResponse(await runPolledCommand(server,'read-file',{path:target})) }
   }
   if (pathname === '/internal/content/write' && method === 'POST') {
-    return jsonResponse(await runPolledCommand(server, 'file-write', { path: body.path, content: body.content }, BRIDGE_TIMEOUT_MS, false))
+    try { return jsonResponse(await runPolledCommand(server,'file-write',{path:body.path,content:body.content},BRIDGE_TIMEOUT_MS,false)) }
+    catch (error) { if(!unsupportedCommand(error))throw error; return jsonResponse(await runPolledCommand(server,'write-file',{path:body.path,content:body.content},BRIDGE_TIMEOUT_MS,false)) }
   }
   if (pathname === '/internal/content/delete' && method === 'POST') {
-    return jsonResponse(await runPolledCommand(server, 'file-delete', { path: body.path }, BRIDGE_TIMEOUT_MS, false))
+    try { return jsonResponse(await runPolledCommand(server,'file-delete',{path:body.path},BRIDGE_TIMEOUT_MS,false)) }
+    catch (error) { if(!unsupportedCommand(error))throw error; return jsonResponse(await runPolledCommand(server,'delete-file',{path:body.path},BRIDGE_TIMEOUT_MS,false)) }
   }
 
   if (pathname === '/internal/console/status' && method === 'GET') {
@@ -223,6 +356,15 @@ async function commandBridgeFetch(nodeId: string, path: string, init: RequestIni
     return jsonResponse({ ...live, startup: startup.startup ?? { stdout: [], stderr: [] } })
   }
 
+  if (pathname === '/internal/backups/list' && method === 'GET') {
+    try { return jsonResponse(await runPolledCommand(server,'backup-list')) }
+    catch (error) { if(!unsupportedCommand(error))console.warn('[node-bridge] backup-list failed; using history fallback'); return jsonResponse({backups:await legacyBackupRows(server),source:'polling-history-fallback'}) }
+  }
+  if (pathname === '/internal/backups/create' && method === 'POST') {
+    const payload={label:String(body.label??'manual'),kind:String(body.kind??'full')}
+    try { return jsonResponse(await runPolledCommand(server,'backup',payload,45_000,false),201) }
+    catch (error) { if(!unsupportedCommand(error))throw error; return jsonResponse(await runPolledCommand(server,'CREATE_BACKUP',payload,45_000,false),201) }
+  }
   if (pathname === '/internal/sftp/status' && method === 'GET') return jsonResponse(await runPolledCommand(server, 'sftp-test'))
   if (pathname === '/internal/sftp/provision' && method === 'POST') return jsonResponse(await runPolledCommand(server, 'provision-sftp', {}, BRIDGE_TIMEOUT_MS, false), 201)
   if (pathname === '/internal/sftp/enable' && method === 'POST') return jsonResponse(await runPolledCommand(server, 'sftp-enable', {}, BRIDGE_TIMEOUT_MS, false))
