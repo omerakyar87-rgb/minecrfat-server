@@ -2,7 +2,7 @@ import 'server-only'
 
 import { and, desc, eq } from 'drizzle-orm'
 import { db } from '@/lib/db'
-import { agentCommands, servers, worlds as worldsTable } from '@/lib/db/schema'
+import { agentCommands, consoleLogs, servers, worlds as worldsTable } from '@/lib/db/schema'
 
 const REQUEST_TIMEOUT_MS = 8_000
 const BRIDGE_TIMEOUT_MS = 20_000
@@ -253,15 +253,43 @@ async function legacyPlayers(server: PollServer) {
   for (const line of properties.split(/\r?\n/)) { const trimmed=line.trim(); const at=trimmed.indexOf('='); if(trimmed && !trimmed.startsWith('#') && at>0) props[trimmed.slice(0,at)]=trimmed.slice(at+1) }
   const rows = new Map<string, Record<string, unknown>>()
   const ensure = (rawName: unknown, rawUuid?: unknown) => {
-    const playerName=safePlayerNameFallback(rawName); if(!playerName) return null; const key=playerName.toLowerCase();
-    const row=rows.get(key) ?? {playerName,playerUuid:null,isOnline:false,isOp:false,whitelisted:false,banned:false,banReason:null,banExpiresAt:null};
+    const playerName=safePlayerNameFallback(rawName); if(!playerName) return null; const key=playerName.toLowerCase()
+    const row=rows.get(key) ?? {playerName,playerUuid:null,isOnline:false,isOp:false,whitelisted:false,banned:false,banReason:null,banExpiresAt:null}
     const uuid=String(rawUuid ?? '').trim(); if(uuid && !row.playerUuid) row.playerUuid=uuid; rows.set(key,row); return row
   }
   for(const item of cache) ensure(item.name,item.uuid)
   for(const item of whitelist){const row=ensure(item.name,item.uuid);if(row)row.whitelisted=true}
   for(const item of ops){const row=ensure(item.name,item.uuid);if(row){row.isOp=true;row.opLevel=Number(item.level)||null;row.bypassesPlayerLimit=item.bypassesPlayerLimit===true}}
   for(const item of bans){const row=ensure(item.name,item.uuid);if(row){row.banned=true;row.banReason=String(item.reason??'').slice(0,300)||null;const expires=String(item.expires??'');row.banExpiresAt=expires&&expires.toLowerCase()!=='forever'&&!Number.isNaN(Date.parse(expires))?new Date(expires).toISOString():null}}
-  return { running:server.status==='running', onlineVerified:false, onlineSource:'panel-player-count-fallback', onlineNames:[], playerCount:Math.max(0,server.playerCount||0), maxPlayers:Math.max(0,Number(props['max-players']??0)||0)||null, whitelistEnabled:String(props['white-list']??'false')==='true', players:[...rows.values()].sort((a,b)=>String(a.playerName).localeCompare(String(b.playerName),'tr')), syncedAt:new Date().toISOString(), source:'legacy-player-files' }
+
+  let onlineNames:string[]=[]
+  let verified=false
+  let liveCount=Math.max(0,server.playerCount||0)
+  let liveMax=Math.max(0,Number(props['max-players']??0)||0)||null
+  if(server.status==='running'){
+    try{
+      const requestedAt=new Date()
+      await runPolledCommand(server,'list-players',{},8_000)
+      const deadline=Date.now()+3_000
+      while(Date.now()<deadline&&!verified){
+        const logs=await db.select({line:consoleLogs.line,createdAt:consoleLogs.createdAt}).from(consoleLogs).where(eq(consoleLogs.serverId,server.id)).orderBy(desc(consoleLogs.createdAt)).limit(40)
+        for(const log of logs){
+          if(log.createdAt.getTime()<requestedAt.getTime()-2_000)continue
+          const line=String(log.line??'')
+          const match=line.match(/There are\s+(\d+)\s+of a max of\s+(\d+)\s+players online:\s*(.*)$/i)??line.match(/There are\s+(\d+)\s*\/\s*(\d+)\s+players online:?\s*(.*)$/i)
+          if(!match)continue
+          liveCount=Math.max(0,Number(match[1])||0)
+          liveMax=Math.max(0,Number(match[2])||0)||liveMax
+          onlineNames=match[3].split(',').map(name=>name.trim()).map(safePlayerNameFallback).filter((name):name is string=>!!name)
+          verified=true
+          break
+        }
+        if(!verified)await new Promise(resolve=>setTimeout(resolve,250))
+      }
+    }catch{}
+  }
+  for(const name of onlineNames){const row=ensure(name);if(row)row.isOnline=true}
+  return { running:server.status==='running', onlineVerified:verified, onlineSource:verified?'minecraft-list-command':'panel-player-count-fallback', onlineNames, playerCount:liveCount, maxPlayers:liveMax, whitelistEnabled:String(props['white-list']??'false')==='true', players:[...rows.values()].sort((a,b)=>Number(Boolean(b.isOnline))-Number(Boolean(a.isOnline))||String(a.playerName).localeCompare(String(b.playerName),'tr')), syncedAt:new Date().toISOString(), source:'legacy-player-files' }
 }
 
 function legacyWorldsFromInventory(server: PollServer, inventory: Awaited<ReturnType<typeof legacyInventory>>) {
