@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState } from 'react'
 import useSWR from 'swr'
-import { Archive, Box, CheckCircle2, FileCog, FileText, FolderOpen, Gamepad2, Globe2, Loader2, Package, Pencil, RefreshCw, Save, Search, Trash2, UploadCloud, X } from 'lucide-react'
+import { Archive, Box, CheckCircle2, FileCog, FilePlus2, FileText, FolderOpen, FolderPlus, Gamepad2, Globe2, Loader2, Package, Pencil, RefreshCw, Save, Search, Trash2, UploadCloud, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
@@ -68,6 +68,8 @@ export function ServerContentManager({serverId,running,canEdit,scopeWorld,loader
   const [editorValue,setEditorValue]=useState('')
   const [editorLoading,setEditorLoading]=useState(false)
   const [newWorldFile,setNewWorldFile]=useState('datapacks/blockctrl/functions/setup.txt')
+  const [newEntryKind,setNewEntryKind]=useState<'file'|'folder'>('file')
+  const [newEntryPath,setNewEntryPath]=useState(scopeWorld?`${scopeWorld}/new-file.txt`:'notes.txt')
   const [marketSource,setMarketSource]=useState<AddonSource>('modrinth')
   const [marketKind,setMarketKind]=useState<AddonKind>(loader==='paper'?'plugins':'mods')
   const [marketQuery,setMarketQuery]=useState('')
@@ -117,12 +119,27 @@ export function ServerContentManager({serverId,running,canEdit,scopeWorld,loader
     catch(error){setNotice(error instanceof Error?error.message:'Dosya kaydedilemedi')}
     finally{setEditorLoading(false)}
   }
+  async function createEntry(){
+    if(!canEdit||busy)return
+    const relative=newEntryPath.replace(/\\/g,'/').replace(/^\/+/, '').trim()
+    if(!relative||relative.split('/').some(part=>!part||part==='.'||part==='..')){setNotice('Geçerli bir göreli dosya veya klasör yolu yazın.');return}
+    if(newEntryKind==='file'&&!/[.](yml|yaml|json|json5|properties|toml|ini|cfg|conf|txt|md|xml|mcmeta|mcfunction|log)$/i.test(relative)){setNotice('Panelden canlı oluşturulan dosya güvenli bir metin uzantısına sahip olmalıdır.');return}
+    setBusy(true);setNotice('')
+    try{
+      const response=await fetch('/api/server-content',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({serverId,action:newEntryKind==='file'?'create-file':'create-folder',path:relative,content:''})})
+      const body=await readJson(response) as {error?:string;serverRunning?:boolean}
+      if(!response.ok)throw new Error(body.error??'Oluşturma işlemi başarısız')
+      setNotice(`${relative} ${newEntryKind==='file'?'dosyası':'klasörü'} oluşturuldu.${body.serverRunning?' Sunucu çalışırken güvenli oluşturma kullanıldı.':''}`)
+      await mutate()
+    }catch(error){setNotice(error instanceof Error?error.message:'Oluşturma işlemi başarısız')}
+    finally{setBusy(false)}
+  }
   async function createWorldTextFile(){
-    if(!scopeWorld||running||!canEdit)return
+    if(!scopeWorld||!canEdit)return
     const relative=newWorldFile.replace(/\\/g,'/').replace(/^\/+/, '').trim()
     if(!relative||relative.split('/').some(part=>!part||part==='.'||part==='..')||!/[.](yml|yaml|json|json5|properties|toml|ini|cfg|conf|txt|md|xml|mcmeta|mcfunction)$/i.test(relative)){setNotice('Dünya içinde oluşturulacak dosya güvenli bir metin uzantısına sahip olmalıdır.');return}
     setBusy(true);setNotice('')
-    try{const path=`${scopeWorld}/${relative}`;const response=await fetch('/api/server-content',{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({serverId,path,content:''})});const body=await readJson(response) as {error?:string};if(!response.ok)throw new Error(body.error??'Dünya dosyası oluşturulamadı');setNotice(`${path} oluşturuldu.`);await mutate()}
+    try{const path=`${scopeWorld}/${relative}`;const response=await fetch('/api/server-content',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({serverId,action:'create-file',path,content:''})});const body=await readJson(response) as {error?:string;serverRunning?:boolean};if(!response.ok)throw new Error(body.error??'Dünya dosyası oluşturulamadı');setNotice(`${path} oluşturuldu.${body.serverRunning?' Sunucu çalışırken güvenli oluşturma kullanıldı.':''}`);await mutate()}
     catch(error){setNotice(error instanceof Error?error.message:'Dünya dosyası oluşturulamadı')}
     finally{setBusy(false)}
   }
@@ -177,6 +194,14 @@ export function ServerContentManager({serverId,running,canEdit,scopeWorld,loader
       {data?.scannedAt&&<p className="mt-3 text-[10px] text-slate-600">Son gerçek disk taraması: {new Date(data.scannedAt).toLocaleString('tr-TR')}</p>}
     </section>
 
+    <section className="rounded-xl border border-sky-900/50 bg-sky-950/10 p-4">
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="w-full sm:w-32"><span className="mb-1.5 block text-[11px] font-semibold text-slate-300">Tür</span><select value={newEntryKind} onChange={e=>setNewEntryKind(e.target.value as 'file'|'folder')} disabled={busy||!canEdit} className="h-9 w-full rounded-md border border-sky-950/80 bg-[#07130f] px-3 text-xs"><option value="file">Dosya</option><option value="folder">Klasör</option></select></label>
+        <label className="min-w-[260px] flex-1"><span className="mb-1.5 block text-[11px] font-semibold text-slate-300">Yeni {newEntryKind==='file'?'dosya':'klasör'} yolu</span><Input value={newEntryPath} onChange={e=>setNewEntryPath(e.target.value)} placeholder={scopeWorld?`${scopeWorld}/datapacks/paket`:'config/yeni-ayar.yml'} className="h-9 border-sky-950/80 bg-[#07130f] text-xs"/></label>
+        <Button variant="outline" disabled={busy||!canEdit} onClick={createEntry}>{newEntryKind==='file'?<FilePlus2 className="mr-2 size-4"/>:<FolderPlus className="mr-2 size-4"/>}{newEntryKind==='file'?'Dosya oluştur':'Klasör oluştur'}</Button>
+      </div>
+      <p className="mt-2 text-[10px] leading-5 text-slate-500">Yeni ve üzerine yazmayan dosya/klasör oluşturma işlemi <b className="text-cyan-300">sunucu çalışırken de</b> kullanılabilir. Mevcut dosyayı düzenleme, silme ve taşıma işlemleri güvenlik için sunucu durdurulduğunda yapılır.</p>
+    </section>
     {marketplaceEnabled&&<section className="rounded-xl border border-cyan-500/20 bg-[linear-gradient(145deg,rgba(8,27,35,.9),rgba(7,19,15,.94))] p-4">
       <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-sm font-semibold text-white">Mod / Plugin marketi</h3><p className="mt-1 max-w-3xl text-[11px] leading-5 text-slate-500">{mcVersion} · {loader} uyumluluğuna göre Modrinth veya CurseForge üzerinde arayın. Kurulumdan önce seçilen sürüm ve zorunlu bağımlılıklar çözülür; SHA-1 mevcutsa agent dosyayı diske almadan önce doğrular.</p></div><span className="rounded-full border border-sky-900/70 px-2 py-1 text-[10px] text-cyan-300">{!canInstallMarketplace?'Kurulum yetkisi yok':running?'Durdur → kur → yeniden başlat':'Kurulum hazır'}</span></div>
       <div className="mt-3 grid gap-2 md:grid-cols-[150px_150px_1fr_auto]"><select value={marketSource} onChange={e=>{setMarketSource(e.target.value as AddonSource);setMarketResults([]);setMarketError('')}} className="h-9 rounded-md border border-sky-950/80 bg-[#07130f] px-3 text-xs"><option value="modrinth">Modrinth</option><option value="curseforge">CurseForge</option></select><select value={marketKind} onChange={e=>{setMarketKind(e.target.value as AddonKind);setMarketResults([])}} className="h-9 rounded-md border border-sky-950/80 bg-[#07130f] px-3 text-xs"><option value="mods">Modlar</option><option value="plugins">Pluginler</option></select><div className="relative"><Search className="absolute left-2.5 top-2.5 size-3.5 text-slate-500"/><Input value={marketQuery} onChange={e=>setMarketQuery(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')void searchMarketplace()}} placeholder="Örn. Lithium, LuckPerms, WorldEdit..." className="h-9 border-sky-950/80 bg-[#07130f] pl-8 text-xs"/></div><Button variant="outline" disabled={marketBusy} onClick={searchMarketplace}>{marketBusy?<Loader2 className="mr-2 size-4 animate-spin"/>:<Search className="mr-2 size-4"/>}Ara</Button></div>
@@ -185,7 +210,7 @@ export function ServerContentManager({serverId,running,canEdit,scopeWorld,loader
       {marketResults.length>0&&<div className="mt-3 grid gap-2 xl:grid-cols-2">{marketResults.map(project=><div key={`${project.source}:${project.projectId}`} className="flex gap-3 rounded-lg border border-sky-950/65 bg-black/10 p-3">{project.iconUrl?<img src={project.iconUrl} alt="" className="size-12 shrink-0 rounded-lg object-cover" loading="lazy"/>:<div className="grid size-12 shrink-0 place-items-center rounded-lg bg-slate-800"><Package className="size-5 text-slate-400"/></div>}<div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><b className="truncate text-xs text-white">{project.title}</b><span className="rounded bg-slate-800 px-1.5 py-0.5 text-[9px] uppercase text-slate-400">{project.source}</span></div><p className="mt-1 line-clamp-2 text-[10px] leading-4 text-slate-500">{project.description||'Açıklama yok'}</p><div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[9px] text-slate-500"><span>{project.author||'Bilinmeyen geliştirici'} · {Intl.NumberFormat('tr-TR',{notation:'compact'}).format(project.downloads)} indirme</span><Button size="sm" className="h-7 bg-blue-600 px-2 text-[10px] text-white" disabled={marketBusy||!canEdit||!canInstallMarketplace||!serverName} onClick={()=>installMarketplaceAddon(project)}>{running?'Durdur ve Kur':'Kur'}</Button></div></div></div>)}</div>}
     </section>}
 
-    {scopeWorld&&<section className="rounded-xl border border-sky-900/50 bg-sky-950/10 p-4"><div className="flex flex-wrap items-end gap-3"><label className="min-w-[260px] flex-1 text-[11px] font-semibold text-slate-300">Yeni dünya metin dosyası<Input className="mt-1" value={newWorldFile} onChange={e=>setNewWorldFile(e.target.value)} placeholder="datapacks/paket/data/.../function.mcfunction"/></label><Button variant="outline" disabled={running||busy||!canEdit} onClick={createWorldTextFile}><FileText className="mr-2 size-4"/>Boş dosya oluştur</Button></div><p className="mt-2 text-[10px] leading-5 text-slate-500">Güvenlik için yalnız metin tabanlı .yml, .json, .properties, .toml, .ini, .cfg, .conf, .txt, .md, .mcmeta ve .mcfunction dosyaları panelden oluşturulup düzenlenir. level.dat gibi binary/kritik dosyalar salt görüntü listesinde kalır.</p></section>}
+    {scopeWorld&&<section className="rounded-xl border border-sky-900/50 bg-sky-950/10 p-4"><div className="flex flex-wrap items-end gap-3"><label className="min-w-[260px] flex-1 text-[11px] font-semibold text-slate-300">Yeni dünya metin dosyası<Input className="mt-1" value={newWorldFile} onChange={e=>setNewWorldFile(e.target.value)} placeholder="datapacks/paket/data/.../function.mcfunction"/></label><Button variant="outline" disabled={busy||!canEdit} onClick={createWorldTextFile}><FileText className="mr-2 size-4"/>Boş dosya oluştur</Button></div><p className="mt-2 text-[10px] leading-5 text-slate-500">Güvenlik için yalnız metin tabanlı .yml, .json, .properties, .toml, .ini, .cfg, .conf, .txt, .md, .mcmeta ve .mcfunction dosyaları panelden oluşturulup düzenlenir. level.dat gibi binary/kritik dosyalar salt görüntü listesinde kalır.</p></section>}
 
     <section className="rounded-xl border border-sky-950/70 bg-[#0b1914] p-4">
       <input ref={inputRef} type="file" multiple className="hidden" accept=".jar,.zip,.yml,.yaml,.json,.properties,.toml,.ini,.cfg,.conf,.txt,.xml" onChange={e=>setPending(Array.from(e.target.files??[]))}/>
@@ -197,7 +222,7 @@ export function ServerContentManager({serverId,running,canEdit,scopeWorld,loader
 
     {error&&<div className="rounded-xl border border-red-500/30 bg-red-950/20 p-3 text-xs text-red-200">Gerçek sunucu içeriği okunamadı: {error.message}</div>}
     {notice&&<div className="rounded-xl border border-blue-500/25 bg-sky-950/20 p-3 text-xs text-sky-200">{notice}</div>}
-    {running&&<div className="rounded-xl border border-amber-500/30 bg-amber-950/20 p-3 text-xs text-amber-200">Sunucu çalışırken listeyi görüntüleyebilirsiniz; mod/plugin/dünya dosyası silme, yükleme ve metin düzenleme için sunucuyu durdurun.</div>}
+    {running&&<div className="rounded-xl border border-amber-500/30 bg-amber-950/20 p-3 text-xs text-amber-200">Sunucu çalışırken gerçek disk listesini görüntüleyebilir ve <b>yeni dosya/klasör oluşturabilirsiniz</b>. Mevcut dosyayı düzenleme, silme, taşıma ve toplu yükleme işlemleri için sunucuyu durdurun.</div>}
 
     <section className="overflow-hidden rounded-xl border border-sky-950/70 bg-[linear-gradient(145deg,rgba(15,33,26,.92),rgba(8,23,18,.92))]">
       <div className="flex flex-wrap items-center gap-2 border-b border-sky-950/65 p-3"><div className="flex min-w-0 flex-1 gap-1 overflow-x-auto">{tabs.map(item=>{const Icon=item.icon;return <button key={item.key} onClick={()=>setTab(item.key)} className={`inline-flex h-8 shrink-0 items-center rounded-md border px-2.5 text-[11px] font-semibold ${tab===item.key?'border-blue-500/50 bg-blue-500/10 text-cyan-300':'border-sky-950/70 text-slate-400 hover:text-white'}`}><Icon className="mr-1.5 size-3.5"/>{item.label}</button>})}</div><div className="relative w-full sm:w-64"><Search className="absolute left-2.5 top-2.5 size-3.5 text-slate-500"/><Input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Sunucu diskinde ara..." className="h-8 border-sky-950/80 bg-[#0a1928] pl-8 text-xs"/></div></div>
