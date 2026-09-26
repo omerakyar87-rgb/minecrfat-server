@@ -425,6 +425,12 @@ async function commandBridgeFetch(nodeId: string, path: string, init: RequestIni
     try { return jsonResponse(await runPolledCommand(server,'file-inventory')) }
     catch (error) { if(!unsupportedCommand(error))throw error; return jsonResponse(await legacyInventory(server)) }
   }
+  if (pathname === '/internal/content/create-file' && method === 'POST') {
+    return jsonResponse(await runPolledCommand(server,'file-create',{path:body.path,content:String(body.content??'')},BRIDGE_TIMEOUT_MS,false),201)
+  }
+  if (pathname === '/internal/content/create-folder' && method === 'POST') {
+    return jsonResponse(await runPolledCommand(server,'folder-create',{path:body.path},BRIDGE_TIMEOUT_MS,false),201)
+  }
   if (pathname === '/internal/content/read' && method === 'GET') {
     const target=String(url.searchParams.get('path')??'')
     try { const result=await runPolledCommand(server,'file-read',{path:target}); return jsonResponse({...result,size:Number(result.sizeBytes??0)}) }

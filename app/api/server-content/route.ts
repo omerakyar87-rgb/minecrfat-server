@@ -76,6 +76,36 @@ export async function GET(request: NextRequest) {
   }
 }
 
+export async function POST(request: NextRequest) {
+  await ensurePanelSchema()
+  const actor = await currentActor()
+  if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!actor.approved) return NextResponse.json({ error: 'Approval required' }, { status: 403 })
+  const body = await request.json() as { serverId?: string; action?: 'create-file'|'create-folder'; path?: string; content?: unknown }
+  const server = body.serverId ? await authorizedServer(actor, body.serverId) : null
+  if (!server) return NextResponse.json({ error: 'Sunucu bulunamadı veya dosya izniniz yok' }, { status: 404 })
+  const path = safeRelativePath(body.path)
+  if (!path || !body.action || !['create-file','create-folder'].includes(body.action)) {
+    return NextResponse.json({ error: 'Geçersiz dosya/klasör oluşturma isteği' }, { status: 400 })
+  }
+  if (body.action === 'create-file' && typeof body.content === 'string' && Buffer.byteLength(body.content, 'utf8') > MAX_TEXT_SIZE) {
+    return NextResponse.json({ error: 'Yeni dosya 2 MB sınırını aşıyor' }, { status: 400 })
+  }
+  try {
+    const endpoint = body.action === 'create-file' ? '/internal/content/create-file' : '/internal/content/create-folder'
+    const data = await nodeJson(server.nodeId, endpoint, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ serverId: server.id, path, ...(body.action === 'create-file' ? { content: typeof body.content === 'string' ? body.content : '' } : {}) }),
+      cache: 'no-store',
+    })
+    await db.insert(auditLog).values({ userId: actor.id, action: body.action === 'create-file' ? 'content.create-file' : 'content.create-folder', resourceType: 'server', resourceId: server.id, details: { path, live: server.status === 'running' } })
+    return NextResponse.json({ ...data, serverRunning: server.status === 'running' }, { status: 201 })
+  } catch (error) {
+    return NextResponse.json({ error: nodeDiagnosticMessage(error) }, { status: 502 })
+  }
+}
+
 export async function PATCH(request: NextRequest) {
   await ensurePanelSchema()
   const actor = await currentActor()
