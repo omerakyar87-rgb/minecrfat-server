@@ -301,11 +301,54 @@ function legacyWorldsFromInventory(server: PollServer, inventory: Awaited<Return
 }
 
 async function legacyBackupRows(server: PollServer) {
-  const [commands,serverBackups,serverBackupSingular]=await Promise.all([db.select({type:agentCommands.type,result:agentCommands.result,createdAt:agentCommands.createdAt}).from(agentCommands).where(and(eq(agentCommands.serverId,server.id),eq(agentCommands.status,'completed'))).orderBy(desc(agentCommands.createdAt)).limit(250),legacyListFiles(server,'backups'),legacyListFiles(server,'backup')])
+  const [commands,serverBackups,serverBackupSingular]=await Promise.all([
+    db.select({type:agentCommands.type,result:agentCommands.result,createdAt:agentCommands.createdAt}).from(agentCommands).where(and(eq(agentCommands.serverId,server.id),eq(agentCommands.status,'completed'))).orderBy(desc(agentCommands.createdAt)).limit(250),
+    legacyListFiles(server,'backups'),
+    legacyListFiles(server,'backup'),
+  ])
   const rows:Array<Record<string,unknown>>=[]
-  for(const command of commands){if(!['backup','CREATE_BACKUP','CREATE_WORLD_BACKUP','backup-copy'].includes(command.type))continue;const result=command.result&&typeof command.result==='object'?command.result as Record<string,unknown>:{};const path=String(result.path??result.filename??'');if(path)rows.push({name:path.split(/[\\/]/).pop()||path,path,sizeBytes:Number(result.sizeBytes??0)||0,createdAt:command.createdAt.toISOString(),source:'command-history',status:'completed',restorable:true})}
-  for(const item of [...serverBackups,...serverBackupSingular]){if(item.directory||!(/\.(zip|tar|tar\.gz|tgz|gz)$/i.test(item.name)))continue;rows.push({name:item.name,path:item.path,sizeBytes:item.size,createdAt:item.updatedAt,source:'server-disk',status:'completed',restorable:false})}
-  const seen=new Set<string>();return rows.filter(row=>{const key=String(row.path??row.name??'');if(!key||seen.has(key))return false;seen.add(key);return true}).sort((a,b)=>Date.parse(String(b.createdAt??''))-Date.parse(String(a.createdAt??'')))
+  for(const command of commands){
+    if(!['backup','CREATE_BACKUP','CREATE_WORLD_BACKUP','backup-copy'].includes(command.type))continue
+    const result=command.result&&typeof command.result==='object'?command.result as Record<string,unknown>:{}
+    const path=String(result.path??result.filename??'')
+    if(path)rows.push({name:path.split(/[\\/]/).pop()||path,path,sizeBytes:Number(result.sizeBytes??0)||0,createdAt:command.createdAt.toISOString(),source:'command-history',status:'completed',restorable:true})
+  }
+  for(const item of [...serverBackups,...serverBackupSingular]){
+    if(item.directory||!(/\.(zip|tar|tar\.gz|tgz|gz)$/i.test(item.name)))continue
+    rows.push({name:item.name,path:item.path,sizeBytes:item.size,createdAt:item.updatedAt,source:'server-disk',status:'completed',restorable:false})
+  }
+
+  // Older Oracle agents store panel backups under DATA_DIR/backups, outside the
+  // managed Minecraft server root. They cannot enumerate that directory through
+  // list-files, but backup-verify with no path resolves the newest physical
+  // archive belonging to this server. Surface it so the panel does not show an
+  // empty backup list when a real archive already exists on the node.
+  try{
+    const latest=await runPolledCommand(server,'backup-verify',{},15_000)
+    if(latest.verified===true){
+      const filename=String(latest.filename??'').trim()
+      if(filename)rows.push({
+        name:filename,
+        path:filename,
+        sizeBytes:Math.max(0,Number(latest.sizeBytes??0)||0),
+        createdAt:String(latest.modifiedAt??new Date().toISOString()),
+        source:'node-backup-root',
+        type:'external',
+        status:'completed',
+        restorable:true,
+        verified:true,
+        sha256:String(latest.sha256??'')||null,
+      })
+    }
+  }catch{}
+
+  const seen=new Set<string>()
+  return rows.filter(row=>{
+    const key=String(row.path??row.name??'')
+    if(!key||seen.has(key))return false
+    seen.add(key)
+    return true
+  }).sort((a,b)=>Date.parse(String(b.createdAt??''))-Date.parse(String(a.createdAt??'')))
 }
 
 async function commandBridgeFetch(nodeId: string, path: string, init: RequestInit = {}) {
