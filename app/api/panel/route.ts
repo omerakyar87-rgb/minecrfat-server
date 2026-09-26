@@ -218,13 +218,20 @@ async function getPanel(request:NextRequest) {
     const restoreActors=restoreActorIds.length?await db.select({id:user.id,name:user.name}).from(user).where(inArray(user.id,restoreActorIds)):[]
     const restoreNameById=new Map(restoreActors.map(member=>[member.id,member.name]))
     const lostItemsWithRestoreActor=lostItemRows.map(row=>({...row,restoredByName:row.restoredByUserId?restoreNameById.get(row.restoredByUserId)??null:null}))
+    let visibleSftp:any=sftpRows[0]??null
+    if(result.fullAccess&&!visibleSftp){
+      try{
+        const runtime=await nodeJson(result.server.nodeId,`/internal/sftp/status?serverId=${encodeURIComponent(requestedServerId)}`,{cache:'no-store'})
+        if(runtime.userExists===true||runtime.ready===true){const ready=runtime.ready===true;const enabled=runtime.enabled!==false;visibleSftp={id:`runtime-${requestedServerId}`,serverId:requestedServerId,nodeId:result.server.nodeId,username:String(runtime.username??`mc_${requestedServerId.replaceAll('-','').slice(0,12)}`),port:Number(runtime.port??22)||22,rootPath:String(runtime.rootPath??'/files'),status:ready?'ready':enabled?'failed':'disabled',lastError:ready?null:'SFTP hesabı node üzerinde bulundu; panel kaydıyla yeniden eşleştirilmesi gerekiyor.',lastTestAt:new Date().toISOString(),passwordRotatedAt:null,disabledAt:enabled?null:new Date().toISOString(),createdAt:null,updatedAt:new Date().toISOString(),runtimeDiscovered:true}}
+      }catch{}
+    }
     let nodeBase='';try{nodeBase=getNodeConfig(result.server.nodeId).baseUrl}catch{}
     const databasesWithRuntime=databaseRows.map(database=>{const related=databaseCommandRows.filter(command=>String((command.payload as Record<string,unknown>|null)?.databaseId??'')===database.id);const completed=related.filter(command=>command.status==='completed');const statusCommand=completed.find(command=>command.type==='database-status');const backupCommand=completed.find(command=>command.type==='database-backup'||command.type==='database-export');const latestCommand=related[0]??null;const backupResult=(backupCommand?.result&&typeof backupCommand.result==='object'?backupCommand.result:{}) as Record<string,unknown>;const token=String(backupResult.downloadToken??'');return{...database,telemetry:statusCommand?.result??null,lastBackup:backupCommand?{...backupResult,downloadUrl:nodeBase&&token?`${nodeBase}/public/download/${encodeURIComponent(token)}`:undefined}:null,lastMaintenance:latestCommand?{id:latestCommand.id,type:latestCommand.type,status:latestCommand.status,result:latestCommand.result??null,createdAt:latestCommand.createdAt}:null}})
     return NextResponse.json({
       nodes:nodeRows,servers:[{...compactServer,directBridge,connectivity:connectivityState(nodeRows[0]??{status:'offline',lastHeartbeat:null},directBridge.online?undefined:directBridge.error)}],worlds:worldRows,mods:[],backups:[],logs:logRows.slice().reverse(),
       users:memberRows.filter(member=>member.id!==a.id),audits:[],lostItems:lostItemsWithRestoreActor,operations:operationRows,
       permissions:serverPermissionRows,currentPermission:result.permission,allowedSections:result.sections,serverAccess:{isOwner:result.isOwner,isManager:result.isManager,fullAccess:result.fullAccess},
-      schedules:scheduleRows,databases:databasesWithRuntime,sftp:sftpRows[0]??null,
+      schedules:scheduleRows,databases:databasesWithRuntime,sftp:visibleSftp,
 actor:{id:a.id,name:a.name,email:a.email,role:normalizeRole(a.role)},nodeConnectivity:directBridge
     },{headers:{'Cache-Control':'private, no-store'}})
   }
