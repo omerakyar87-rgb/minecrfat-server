@@ -57,16 +57,19 @@ export async function POST(request:NextRequest){
   }
 
   const ids:string[]=[]
+  const baseCreatedAt=Date.now()
+  let sequence=0
+  const nextCreatedAt=()=>new Date(baseCreatedAt+(sequence++*50))
   if(x.server.status==='running'){
-    const [stop]=await db.insert(agentCommands).values({userId:x.server.userId,nodeId:x.server.nodeId,serverId,type:'stop',payload:{reason:'marketplace-install',requestedBy:actor.id},status:'queued'}).returning({id:agentCommands.id})
+    const [stop]=await db.insert(agentCommands).values({userId:x.server.userId,nodeId:x.server.nodeId,serverId,type:'stop',payload:{reason:'marketplace-install',requestedBy:actor.id},status:'queued',createdAt:nextCreatedAt()}).returning({id:agentCommands.id})
     ids.push(stop.id)
   }
   for(const item of prepared){
-    const [write]=await db.insert(agentCommands).values({userId:x.server.userId,nodeId:x.server.nodeId,serverId,type:'write-file',payload:{path:item.target,pathname:item.pathname,filename:item.file.fileName,source:item.file.source??null,projectId:item.file.projectId??null,versionId:item.file.versionId??null,requestedBy:actor.id},status:'queued'}).returning({id:agentCommands.id})
+    const [write]=await db.insert(agentCommands).values({userId:x.server.userId,nodeId:x.server.nodeId,serverId,type:'write-file',payload:{path:item.target,pathname:item.pathname,filename:item.file.fileName,source:item.file.source??null,projectId:item.file.projectId??null,versionId:item.file.versionId??null,requestedBy:actor.id},status:'queued',createdAt:nextCreatedAt()}).returning({id:agentCommands.id})
     ids.push(write.id)
   }
   if(x.server.status==='running'&&body.restartAfter!==false){
-    const [start]=await db.insert(agentCommands).values({userId:x.server.userId,nodeId:x.server.nodeId,serverId,type:'start',payload:{reason:'marketplace-install',requestedBy:actor.id},status:'queued'}).returning({id:agentCommands.id})
+    const [start]=await db.insert(agentCommands).values({userId:x.server.userId,nodeId:x.server.nodeId,serverId,type:'start',payload:{memoryMb:x.server.memoryMb,loader:x.server.loader,mcVersion:x.server.mcVersion,loaderVersion:x.server.loaderVersion,port:x.server.port,worldName:x.server.worldName,itemTrackingEnabled:x.server.itemTrackingEnabled,reason:'marketplace-install',requestedBy:actor.id},status:'queued',createdAt:nextCreatedAt()}).returning({id:agentCommands.id})
     ids.push(start.id)
   }
   await db.insert(auditLog).values({userId:actor.id,action:'addon.install.compat',resourceType:'server',resourceId:serverId,details:{files:prepared.map(item=>({target:item.target,bytes:item.bytes,source:item.file.source,projectId:item.file.projectId})),commandIds:ids,restartAfter:x.server.status==='running'&&body.restartAfter!==false}})
