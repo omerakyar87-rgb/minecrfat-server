@@ -426,10 +426,12 @@ async function commandBridgeFetch(nodeId: string, path: string, init: RequestIni
     catch (error) { if(!unsupportedCommand(error))throw error; return jsonResponse(await legacyInventory(server)) }
   }
   if (pathname === '/internal/content/create-file' && method === 'POST') {
-    return jsonResponse(await runPolledCommand(server,'file-create',{path:body.path,content:String(body.content??'')},BRIDGE_TIMEOUT_MS,false),201)
+    try { return jsonResponse(await runPolledCommand(server,'file-create',{path:body.path,content:String(body.content??'')},BRIDGE_TIMEOUT_MS,false),201) }
+    catch (error) { if(!unsupportedCommand(error))throw error; return jsonResponse(await runPolledCommand(server,'write-file',{path:body.path,content:String(body.content??'')},BRIDGE_TIMEOUT_MS,false),201) }
   }
   if (pathname === '/internal/content/create-folder' && method === 'POST') {
-    return jsonResponse(await runPolledCommand(server,'folder-create',{path:body.path},BRIDGE_TIMEOUT_MS,false),201)
+    try { return jsonResponse(await runPolledCommand(server,'folder-create',{path:body.path},BRIDGE_TIMEOUT_MS,false),201) }
+    catch (error) { if(!unsupportedCommand(error))throw error; return jsonResponse(await runPolledCommand(server,'create-folder',{path:body.path},BRIDGE_TIMEOUT_MS,false),201) }
   }
   if (pathname === '/internal/content/read' && method === 'GET') {
     const target=String(url.searchParams.get('path')??'')
@@ -499,7 +501,10 @@ export async function nodeFetch(nodeId: string, path: string, init: RequestInit 
     const endpoint = `${config.baseUrl}${path.startsWith('/') ? path : `/${path}`}`
     try {
       const response = await fetch(endpoint, { ...init, headers, cache: 'no-store', signal: init.signal ?? AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
-      if (!response.ok) console.warn(`[node-bridge] ${new URL(config.baseUrl).hostname} ${response.status} ${path}`)
+      if (!response.ok) {
+        console.warn(`[node-bridge] ${new URL(config.baseUrl).hostname} ${response.status} ${path}`)
+        if (response.status === 404 && (path.startsWith('/internal/content/create-file') || path.startsWith('/internal/content/create-folder'))) return await commandBridgeFetch(nodeId, path, init)
+      }
       return response
     } catch (error) {
       directError = error
