@@ -30,7 +30,7 @@ export async function GET(request:NextRequest){
     const dbEnabled=Boolean(result.server.itemTrackingEnabled)
     const diagnosticState=!dbEnabled?'disabled':runtimeError?'unverified':runtimeEnabled&&mode&&mode!=='disabled'?'ready':'restart-required'
     const diagnosticMessage=diagnosticState==='disabled'
-      ?'Kayıp eşya takibi bu sunucu için kapalı.'
+      ?'Kayıp eşya takibi bu sunucu için kapalı. Takibi açtıktan sonra gerçekleşen kayıplar kaydedilebilir; geçmişte izlenmemiş kayıplar geriye dönük oluşturulamaz.'
       :diagnosticState==='ready'
         ?`Tracker etkin · ${mode}`
         :diagnosticState==='restart-required'
@@ -56,11 +56,12 @@ export async function POST(request:NextRequest){try{await ensurePanelSchema();co
       if(data.meta&&typeof data.meta==='object')meta=data.meta as Record<string,unknown>
     }catch{}
     const nextMeta={...meta,itemTrackingEnabled:true,itemTrackingMode:String(meta.itemTrackingMode??'death-snapshot')==='disabled'?'death-snapshot':String(meta.itemTrackingMode??'death-snapshot'),trackerAdapter:meta.trackerAdapter??'agent-fallback'}
-    const [write]=await db.insert(agentCommands).values({userId:result.server.userId,nodeId:result.server.nodeId,serverId,type:'write-file',payload:{path:'blockctrl.json',content:JSON.stringify(nextMeta,null,2),requestedBy:actor.id},status:'queued'}).returning({id:agentCommands.id})
+    const baseCreatedAt=Date.now()
+    const [write]=await db.insert(agentCommands).values({userId:result.server.userId,nodeId:result.server.nodeId,serverId,type:'write-file',payload:{path:'blockctrl.json',content:JSON.stringify(nextMeta,null,2),requestedBy:actor.id},status:'queued',createdAt:new Date(baseCreatedAt)}).returning({id:agentCommands.id})
     await db.update(servers).set({itemTrackingEnabled:true,updatedAt:new Date()}).where(eq(servers.id,serverId))
     let restartId:string|null=null
     if(result.server.status==='running'){
-      const [restart]=await db.insert(agentCommands).values({userId:result.server.userId,nodeId:result.server.nodeId,serverId,type:'restart',payload:{reason:'repair-item-tracker',itemTrackingEnabled:true,requestedBy:actor.id},status:'queued'}).returning({id:agentCommands.id})
+      const [restart]=await db.insert(agentCommands).values({userId:result.server.userId,nodeId:result.server.nodeId,serverId,type:'restart',payload:{memoryMb:result.server.memoryMb,loader:result.server.loader,mcVersion:result.server.mcVersion,loaderVersion:result.server.loaderVersion,port:result.server.port,worldName:result.server.worldName,itemTrackingEnabled:true,reason:'repair-item-tracker',requestedBy:actor.id},status:'queued',createdAt:new Date(baseCreatedAt+100)}).returning({id:agentCommands.id})
       restartId=restart.id
     }
     await db.insert(operationLogs).values({userId:result.server.userId,serverId,operation:'repair-item-tracker',status:'queued',message:restartId?'Tracker ayarı yazılıyor ve sunucu yeniden başlatılacak':'Tracker ayarı yazılıyor'})
