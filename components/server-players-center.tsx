@@ -59,7 +59,6 @@ export function ServerPlayersCenter({serverId,running,canManage,maxPlayers,white
 
   const players=data?.players??[]
   useEffect(()=>{if(selected&&players.some(player=>player.playerName===selected))return;setSelected(players.find(player=>player.isOnline)?.playerName??players[0]?.playerName??'')},[players,selected])
-  const current=players.find(player=>player.playerName===selected)??null
   useEffect(()=>{setRuntimeDetail(null);setHistoryLines([]);setInventoryItems(null);setEnderItems(null);setAdvancedNotice('')},[selected])
   const normalized=query.trim().toLocaleLowerCase('tr-TR')
   const visible=useMemo(()=>players.filter(player=>{
@@ -67,6 +66,7 @@ export function ServerPlayersCenter({serverId,running,canManage,maxPlayers,white
     const matchesFilter=filter==='all'||(filter==='online'&&player.isOnline)||(filter==='offline'&&!player.isOnline)||(filter==='staff'&&player.isOp)||(filter==='banned'&&player.banned)
     return matchesSearch&&matchesFilter
   }),[players,normalized,filter])
+  const current=visible.find(player=>player.playerName===selected)??null
   const effectiveCanManage=canManage&&data?.canManage!==false
   const actualMax=data?.summary?.maxPlayers??maxPlayers??null
   const actualWhitelist=data?.summary?.whitelistEnabled??whitelistEnabled??null
@@ -178,7 +178,7 @@ export function ServerPlayersCenter({serverId,running,canManage,maxPlayers,white
             <div><p className="text-[9px] uppercase tracking-wider text-slate-600">Son görülme</p><p className="mt-1 text-xs text-slate-300">{player.isOnline?'Şimdi':formatDate(player.lastSeenAt)}</p></div>
             <div><p className="text-[9px] uppercase tracking-wider text-slate-600">Oynama süresi</p><p className="mt-1 text-xs text-slate-300">{formatDuration(player.totalPlaySeconds)}</p></div>
             <div className="flex justify-end"><span className={`size-2 rounded-full ${player.isOnline?'bg-emerald-400 shadow-[0_0_10px_#34d399]':'bg-slate-700'}`}/></div>
-          </button>):<Empty text={players.length?'Arama veya filtreye uygun oyuncu yok.':'Henüz oyuncu kaydı yok. Sunucudan yenileyerek mevcut usercache/whitelist/ban kayıtlarını içe aktarabilirsiniz.'}/>} 
+          </button>):<Empty text={filter==='online'&&(data?.summary.online??0)>0?'Minecraft oyuncu sayısını bildirdi ancak agent isimleri doğrulayamadı. Konsol bağlantısını kontrol edip yenileyin.':players.length?'Arama veya filtreye uygun oyuncu yok.':'Henüz oyuncu kaydı yok. Sunucudan yenileyerek mevcut usercache/whitelist/ban kayıtlarını içe aktarabilirsiniz.'}/>}
         </div>
       </section>
 
