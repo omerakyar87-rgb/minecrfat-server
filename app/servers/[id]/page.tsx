@@ -321,7 +321,7 @@ export default function ServerPage(){
   const metricAge=latestMetric?Math.max(0,Math.round((Date.now()-new Date(latestMetric.createdAt).getTime())/1000)):null
   const metricFresh=!!latestMetric&&metricAge!==null&&metricAge<60
   const livePlayerCount=playersOverview?.summary?.online
-  const displayedPlayerCount=running?(typeof livePlayerCount==='number'?livePlayerCount:(metricFresh?latestMetric.players:server.playerCount)):0
+  const displayedPlayerCount=running&&onlineNode?(typeof livePlayerCount==='number'?livePlayerCount:(metricFresh?latestMetric.players:null)):running?null:0
   const processCpu=running&&metricFresh?latestMetric.cpuPercent:null
   const processMemoryUsed=running&&metricFresh?latestMetric.memoryUsedMb:null
   const processMemoryLimit=running&&metricFresh&&latestMetric.memoryTotalMb>0?latestMetric.memoryTotalMb:server.memoryMb
@@ -513,7 +513,7 @@ export default function ServerPage(){
 
 
                 <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-                  <OverviewKpi icon={Users} title="Oyuncular" value={`${displayedPlayerCount} / ${actualMaxPlayers??'—'}`} detail={metricFresh?'Canlı process metriği':'Canlı veri bekleniyor'} progress={actualMaxPlayers?Math.round(displayedPlayerCount/Math.max(1,actualMaxPlayers)*100):undefined} tone="blue"/>
+                  <OverviewKpi icon={Users} title="Oyuncular" value={`${displayedPlayerCount??'—'} / ${actualMaxPlayers??'—'}`} detail={displayedPlayerCount!==null&&onlineNode?'Canlı oyuncu verisi':'Canlı veri bekleniyor'} progress={displayedPlayerCount!==null&&actualMaxPlayers?Math.round(displayedPlayerCount/Math.max(1,actualMaxPlayers)*100):undefined} tone="blue"/>
                   <OverviewKpi icon={Cpu} title="Node CPU" value={onlineNode&&node?`%${Math.round(node.cpuPercent)}`:'—'} detail={onlineNode?'Heartbeat telemetrisi':'Node doğrulanmadı'} progress={onlineNode&&node?node.cpuPercent:undefined} tone="green"/>
                   <OverviewKpi icon={HardDrive} title="Node RAM" value={onlineNode&&node?`${(node.memoryUsedMb/1024).toFixed(1)} GB`:'—'} detail={onlineNode&&node?`${(node.memoryTotalMb/1024).toFixed(1)} GB toplam`:'Node doğrulanmadı'} progress={onlineNode?ramPct:undefined} tone="green"/>
                   <OverviewKpi icon={Database} title="Node Disk" value={onlineNode&&node?.diskTotalGb?`${node.diskUsedGb.toFixed(0)} GB`:'—'} detail={onlineNode&&node?.diskTotalGb?`${node.diskTotalGb.toFixed(0)} GB toplam`:'Disk doğrulanmadı'} progress={onlineNode&&node?.diskTotalGb?diskPct:undefined} tone="green"/>
