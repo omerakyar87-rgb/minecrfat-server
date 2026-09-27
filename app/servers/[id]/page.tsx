@@ -952,7 +952,7 @@ export default function ServerPage(){
 
           {section==='files'&&<>
             <PageHeading title="Dosyalar" text="Sunucu dosyalarınızı yükleyin, yönetin ve silin. Modlar, eklentiler, yapılandırma dosyaları, dünyalar ve günlükler bu sayfadan yönetilir."/>
-            {canViewFiles?<div className="space-y-4"><ServerBulkDownload serverId={id} canEdit={canFiles} running={running}/>{canFiles?<ServerFilesManager serverId={id} disabled={running}/>:<PanelCard title="Salt okunur dosya erişimi" subtitle="Dosyaları görüntüleyebilir ve izin verilen indirmeleri kullanabilirsiniz; değiştirme/yükleme işlemleri kapalıdır."><EmptyText text="Düzenleme için ayrıca Dosya işlemleri izni gerekir."/></PanelCard>}</div>:<PanelCard title="Erişim yok" subtitle="Sunucu dosyalarını görüntüleme yetkiniz yok."><EmptyText text="Yöneticiden Dosyalar bölüm izni isteyin."/></PanelCard>}
+            {canViewFiles?<div className="space-y-4"><ServerBulkDownload serverId={id} canEdit={canFiles} running={running}/>{canFiles?<ServerFilesManager serverId={id} disabled={false}/>:<PanelCard title="Salt okunur dosya erişimi" subtitle="Dosyaları görüntüleyebilir ve izin verilen indirmeleri kullanabilirsiniz; değiştirme/yükleme işlemleri kapalıdır."><EmptyText text="Düzenleme için ayrıca Dosya işlemleri izni gerekir."/></PanelCard>}</div>:<PanelCard title="Erişim yok" subtitle="Sunucu dosyalarını görüntüleme yetkiniz yok."><EmptyText text="Yöneticiden Dosyalar bölüm izni isteyin."/></PanelCard>}
           </>}
 
 
