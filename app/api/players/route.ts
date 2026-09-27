@@ -92,7 +92,9 @@ async function directJson(nodeId:string,path:string,init:RequestInit={}){
   return data
 }
 async function syncSnapshot(server:{id:string;userId:string},snapshot:RuntimeSnapshot){
-  const at=parseDate(snapshot.syncedAt)??new Date();const verified=snapshot.onlineVerified===true
+  const at=parseDate(snapshot.syncedAt)??new Date();const verified=snapshot.onlineVerified===true&&(
+    snapshot.playerCount==null||snapshot.onlineNames?.length===snapshot.playerCount
+  )
   const runtime=(Array.isArray(snapshot.players)?snapshot.players:[]).map(cleanRuntimePlayer).filter((row):row is RuntimePlayer=>!!row)
   const existing=await db.select().from(serverPlayers).where(eq(serverPlayers.serverId,server.id));const byKey=new Map(existing.map(row=>[row.playerNameKey,row]));const present=new Set<string>()
   for(const player of runtime){
@@ -112,6 +114,10 @@ async function syncSnapshot(server:{id:string;userId:string},snapshot:RuntimeSna
 }
 async function fetchRuntime(server:{id:string;nodeId:string;userId:string}){
   return await directJson(server.nodeId,`/internal/players/status?serverId=${encodeURIComponent(server.id)}`) as RuntimeSnapshot
+}
+function incompleteOnlineNames(snapshot:RuntimeSnapshot|null){
+  return !!snapshot?.running&&typeof snapshot.playerCount==='number'&&snapshot.playerCount>0&&
+    snapshot.onlineNames?.length!==snapshot.playerCount
 }
 function transientPlayers(snapshot:RuntimeSnapshot|null){
   const at=parseDate(snapshot?.syncedAt)??new Date()
@@ -149,7 +155,7 @@ export async function GET(request:NextRequest){
 
   if(!storageReady){
     if(nodeFresh(node)){
-      try{runtime=await fetchRuntime(x.server)}catch(error){runtimeError=nodeDiagnosticMessage(error)}
+      try{runtime=await fetchRuntime(x.server);if(incompleteOnlineNames(runtime))runtimeError='Minecraft oyuncu sayısını bildirdi ancak isim listesini doğrulamadı. Agent konsol bağlantısını kontrol edin.'}catch(error){runtimeError=nodeDiagnosticMessage(error)}
     }else runtimeError='Node çevrimdışı veya heartbeat güncel değil.'
     const players=transientPlayers(runtime)
     const migrationMessage='Kalıcı oyuncu geçmişi için 0015_server_players migrationı henüz uygulanmamış.'
@@ -161,7 +167,7 @@ export async function GET(request:NextRequest){
   }
 
   if(nodeFresh(node)){
-    try{runtime=await fetchRuntime(x.server);await syncSnapshot(x.server,runtime)}catch(error){runtimeError=nodeDiagnosticMessage(error)}
+    try{runtime=await fetchRuntime(x.server);await syncSnapshot(x.server,runtime);if(incompleteOnlineNames(runtime))runtimeError='Minecraft oyuncu sayısını bildirdi ancak isim listesini doğrulamadı. Agent konsol bağlantısını kontrol edin.'}catch(error){runtimeError=nodeDiagnosticMessage(error)}
   }else if(!nodeFresh(node))runtimeError='Node çevrimdışı veya heartbeat güncel değil.'
   const rows=await db.select().from(serverPlayers).where(eq(serverPlayers.serverId,serverId)).orderBy(desc(serverPlayers.isOnline),desc(serverPlayers.lastSeenAt),desc(serverPlayers.updatedAt)).limit(1000)
   const players=rows.map(presentRow);const latestSync=rows.reduce<Date|null>((latest,row)=>!row.lastSyncAt?latest:!latest||row.lastSyncAt>latest?row.lastSyncAt:latest,null)

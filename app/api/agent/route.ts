@@ -40,6 +40,9 @@ async function persistPlayerPresence(nodeId:string,input:z.infer<typeof playerPr
 async function persistPlayerList(nodeId:string,input:z.infer<typeof playerListSchema>){
   const server=await serverForNode(input.serverId,nodeId);if(!server)return
   if(input.playerCount!==undefined)await db.update(servers).set({playerCount:input.playerCount,updatedAt:new Date()}).where(eq(servers.id,server.id))
+  // A server may report a count while its console omits the names. That is not
+  // evidence that every previously known player has disconnected.
+  if(input.playerCount!==undefined&&input.names.length!==input.playerCount)return
   if(!(await playerStorageReady()))return
   const at=input.observedAt??new Date();const uniqueNames=[...new Map(input.names.map(name=>[name.toLowerCase(),name])).values()];const onlineKeys=new Set(uniqueNames.map(name=>name.toLowerCase()))
   const existing=await db.select().from(serverPlayers).where(eq(serverPlayers.serverId,server.id));const byKey=new Map(existing.map(row=>[row.playerNameKey,row]))

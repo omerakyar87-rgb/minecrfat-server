@@ -616,7 +616,7 @@ async function reportServerLogLine(serverId:string,stream:'stdout'|'stderr',line
   if(players){
     const names=String(players[3]??'').split(',').map(name=>name.trim()).filter(name=>/^[A-Za-z0-9_]{1,16}$/.test(name))
     await report({type:'server-status',serverId,status:'running',pid:managedPids.get(serverId)??null,playerCount:Number(players[1])})
-    await report({type:'player-list',serverId,names,playerCount:Number(players[1]),maxPlayers:Number(players[2]),observedAt:new Date().toISOString()})
+    if(names.length===Number(players[1]))await report({type:'player-list',serverId,names,playerCount:Number(players[1]),maxPlayers:Number(players[2]),observedAt:new Date().toISOString()})
   }
 }
 async function readLogAppend(serverId:string,stream:'stdout'|'stderr',state:LogTailState){const file=join(serverDir(serverId),stream==='stdout'?'.blockctrl-stdout.log':'.blockctrl-stderr.log');const info=await stat(file).catch(()=>null);if(!info?.isFile())return;let offset=stream==='stdout'?state.stdoutOffset:state.stderrOffset;if(info.size<offset)offset=0;if(info.size===offset)return;const size=Math.min(512*1024,info.size-offset);const handle=await open(file,'r');try{const buffer=Buffer.alloc(size);const{bytesRead}=await handle.read(buffer,0,size,offset);offset+=bytesRead;let text=(stream==='stdout'?state.stdoutPartial:state.stderrPartial)+buffer.subarray(0,bytesRead).toString('utf8');const lines=text.split(/\r?\n/);const partial=lines.pop()??'';if(stream==='stdout'){state.stdoutOffset=offset;state.stdoutPartial=partial.slice(-16000)}else{state.stderrOffset=offset;state.stderrPartial=partial.slice(-16000)}for(const line of lines)await reportServerLogLine(serverId,stream,line,state)}finally{await handle.close()}}
@@ -801,16 +801,16 @@ async function queryOnlinePlayers(id:string){
   if(!pid)return{verified:true,names:[] as string[],count:0,maxPlayers:configuredMax,source:'server-stopped'}
   if(!existsSync(join(serverDir(id),'.blockctrl-stdin')))return{verified:false,names:[] as string[],count:null as number|null,maxPlayers:configuredMax,source:'control-channel-unavailable'}
   const stdout=join(serverDir(id),'.blockctrl-stdout.log');const offset=(await stat(stdout).catch(()=>null))?.size??0
-  try{await writeConsole(id,'list')}catch{const names=[...playerPresenceCache.values()].filter(row=>row.isOnline&&row.at>Date.now()-120_000).map(row=>row.playerName);return{verified:names.length>0,names,count:names.length,maxPlayers:configuredMax,source:names.length?'log-presence-fallback':'online-query-unavailable'}}
+  try{await writeConsole(id,'list')}catch{const names=[...playerPresenceCache.entries()].filter(([key,row])=>key.startsWith(`${id}:`)&&row.isOnline&&row.at>Date.now()-120_000).map(([,row])=>row.playerName);return{verified:names.length>0,names,count:names.length,maxPlayers:configuredMax,source:names.length?'log-presence-fallback':'online-query-unavailable'}}
   const deadline=Date.now()+2500
   while(Date.now()<deadline){
     await new Promise(resolve=>setTimeout(resolve,150))
     const fresh=await readLogSince(stdout,offset,128*1024)
     const matches=[...fresh.matchAll(/There are (\d+) of a max of (\d+) players online:?\s*(.*)$/gim)]
     const hit=matches.at(-1)
-    if(hit){const names=String(hit[3]??'').split(',').map(name=>name.trim()).filter(name=>/^[A-Za-z0-9_]{1,16}$/.test(name));return{verified:true,names,count:Number(hit[1]),maxPlayers:Number(hit[2])||configuredMax,source:'minecraft-list'}}
+    if(hit){const names=String(hit[3]??'').split(',').map(name=>name.trim()).filter(name=>/^[A-Za-z0-9_]{1,16}$/.test(name));const count=Number(hit[1]);if(names.length===count)return{verified:true,names,count,maxPlayers:Number(hit[2])||configuredMax,source:'minecraft-list'};const cached=[...playerPresenceCache.entries()].filter(([key,row])=>key.startsWith(`${id}:`)&&row.isOnline).map(([,row])=>row.playerName);return{verified:cached.length===count,names:cached.length===count?cached:[],count,maxPlayers:Number(hit[2])||configuredMax,source:cached.length===count?'log-presence-fallback':'minecraft-list-incomplete'}}
   }
-  const names=[...playerPresenceCache.values()].filter(row=>row.isOnline&&row.at>Date.now()-120_000).map(row=>row.playerName);return{verified:names.length>0,names,count:names.length,maxPlayers:configuredMax,source:names.length?'log-presence-fallback':'online-query-timeout'}
+  const names=[...playerPresenceCache.entries()].filter(([key,row])=>key.startsWith(`${id}:`)&&row.isOnline&&row.at>Date.now()-120_000).map(([,row])=>row.playerName);return{verified:names.length>0,names,count:names.length,maxPlayers:configuredMax,source:names.length?'log-presence-fallback':'online-query-timeout'}
 }
 async function playersStatus(id:string){
   if(!validServerId(id))throw new Error('Geçersiz serverId')
