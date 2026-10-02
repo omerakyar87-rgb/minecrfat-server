@@ -386,6 +386,8 @@ async function commandBridgeFetch(nodeId: string, path: string, init: RequestIni
   const pathname = url.pathname
 
   if (pathname === '/internal/settings/status' && method === 'GET') {
+    try { return jsonResponse(await runPolledCommand(server, 'settings-status', { includeOptimizationMods: url.searchParams.get('optimizationMods') === '1' }, 35_000)) }
+    catch (error) { if (!unsupportedCommand(error)) throw error }
     const [result,metaRaw] = await Promise.all([
       runPolledCommand(server, 'read-file', { path: 'server.properties' }),
       legacyReadFile(server, 'blockctrl.json'),

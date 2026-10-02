@@ -6,8 +6,10 @@ import { cpus, freemem, totalmem, loadavg, uptime as osUptime, hostname } from '
 import { createServer } from 'node:http';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { pipeline } from 'node:stream/promises';
-import { applyPerformance, restorePerformance, performanceStatus } from './performance.js';
+import { restorePerformance, performanceStatus } from './performance.js';
 import { parseTickMetrics, parseProcessStat, totalCpuTicks } from './performance-metrics.js';
+import { runtimeOptimizationStatus, enableRuntimeOptimization, disableRuntimeOptimization, prepareOptimizedLaunch, markOptimizedLaunch } from './runtime-optimizer.js';
+import { optimizationModStatus, installOptimizationMod, removeOptimizationMod } from './optimization-mods.js';
 const PANEL_URL = process.env.PANEL_URL?.replace(/\/$/, '');
 const NODE_ID = process.env.NODE_ID;
 const NODE_TOKEN = process.env.NODE_TOKEN;
@@ -818,9 +820,10 @@ async function install(payload, id) {
 async function configureJvmMemory(dir, memory) { const path = join(dir, 'user_jvm_args.txt'); const existing = await readFile(path, 'utf8').catch(() => ''); const kept = existing.split(/\r?\n/).filter(line => line.trim() && !/^\s*-Xm[sx]\d+[kKmMgG]?\s*$/.test(line)); await writeFile(path, [`-Xms${memory}M`, `-Xmx${memory}M`, ...kept].join('\n') + '\n', 'utf8'); }
 async function ensureControlFifo(dir) { const fifo = join(dir, '.blockctrl-stdin'); await rm(fifo, { force: true }); await run('mkfifo', ['.blockctrl-stdin'], dir); await chmod(fifo, 0o600); return fifo; }
 async function launch(id, payload) { agentEvent('info', id, 'Minecraft başlatma isteği alındı'); if (await validatedManagedPid(id))
-    throw new Error('Server already running'); const dir = serverDir(id); let meta = await readServerMeta(id); const memory = Math.max(1024, Math.min(Number(payload.memoryMb ?? meta.memoryMb) || 4096, 65536)); const runtime = await validatedRuntimeTracking(id, meta); meta = runtime.meta; const loader = String(payload.loader ?? runtime.loader ?? 'vanilla').toLowerCase(); const trackingEnabled = payload.itemTrackingEnabled === true || meta.itemTrackingEnabled === true; const trackingMode = trackingEnabled ? runtime.mode : 'disabled'; const runScript = existsSync(join(dir, 'run.sh')); if (runScript)
-    await configureJvmMemory(dir, memory); await ensureControlFifo(dir); await writeFile(join(dir, '.blockctrl-stdout.log'), '', 'utf8'); await writeFile(join(dir, '.blockctrl-stderr.log'), '', 'utf8'); const out = await open(join(dir, '.blockctrl-stdout.log'), 'a'), err = await open(join(dir, '.blockctrl-stderr.log'), 'a'); const bridgeEnabled = meta.websiteRegisterBridge && typeof meta.websiteRegisterBridge === 'object' ? meta.websiteRegisterBridge.enabled === true : false; const bridgeToken = bridgeEnabled || trackingMode === 'event-adapter' ? await trackerTokenFor(id) : ''; const trackerEnv = { ...process.env, BLOCKCTRL_SERVER_ID: id, BLOCKCTRL_TRACKER_ENDPOINT: 'http://127.0.0.1:8788/item-loss', BLOCKCTRL_WEBSITE_REGISTER_ENDPOINT: 'http://127.0.0.1:8788/website-register', BLOCKCTRL_TRACKER_TOKEN: bridgeToken, BLOCKCTRL_ITEM_TRACKING_ENABLED: trackingEnabled ? 'true' : 'false', JVM_ARGS: `-Xms${memory}M -Xmx${memory}M` }; const program = runScript ? 'bash' : 'java'; const args = runScript ? ['run.sh', 'nogui'] : [`-Xms${memory}M`, `-Xmx${memory}M`, '-jar', 'server.jar', 'nogui']; const wrapper = 'exec 3<> .blockctrl-stdin; exec "$@" <&3'; const child = spawn('bash', ['-lc', wrapper, 'blockctrl-launch', program, ...args], { cwd: dir, stdio: ['ignore', out.fd, err.fd], env: trackerEnv, detached: true }); await out.close(); await err.close(); if (!child.pid)
-    throw new Error('Minecraft process PID alınamadı'); processes.set(id, child); managedPids.set(id, child.pid); playerReconciledServers.delete(id); await writeFile(join(dir, '.blockctrl-pid'), String(child.pid)); startLogTailer(id, loader, trackingMode, false); if (trackingEnabled && trackingMode === 'death-snapshot')
+    throw new Error('Server already running'); const dir = serverDir(id); let meta = await readServerMeta(id); const memory = Math.max(1024, Math.min(Number(payload.memoryMb ?? meta.memoryMb) || 4096, 65536)); const runtime = await validatedRuntimeTracking(id, meta); meta = runtime.meta; const loader = String(payload.loader ?? runtime.loader ?? 'vanilla').toLowerCase(); const trackingEnabled = payload.itemTrackingEnabled === true || meta.itemTrackingEnabled === true; const trackingMode = trackingEnabled ? runtime.mode : 'disabled'; const runScript = existsSync(join(dir, 'run.sh')); const optimizationStatePath = join(DATA_DIR, 'runtime-optimization', id + '.json'); const optimizedArgs = await prepareOptimizedLaunch(dir, optimizationStatePath, memory); if (runScript && !optimizedArgs)
+    await configureJvmMemory(dir, memory); await ensureControlFifo(dir); await writeFile(join(dir, '.blockctrl-stdout.log'), '', 'utf8'); await writeFile(join(dir, '.blockctrl-stderr.log'), '', 'utf8'); const out = await open(join(dir, '.blockctrl-stdout.log'), 'a'), err = await open(join(dir, '.blockctrl-stderr.log'), 'a'); const bridgeEnabled = meta.websiteRegisterBridge && typeof meta.websiteRegisterBridge === 'object' ? meta.websiteRegisterBridge.enabled === true : false; const bridgeToken = bridgeEnabled || trackingMode === 'event-adapter' ? await trackerTokenFor(id) : ''; const trackerEnv = { ...process.env, BLOCKCTRL_SERVER_ID: id, BLOCKCTRL_TRACKER_ENDPOINT: 'http://127.0.0.1:8788/item-loss', BLOCKCTRL_WEBSITE_REGISTER_ENDPOINT: 'http://127.0.0.1:8788/website-register', BLOCKCTRL_TRACKER_TOKEN: bridgeToken, BLOCKCTRL_ITEM_TRACKING_ENABLED: trackingEnabled ? 'true' : 'false', JVM_ARGS: optimizedArgs ? optimizedArgs.join(' ') : `-Xms${memory}M -Xmx${memory}M` }; const program = runScript ? 'bash' : 'java'; const args = runScript ? ['run.sh', 'nogui'] : [...(optimizedArgs ?? [`-Xms${memory}M`, `-Xmx${memory}M`]), '-jar', 'server.jar', 'nogui']; const wrapper = 'exec 3<> .blockctrl-stdin; exec "$@" <&3'; const child = spawn('bash', ['-lc', wrapper, 'blockctrl-launch', program, ...args], { cwd: dir, stdio: ['ignore', out.fd, err.fd], env: trackerEnv, detached: true }); await out.close(); await err.close(); if (!child.pid)
+    throw new Error('Minecraft process PID alınamadı'); processes.set(id, child); managedPids.set(id, child.pid); if (optimizedArgs)
+    await markOptimizedLaunch(optimizationStatePath, child.pid, optimizedArgs).catch(error => agentEvent('warn', id, 'Optimizasyon baslatma kaydi yazilamadi', error)); playerReconciledServers.delete(id); await writeFile(join(dir, '.blockctrl-pid'), String(child.pid)); startLogTailer(id, loader, trackingMode, false); if (trackingEnabled && trackingMode === 'death-snapshot')
     startVanillaDeathTracker(id, loader); child.unref(); child.on('error', error => { stopVanillaDeathTracker(id); stopLogTailer(id); processes.delete(id); managedPids.delete(id); void rm(join(dir, '.blockctrl-pid'), { force: true }); void report({ type: 'server-status', serverId: id, status: 'failed', error: error.code === 'ENOENT' ? 'Java çalıştırılamadı. Java installation/PATH kontrol edin.' : error.code === 'EACCES' ? 'Java çalıştırılamadı. Dosya izinlerini kontrol edin.' : 'Java process başlatılamadı.' }); }); child.on('close', code => { stopVanillaDeathTracker(id); stopLogTailer(id); processes.delete(id); managedPids.delete(id); void rm(join(dir, '.blockctrl-pid'), { force: true }); const expected = stopping.delete(id); void report({ type: 'server-status', serverId: id, status: expected || code === 0 ? 'stopped' : 'crashed', pid: null }); }); agentEvent('info', id, `Minecraft process başlatıldı · PID ${child.pid}`); await report({ type: 'server-status', serverId: id, status: 'running', pid: child.pid }); }
 async function stop(id, force = false) { const pid = await validatedManagedPid(id); if (!pid) {
     agentEvent('warn', id, 'Durdurma istendi ancak çalışan process doğrulanamadı');
@@ -1889,7 +1892,10 @@ async function execute(command) { const scopedId = command.serverId ?? null; if 
     if (!livePid)
         managedPids.delete(id);
     let result = {};
-    if (command.type === 'reconnect-node' || command.type === 'refresh-node') {
+    if (command.type === 'settings-status') {
+        result = await settingsStatus(id, p.includeOptimizationMods === true);
+    }
+    else if (command.type === 'reconnect-node' || command.type === 'refresh-node') {
         await heartbeat();
         result = { refreshed: true, at: new Date().toISOString() };
     }
@@ -2013,12 +2019,27 @@ async function execute(command) { const scopedId = command.serverId ?? null; if 
         await rm(target, { recursive: true, force: true });
         result = { deleted: true };
     }
+    else if (['runtime-enable', 'runtime-disable', 'optimization-mod-install', 'optimization-mod-remove'].includes(command.type)) {
+        if (isServerRunningKnown(id))
+            throw new Error('Optimizasyon icin Minecraft sunucusunu durdurun');
+        const root = serverDir(id), meta = await readServerMeta(id), statePath = join(DATA_DIR, 'runtime-optimization', id + '.json'), manifestPath = join(DATA_DIR, 'optimization-mods', id + '.json');
+        if (command.type === 'runtime-enable')
+            result = await enableRuntimeOptimization(root, statePath, Number(p.memoryMb ?? meta.memoryMb ?? 4096), String(p.profile ?? ''));
+        else if (command.type === 'runtime-disable')
+            result = await disableRuntimeOptimization(root, statePath);
+        else if (command.type === 'optimization-mod-install')
+            result = await installOptimizationMod(root, manifestPath, String(p.key ?? ''), String(p.versionId ?? ''), String(meta.loader ?? '').toLowerCase(), String(meta.version ?? ''));
+        else
+            result = await removeOptimizationMod(root, manifestPath, String(p.key ?? ''));
+    }
     else if (command.type === 'performance-apply' || command.type === 'performance-restore') {
+        if (command.type === 'performance-apply')
+            throw new Error('Mesafe profilleri kaldirildi; CPU/RAM calisma profilini kullanin');
         if (isServerRunningKnown(id))
             throw new Error('Performans ayarlarini uygulamak icin sunucuyu durdurun');
         const propsPath = await safePath(id, 'server.properties');
         const backupPath = join(DATA_DIR, 'performance-backups', id + '.json');
-        result = command.type === 'performance-apply' ? await applyPerformance(propsPath, backupPath, String(p.profile ?? '')) : await restorePerformance(propsPath, backupPath);
+        result = await restorePerformance(propsPath, backupPath);
     }
     else if (command.type === 'set-properties') {
         if (isServerRunningKnown(id))
@@ -2960,7 +2981,7 @@ async function javaRuntimeStatus(id) {
     const vendor = /temurin|adoptium/i.test(raw) ? 'Eclipse Temurin' : /corretto/i.test(raw) ? 'Amazon Corretto' : /graalvm/i.test(raw) ? 'GraalVM' : /openjdk/i.test(raw) ? 'OpenJDK' : null;
     return { binary, version, major, vendor, runningPid: pid, raw: raw.split(/\r?\n/).slice(0, 3).join(' · ').slice(0, 500) };
 }
-async function settingsStatus(id) {
+async function settingsStatus(id, includeOptimizationMods = false) {
     if (!validServerId(id))
         throw new Error('Geçersiz serverId');
     const root = serverDir(id);
@@ -2986,7 +3007,9 @@ async function settingsStatus(id) {
     catch { }
     const javaRuntime = await javaRuntimeStatus(id);
     const performance = await performanceStatus(await safePath(id, 'server.properties'), join(DATA_DIR, 'performance-backups', id + '.json')).catch(error => ({ version: 1, error: error instanceof Error ? error.message : 'Performans bilgisi alinamadi' }));
-    return { ready: true, running: isServerRunningKnown(id), properties, meta, javaRuntime, performance, readAt: new Date().toISOString() };
+    const runtimeOptimization = await runtimeOptimizationStatus(root, join(DATA_DIR, 'runtime-optimization', id + '.json'), Number(meta.memoryMb) || 4096, javaRuntime.runningPid).catch(error => ({ version: 2, error: error instanceof Error ? error.message : 'Optimizasyon okunamadi' }));
+    const optimizationMods = includeOptimizationMods ? await optimizationModStatus(root, join(DATA_DIR, 'optimization-mods', id + '.json'), String(meta.loader ?? '').toLowerCase(), String(meta.version ?? '')) : undefined;
+    return { ready: true, running: isServerRunningKnown(id), properties, meta, javaRuntime, performance, runtimeOptimization, optimizationMods, readAt: new Date().toISOString() };
 }
 async function tailTextLines(path, limit = 240, maxBytes = 512 * 1024) {
     const info = await stat(path).catch(() => null);
@@ -3254,7 +3277,7 @@ function startDownloadBridge() {
             }
             if (url.pathname === '/internal/settings/status' && req.method === 'GET') {
                 const serverId = String(url.searchParams.get('serverId') ?? '');
-                sendJson(res, 200, await settingsStatus(serverId));
+                sendJson(res, 200, await settingsStatus(serverId, url.searchParams.get('optimizationMods') === '1'));
                 return;
             }
             if (url.pathname === '/internal/worlds/templates' && req.method === 'GET') {
