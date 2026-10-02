@@ -8,7 +8,7 @@ cd "$repo_dir/agent"
 
 npx --yes pnpm@10.34.5 install --frozen-lockfile
 npx --yes pnpm@10.34.5 build
-for file in index.js performance.js performance-metrics.js; do
+for file in index.js performance.js performance-metrics.js runtime-optimizer.js optimization-mods.js; do
   test -s "dist/$file"
 done
 sudo test -f "$agent_target/dist/index.js"
@@ -23,7 +23,7 @@ rollback() {
 }
 trap rollback ERR
 sudo systemctl stop "$agent_service"
-sudo install -o blockctrl -g blockctrl -m 0644 dist/index.js dist/performance.js dist/performance-metrics.js "$agent_target/dist/"
+sudo install -o blockctrl -g blockctrl -m 0644 dist/index.js dist/performance.js dist/performance-metrics.js dist/runtime-optimizer.js dist/optimization-mods.js "$agent_target/dist/"
 sudo systemctl start "$agent_service"
 # Confirm service stays active beyond initial startup.
 for attempt in 1 2 3; do

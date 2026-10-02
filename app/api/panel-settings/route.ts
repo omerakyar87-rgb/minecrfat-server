@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getPanelActor } from '@/lib/api-auth'
-import { and, desc, eq } from 'drizzle-orm'
+import { and, desc, eq, inArray } from 'drizzle-orm'
 import { db, ensurePanelSchema } from '@/lib/db'
 import { agentCommands, auditLog, nodes, serverPermissions, serverSettings, serverMetrics, servers } from '@/lib/db/schema'
 import { nodeDiagnosticMessage, nodeFetch } from '@/lib/node-bridge'
+
+const SETTINGS_COMMAND_TYPES = ['set-properties', 'change-port', 'performance-apply', 'performance-restore', 'runtime-enable', 'runtime-disable', 'optimization-mod-install', 'optimization-mod-remove']
 
 const LIVE_CAPABILITIES = ['properties', 'port', 'panel-metadata', 'runtime-memory', 'logs', 'console-diagnostics', 'file-browser', 'bulk-download', 'firewall']
 
@@ -152,9 +154,9 @@ function canEdit(x: NonNullable<Awaited<ReturnType<typeof access>>>) {
   return !!x.permission?.canReset
 }
 
-async function liveSettings(nodeId: string, serverId: string) {
+async function liveSettings(nodeId: string, serverId: string, includeMods = false) {
   try {
-    const response = await nodeFetch(nodeId, `/internal/settings/status?serverId=${encodeURIComponent(serverId)}`)
+    const response = await nodeFetch(nodeId, `/internal/settings/status?serverId=${encodeURIComponent(serverId)}${includeMods ? "&optimizationMods=1" : ""}`, includeMods ? { signal: AbortSignal.timeout(25_000) } : {})
     const text = await response.text()
     let payload: Record<string, unknown> = {}
     try { payload = text ? JSON.parse(text) as Record<string, unknown> : {} } catch { payload = {} }
@@ -177,7 +179,7 @@ export async function GET(request: NextRequest) {
   const [row, node, recent, metrics] = await Promise.all([
     db.select().from(serverSettings).where(eq(serverSettings.serverId, serverId)).limit(1).then(rows => rows[0]),
     db.select().from(nodes).where(eq(nodes.id, x.server.nodeId)).limit(1).then(rows => rows[0]),
-    db.select().from(agentCommands).where(eq(agentCommands.serverId, serverId)).orderBy(desc(agentCommands.createdAt)).limit(40),
+    db.select().from(agentCommands).where(and(eq(agentCommands.serverId, serverId), inArray(agentCommands.type, SETTINGS_COMMAND_TYPES))).orderBy(desc(agentCommands.createdAt)).limit(40),
     db.select().from(serverMetrics).where(eq(serverMetrics.serverId, serverId)).orderBy(desc(serverMetrics.createdAt)).limit(1),
   ])
 
@@ -191,14 +193,18 @@ export async function GET(request: NextRequest) {
   }
   const nodeOnline = nodeIsFresh(node?.lastHeartbeat, node?.status)
   let performance: Record<string, unknown> | null = null
+  let runtimeOptimization: Record<string, unknown> | null = null
+  let optimizationMods: Record<string, unknown> | null = null
   let liveSync = false
   let liveSyncError: string | null = null
   if (nodeOnline) {
-    const live = await liveSettings(x.server.nodeId, serverId)
+    const live = await liveSettings(x.server.nodeId, serverId, request.nextUrl.searchParams.get('optimizationMods') === '1')
     liveSync = live.ok
     liveSyncError = live.error
     if (live.ok && live.data) {
       performance = live.data.performance as Record<string, unknown> | null ?? null
+      runtimeOptimization = live.data.runtimeOptimization as Record<string, unknown> | null ?? null
+      optimizationMods = live.data.optimizationMods as Record<string, unknown> | null ?? null
       const properties = live.data.properties && typeof live.data.properties === 'object' && !Array.isArray(live.data.properties)
         ? live.data.properties as Record<string, unknown>
         : {}
@@ -210,7 +216,7 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  const settingsCommands = recent.filter(command => ['set-properties', 'change-port', 'performance-apply', 'performance-restore'].includes(command.type))
+  const settingsCommands = recent
   const pendingApply = settingsCommands.some(command => ['queued', 'processing', 'running'].includes(command.status))
   const latestSettingsCommand = settingsCommands[0]
   const lastFailure = latestSettingsCommand?.status === 'failed' ? latestSettingsCommand : null
@@ -224,6 +230,10 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     settings: effective,
     performance,
+    runtimeOptimization,
+    optimizationTarget: { loader: x.server.loader, minecraft: x.server.mcVersion },
+    optimizationMods,
+    canInstallOptimizationMods: x.full || !!(x.permission?.canReset && x.permission?.canFiles),
     latestMetric: metrics[0] ?? null,
     capabilities: LIVE_CAPABILITIES,
     supportedKeys,
@@ -261,19 +271,25 @@ export async function PATCH(request: NextRequest) {
 
   if (body.performanceAction !== undefined) {
     const action = String(body.performanceAction)
-    if (!['apply', 'restore'].includes(action)) return NextResponse.json({ error: 'Geçersiz performans işlemi' }, { status: 400 })
+    const types: Record<string, string> = { 'runtime-enable': 'runtime-enable', 'runtime-disable': 'runtime-disable', 'mod-install': 'optimization-mod-install', 'mod-remove': 'optimization-mod-remove', restore: 'performance-restore' }
+    if (!Object.hasOwn(types, action)) return NextResponse.json({ error: 'Geçersiz işlem. Mesafe azaltma profilleri kaldırıldı.' }, { status: 400 })
+    const modAction = action.startsWith('mod-')
+    if (modAction && !x.full && !(x.permission?.canReset && x.permission?.canFiles)) return NextResponse.json({ error: 'Mod kurulumu için dosya ve sıfırlama yetkisi gerekiyor.' }, { status: 403 })
     const profile = String(body.profile ?? '')
-    if (action === 'apply' && !['balanced', 'lowResource'].includes(profile)) return NextResponse.json({ error: 'Geçersiz performans profili' }, { status: 400 })
+    if (action === 'runtime-enable' && !['balanced', 'memory'].includes(profile)) return NextResponse.json({ error: 'Geçersiz çalışma profili' }, { status: 400 })
+    const key = String(body.key ?? ''), versionId = String(body.versionId ?? '')
+    if (modAction && !['lithium', 'ferritecore', 'modernfix'].includes(key)) return NextResponse.json({ error: 'Geçersiz optimizasyon modu' }, { status: 400 })
+    if (action === 'mod-install' && !/^[a-zA-Z0-9]{1,32}$/.test(versionId)) return NextResponse.json({ error: 'Geçerli mod sürümünü seçin' }, { status: 400 })
     const node = (await db.select().from(nodes).where(eq(nodes.id, x.server.nodeId)).limit(1))[0]
     if (!nodeIsFresh(node?.lastHeartbeat, node?.status) || !SETTINGS_OFFLINE_STATUSES.has(x.server.status)) return NextResponse.json({ error: 'Agent bağlı ve Minecraft sunucusu tamamen kapalı olmalı.' }, { status: 409 })
     const live = await liveSettings(x.server.nodeId, serverId)
-    const performance = live.data?.performance as Record<string, unknown> | undefined
-    if (!live.ok || performance?.version !== 1 || performance.error || live.data?.running !== false) return NextResponse.json({ error: 'Performans modülü hazır değil. Agent güncellemesini tamamlayın ve sunucuyu durdurun.' }, { status: 409 })
-    if (action === 'apply' && performance.backup) return NextResponse.json({ error: 'Yeni profil öncesinde mevcut performans yedeğini geri alın.' }, { status: 409 })
-    if (action === 'restore' && !performance.backup) return NextResponse.json({ error: 'Performans yedeği bulunamadı.' }, { status: 409 })
-    const [command] = await db.insert(agentCommands).values({ userId: x.server.userId, nodeId: x.server.nodeId, serverId, type: action === 'apply' ? 'performance-apply' : 'performance-restore', payload: action === 'apply' ? { profile } : {}, status: 'queued' }).returning()
-    await db.insert(auditLog).values({ userId: a.id, action: `server.performance.${action}`, resourceType: 'server', resourceId: serverId, details: { profile, commandId: command.id } })
-    return NextResponse.json({ queued: true, commandId: command.id, message: 'İşlem agent kuyruğuna alındı. Sonuç doğrulanana kadar uygulanmış sayılmaz.' }, { status: 202 })
+    const runtime = live.data?.runtimeOptimization as Record<string, unknown> | undefined
+    if (!live.ok || live.data?.running !== false || (action !== 'restore' && (runtime?.version !== 2 || runtime.error))) return NextResponse.json({ error: 'CPU/RAM optimizasyonu için agent güncellemesini tamamlayın ve sunucuyu durdurun.' }, { status: 409 })
+    if (action === 'runtime-enable' && (runtime?.enabled || !runtime?.supported)) return NextResponse.json({ error: runtime?.enabled ? 'Önce etkin çalışma profilini geri alın.' : String(runtime?.reason ?? 'Başlatıcı desteklenmiyor') }, { status: 409 })
+    const payload = action === 'runtime-enable' ? { profile, memoryMb: x.server.memoryMb } : modAction ? { key, versionId } : {}
+    const [command] = await db.insert(agentCommands).values({ userId: x.server.userId, nodeId: x.server.nodeId, serverId, type: types[action], payload, status: 'queued' }).returning()
+    await db.insert(auditLog).values({ userId: a.id, action: `server.performance.${action}`, resourceType: 'server', resourceId: serverId, details: { profile, key, versionId, commandId: command.id } })
+    return NextResponse.json({ queued: true, commandId: command.id, message: 'İşlem agent kuyruğuna alındı; sonucu doğrulanınca gösterilecek.' }, { status: 202 })
   }
 
   const changes = body.changes && typeof body.changes === 'object' && !Array.isArray(body.changes)
