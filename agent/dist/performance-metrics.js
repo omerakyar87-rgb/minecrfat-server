@@ -1,6 +1,6 @@
 export function parseTickMetrics(raw) {
     const lines = raw.replace(/\x1b\[[0-9;]*m/g, '').replace(/§[0-9a-fklmnor]/gi, '').split(/\r?\n/)
-        .map(line => line.replace(/^\[[^\]]+\] \[[^\]]+\/INFO\]:\s*/, '').trim());
+        .map(line => line.replace(/^(?:\[[^\]]+\] \[[^\]]+\/INFO\]|\[\d{2}:\d{2}:\d{2} INFO\]):\s*/, '').trim());
     let tps = null, mspt = null;
     for (let index = 0; index < lines.length; index++) {
         const line = lines[index];

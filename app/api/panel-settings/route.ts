@@ -211,7 +211,7 @@ export async function GET(request: NextRequest) {
   }
 
   const settingsCommands = recent.filter(command => ['set-properties', 'change-port', 'performance-apply', 'performance-restore'].includes(command.type))
-  const pendingApply = settingsCommands.some(command => command.status === 'queued' || command.status === 'running')
+  const pendingApply = settingsCommands.some(command => ['queued', 'processing', 'running'].includes(command.status))
   const latestSettingsCommand = settingsCommands[0]
   const lastFailure = latestSettingsCommand?.status === 'failed' ? latestSettingsCommand : null
   const canEditSettings = canEdit(x)
@@ -238,6 +238,7 @@ export async function GET(request: NextRequest) {
     pendingApply,
     nodeLastHeartbeat: node?.lastHeartbeat?.toISOString?.() ?? null,
     lastApply: latestSettingsCommand ? {
+      id: latestSettingsCommand.id,
       status: latestSettingsCommand.status,
       type: latestSettingsCommand.type,
       createdAt: latestSettingsCommand.createdAt?.toISOString?.() ?? null,

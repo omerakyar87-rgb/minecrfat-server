@@ -2,7 +2,7 @@
 
 Open **Server → Settings → Lag azaltma**. The module reads the authenticated node settings bridge, polls every 15 seconds, and displays only running-server metrics younger than 60 seconds. An outdated agent disables profile controls.
 
-The Linux agent samples the verified Minecraft JVM (including a Java child launched by Forge's run.sh). CPU is the JVM's share of total node capacity, not a single-core saturation measure. Memory is process RSS compared with the configured heap budget; RSS includes native JVM memory and can exceed that budget. The first CPU sample is withheld until a second counter is available. Metrics are sent using the existing authenticated server-metrics ingest.
+The Linux agent samples the verified Minecraft JVM (including a Java child launched by Forge's run.sh). CPU is the JVM's share of total node capacity, not a single-core saturation measure. The memory card displays process RSS; RSS includes native JVM memory and can exceed that budget. The first CPU sample is withheld until a second counter is available. Metrics are sent using the existing authenticated server-metrics ingest.
 
 Paper/Purpur query `tps` (one-minute TPS) and `mspt` (five-second mean), Spigot queries `tps`, and modern Minecraft 1.20.3+ uses `tick query` for mean tick time. Console queries are read-only. Unsupported commands, missing control channels, and unreadable responses yield null, never a synthetic 20 TPS. The target tick rate returned by vanilla is not reported as measured TPS. The module does not open RCON or install plugins.
 

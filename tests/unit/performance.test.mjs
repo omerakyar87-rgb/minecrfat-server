@@ -57,6 +57,7 @@ test('invalid profiles and corrupt backups fail before writing properties', asyn
 })
 test('tick parser handles Paper console formatting and leaves unavailable values null', () => {
   assert.deepEqual(metrics.parseTickMetrics('[12:00:00] [Server thread/INFO]: TPS from last 1m, 5m, 15m: §a*20.0, 19.5, 19.1\n[12:00:00] [Server thread/INFO]: Server tick times (avg/min/max) from last 5s, 10s, 1m:\n[12:00:00] [Server thread/INFO]: ◴ 12.50/1.2/62.8, 11.2/1.0/30.0'), { tps: 20, mspt: 12.5 })
+  assert.deepEqual(metrics.parseTickMetrics('[12:00:00 INFO]: TPS from last 1m, 5m, 15m: *19.8, 19.5, 19.1'), { tps: 19.8, mspt: null })
   assert.deepEqual(metrics.parseTickMetrics('The game is running normally at 20.0 ticks per second\nAverage tick time: 4.20ms (Target: 50.0ms)'), { tps: null, mspt: 4.2 })
   assert.deepEqual(metrics.parseTickMetrics('<Player> TPS from last 1m, 5m, 15m: 1\nUnknown command'), { tps: null, mspt: null })
 })

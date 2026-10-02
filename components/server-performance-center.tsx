@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 type Distances = Record<'view-distance' | 'simulation-distance', string | null>
 type Status = {
   serverStatus: string; canEdit: boolean; nodeOnline: boolean; agentSettingsWritable: boolean; pendingApply: boolean
+  lastApply?: { id: string; status: string; type: string } | null
   lastApplyError?: string | null
   performance?: { version: number; error?: string; current: Distances; backup: { createdAt: string; before: Distances; applied: Distances } | null } | null
   latestMetric?: { createdAt: string; tps: number | null; mspt: number | null; cpuPercent: number; memoryUsedMb: number; memoryTotalMb: number; players: number } | null
@@ -25,6 +26,7 @@ export function ServerPerformanceCenter({ serverId }: { serverId: string }) {
   const { data, error, mutate } = useSWR(`/api/panel-settings?serverId=${serverId}&performance=1`, fetcher, { refreshInterval: 15_000 })
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
+  const [commandId, setCommandId] = useState('')
   const [profile, setProfile] = useState('balanced')
   const performance = data?.performance
   const metric = data?.latestMetric
@@ -42,11 +44,15 @@ export function ServerPerformanceCenter({ serverId }: { serverId: string }) {
       const response = await fetch('/api/panel-settings', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ serverId, performanceAction: action, profile }) })
       const result = await response.json()
       if (!response.ok) throw new Error(result.error || 'İşlem başarısız')
+      setCommandId(result.commandId)
       setMessage(result.message)
       await mutate()
     } catch (error) { setMessage(error instanceof Error ? error.message : 'İşlem başarısız') }
     finally { setBusy(false) }
   }
+  const resultMessage = commandId && data?.lastApply?.id === commandId && data.lastApply.status === 'completed'
+    ? (data.lastApply.type === 'performance-restore' ? 'Önceki mesafeler geri alındı. Minecraft sunucusunu başlatınca etkinleşir.' : 'Profil yedek alınarak dosyaya uygulandı. Minecraft sunucusunu başlatınca etkinleşir.')
+    : message
   const lag = fresh && ((metric?.tps !== null && Number(metric?.tps) < 18) || (metric?.mspt !== null && Number(metric?.mspt) > 50))
   return <section className="space-y-4 rounded-2xl border border-cyan-400/20 bg-[#061522] p-4">
     <div><h3 className="font-semibold text-white">Lag azaltma</h3><p className="mt-1 text-xs text-slate-400">Agent ölçümleri ve yedekli Minecraft performans profilleri.</p></div>
@@ -55,7 +61,7 @@ export function ServerPerformanceCenter({ serverId }: { serverId: string }) {
         ['TPS', fresh && metric?.tps != null ? metric.tps.toFixed(1) : 'Veri yok'],
         ['MSPT', fresh && metric?.mspt != null ? metric.mspt.toFixed(1) : 'Veri yok'],
         ['CPU (node payı)', fresh ? `${metric?.cpuPercent.toFixed(1)}%` : 'Veri yok'],
-        ['JVM RSS / RAM bütçesi', fresh ? `${metric?.memoryUsedMb} / ${metric?.memoryTotalMb} MB` : 'Veri yok'],
+        ['Bellek (JVM RSS)', fresh ? `${metric?.memoryUsedMb} MB` : 'Veri yok'],
       ].map(([label, value]) => <div key={label} className="rounded-lg bg-slate-950/60 p-3"><div className="text-xs text-slate-400">{label}</div><div className="mt-1 text-sm font-semibold text-white">{value}</div></div>)}
     </div>
     <p className="text-xs text-slate-300">{!fresh ? 'Son 60 saniyede doğrulanmış agent ölçümü yok. Sunucu çalışırken veriler 15 saniyede yenilenir.' : lag ? 'Tick gecikmesi görülüyor (TPS <18 veya MSPT >50 ms). Mesafeleri azaltmak yükü düşürebilir; kesin nedeni belirlemek için profiler raporunu inceleyin.' : metric?.tps == null && metric?.mspt == null ? 'Kaynak verisi geliyor; TPS/MSPT bu sunucuda henüz alınamıyor. Tick performansı değerlendirilemedi.' : 'Son ölçümde tick gecikmesi eşiği aşılmadı. Kalıcı etkiyi benzer oyuncu yükünde karşılaştırın.'}</p>
@@ -71,7 +77,7 @@ export function ServerPerformanceCenter({ serverId }: { serverId: string }) {
     {performance?.backup && <p className="text-xs text-cyan-200">Yedek: {new Date(performance.backup.createdAt).toLocaleString('tr-TR')} · Eski görüş {performance.backup.before['view-distance'] ?? 'varsayılan'}, simülasyon {performance.backup.before['simulation-distance'] ?? 'varsayılan'}. Sonradan farklı değiştirilen mesafeler geri alma sırasında korunur ve işlem durdurulur.</p>}
     {!data?.agentSettingsWritable && <p className="text-xs text-amber-200">Uygulama ve geri alma için Minecraft sunucusunu durdurun ve agent bağlantısını kontrol edin.</p>}
     {data?.pendingApply && <p className="text-xs text-amber-200">Agent işlemi bekleniyor; sonuç otomatik yenilenecek.</p>}
-    {(message || data?.lastApplyError || error) && <p role="status" className="text-xs text-amber-200">{error?.message || data?.lastApplyError || message}</p>}
+    {(resultMessage || data?.lastApplyError || error) && <p role="status" className="text-xs text-amber-200">{error?.message || data?.lastApplyError || resultMessage}</p>}
     <p className="text-xs text-slate-500">Paper/Purpur üzerinde Spark profiler ile plugin, entity ve chunk yükünü inceleyin. Vanilla, Fabric ve Forge için kendi sürümünüzle uyumlu profiler kullanın. Profiller plugin/mod yüklemez.</p>
   </section>
 }
