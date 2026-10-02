@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getPanelActor } from '@/lib/api-auth'
 import { and, desc, eq } from 'drizzle-orm'
 import { db, ensurePanelSchema } from '@/lib/db'
-import { agentCommands, auditLog, nodes, serverPermissions, serverSettings, servers } from '@/lib/db/schema'
+import { agentCommands, auditLog, nodes, serverPermissions, serverSettings, serverMetrics, servers } from '@/lib/db/schema'
 import { nodeDiagnosticMessage, nodeFetch } from '@/lib/node-bridge'
 
 const LIVE_CAPABILITIES = ['properties', 'port', 'panel-metadata', 'runtime-memory', 'logs', 'console-diagnostics', 'file-browser', 'bulk-download', 'firewall']
@@ -174,10 +174,11 @@ export async function GET(request: NextRequest) {
   const x = await access(serverId, a)
   if (!x || !x.canView) return NextResponse.json({ error: 'Ayar görünümüne erişiminiz yok' }, { status: 403 })
 
-  const [row, node, recent] = await Promise.all([
+  const [row, node, recent, metrics] = await Promise.all([
     db.select().from(serverSettings).where(eq(serverSettings.serverId, serverId)).limit(1).then(rows => rows[0]),
     db.select().from(nodes).where(eq(nodes.id, x.server.nodeId)).limit(1).then(rows => rows[0]),
     db.select().from(agentCommands).where(eq(agentCommands.serverId, serverId)).orderBy(desc(agentCommands.createdAt)).limit(40),
+    db.select().from(serverMetrics).where(eq(serverMetrics.serverId, serverId)).orderBy(desc(serverMetrics.createdAt)).limit(1),
   ])
 
   const effective: Record<string, string | number | boolean> = {
@@ -189,6 +190,7 @@ export async function GET(request: NextRequest) {
     worldName: x.server.worldName,
   }
   const nodeOnline = nodeIsFresh(node?.lastHeartbeat, node?.status)
+  let performance: Record<string, unknown> | null = null
   let liveSync = false
   let liveSyncError: string | null = null
   if (nodeOnline) {
@@ -196,6 +198,7 @@ export async function GET(request: NextRequest) {
     liveSync = live.ok
     liveSyncError = live.error
     if (live.ok && live.data) {
+      performance = live.data.performance as Record<string, unknown> | null ?? null
       const properties = live.data.properties && typeof live.data.properties === 'object' && !Array.isArray(live.data.properties)
         ? live.data.properties as Record<string, unknown>
         : {}
@@ -207,7 +210,7 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  const settingsCommands = recent.filter(command => command.type === 'set-properties' || command.type === 'change-port')
+  const settingsCommands = recent.filter(command => ['set-properties', 'change-port', 'performance-apply', 'performance-restore'].includes(command.type))
   const pendingApply = settingsCommands.some(command => command.status === 'queued' || command.status === 'running')
   const latestSettingsCommand = settingsCommands[0]
   const lastFailure = latestSettingsCommand?.status === 'failed' ? latestSettingsCommand : null
@@ -220,6 +223,8 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     settings: effective,
+    performance,
+    latestMetric: metrics[0] ?? null,
     capabilities: LIVE_CAPABILITIES,
     supportedKeys,
     writableKeys,
@@ -253,6 +258,23 @@ export async function PATCH(request: NextRequest) {
   const x = await access(serverId, a)
   if (!x || !canEdit(x)) return NextResponse.json({ error: 'Ayarları değiştirme yetkiniz yok' }, { status: 403 })
 
+  if (body.performanceAction !== undefined) {
+    const action = String(body.performanceAction)
+    if (!['apply', 'restore'].includes(action)) return NextResponse.json({ error: 'Geçersiz performans işlemi' }, { status: 400 })
+    const profile = String(body.profile ?? '')
+    if (action === 'apply' && !['balanced', 'lowResource'].includes(profile)) return NextResponse.json({ error: 'Geçersiz performans profili' }, { status: 400 })
+    const node = (await db.select().from(nodes).where(eq(nodes.id, x.server.nodeId)).limit(1))[0]
+    if (!nodeIsFresh(node?.lastHeartbeat, node?.status) || !SETTINGS_OFFLINE_STATUSES.has(x.server.status)) return NextResponse.json({ error: 'Agent bağlı ve Minecraft sunucusu tamamen kapalı olmalı.' }, { status: 409 })
+    const live = await liveSettings(x.server.nodeId, serverId)
+    const performance = live.data?.performance as Record<string, unknown> | undefined
+    if (!live.ok || performance?.version !== 1 || performance.error || live.data?.running !== false) return NextResponse.json({ error: 'Performans modülü hazır değil. Agent güncellemesini tamamlayın ve sunucuyu durdurun.' }, { status: 409 })
+    if (action === 'apply' && performance.backup) return NextResponse.json({ error: 'Yeni profil öncesinde mevcut performans yedeğini geri alın.' }, { status: 409 })
+    if (action === 'restore' && !performance.backup) return NextResponse.json({ error: 'Performans yedeği bulunamadı.' }, { status: 409 })
+    const [command] = await db.insert(agentCommands).values({ userId: x.server.userId, nodeId: x.server.nodeId, serverId, type: action === 'apply' ? 'performance-apply' : 'performance-restore', payload: action === 'apply' ? { profile } : {}, status: 'queued' }).returning()
+    await db.insert(auditLog).values({ userId: a.id, action: `server.performance.${action}`, resourceType: 'server', resourceId: serverId, details: { profile, commandId: command.id } })
+    return NextResponse.json({ queued: true, commandId: command.id, message: 'İşlem agent kuyruğuna alındı. Sonuç doğrulanana kadar uygulanmış sayılmaz.' }, { status: 202 })
+  }
+
   const changes = body.changes && typeof body.changes === 'object' && !Array.isArray(body.changes)
     ? body.changes as Record<string, unknown>
     : {}
@@ -275,6 +297,10 @@ export async function PATCH(request: NextRequest) {
   }
   if (agentKeys.length && !SETTINGS_OFFLINE_STATUSES.has(x.server.status)) {
     return NextResponse.json({ error: `Sunucuya yazılan ayarlar yalnız sunucu tamamen kapalıyken değiştirilebilir. Mevcut durum: ${x.server.status}.` }, { status: 409 })
+  }
+
+  for (const key of ['viewDistance', 'simulationDistance']) {
+    if (key in clean && (!Number.isInteger(Number(clean[key])) || Number(clean[key]) < 2 || Number(clean[key]) > 32)) return NextResponse.json({ error: `${key} 2-32 arasında tam sayı olmalı.` }, { status: 400 })
   }
 
   if ('serverName' in clean) {

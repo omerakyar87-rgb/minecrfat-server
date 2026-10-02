@@ -1,5 +1,7 @@
 'use client'
 
+import { ServerPerformanceCenter } from '@/components/server-performance-center'
+
 import { useEffect, useMemo, useState } from 'react'
 import useSWR from 'swr'
 import { AlertTriangle, Check, RotateCcw, Save, Search, Shield, SlidersHorizontal } from 'lucide-react'
@@ -186,6 +188,7 @@ export function ServerSettingsCenter({serverId,loader,running,canEdit,onNavigate
   }
 
   return <div className="space-y-5">
+    <ServerPerformanceCenter serverId={serverId}/>
     <div className="rounded-2xl border border-cyan-400/15 bg-[linear-gradient(145deg,rgba(7,26,43,.90),rgba(3,15,27,.92))] shadow-[0_16px_44px_rgba(0,0,0,.18)] backdrop-blur-xl p-3">
       <div className="flex flex-wrap gap-2">
         <div className="relative min-w-[260px] flex-1">

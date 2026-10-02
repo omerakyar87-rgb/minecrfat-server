@@ -6,6 +6,8 @@ import { cpus, freemem, totalmem, loadavg, uptime as osUptime, hostname } from '
 import { createServer } from 'node:http';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { pipeline } from 'node:stream/promises';
+import { applyPerformance, restorePerformance, performanceStatus } from './performance.js';
+import { parseTickMetrics, parseProcessStat, totalCpuTicks } from './performance-metrics.js';
 const PANEL_URL = process.env.PANEL_URL?.replace(/\/$/, '');
 const NODE_ID = process.env.NODE_ID;
 const NODE_TOKEN = process.env.NODE_TOKEN;
@@ -183,6 +185,118 @@ catch { } await report({ type: 'heartbeat', cpuPercent: sampleCpuPercent(), memo
     if (snapshots.length)
         await report({ type: 'server-public-data', snapshots });
 } }
+const performanceSamples = new Map();
+let metricCollectionRunning = false;
+let performanceClockTicks = 0;
+async function minecraftProcessPid(id) {
+    const rootPid = await validatedManagedPid(id);
+    if (!rootPid)
+        return null;
+    const root = await realpath(serverDir(id));
+    const pending = [rootPid];
+    const seen = new Set();
+    while (pending.length && seen.size < 32) {
+        const pid = pending.shift();
+        if (seen.has(pid))
+            continue;
+        seen.add(pid);
+        try {
+            const [cmd, cwd] = await Promise.all([readFile(`/proc/${pid}/cmdline`, 'utf8'), realpath(`/proc/${pid}/cwd`)]);
+            if (cwd === root && /(?:^|\/)java(?:\0|$)/.test(cmd.split('\0')[0] + '\0'))
+                return pid;
+            const children = await readFile(`/proc/${pid}/task/${pid}/children`, 'utf8').catch(() => '');
+            pending.push(...children.trim().split(/\s+/).map(Number).filter(value => Number.isInteger(value) && value > 1));
+        }
+        catch { }
+    }
+    return null;
+}
+async function queryTickMetrics(id, meta) {
+    const loader = String(meta.loader ?? 'vanilla').toLowerCase();
+    const parts = String(meta.version ?? '').split('.').map(Number);
+    const modern = parts[0] === 1 && (parts[1] > 20 || (parts[1] === 20 && (parts[2] ?? 0) >= 3)) || parts[0] >= 26;
+    const commands = ['paper', 'purpur'].includes(loader) ? 'tps\nmspt' : loader === 'spigot' ? 'tps' : modern ? 'tick query' : '';
+    if (!commands || !existsSync(join(serverDir(id), '.blockctrl-stdin')))
+        return { tps: null, mspt: null };
+    const stdout = join(serverDir(id), '.blockctrl-stdout.log');
+    const offset = (await stat(stdout).catch(() => null))?.size ?? 0;
+    try {
+        await writeConsole(id, commands);
+        for (let attempt = 0; attempt < 8; attempt++) {
+            await new Promise(resolve => setTimeout(resolve, 150));
+            const result = parseTickMetrics(await readLogSince(stdout, offset, 64 * 1024));
+            if (commands === 'tps' ? result.tps !== null : commands === 'tick query' ? result.mspt !== null : result.tps !== null && result.mspt !== null)
+                return result;
+        }
+        return parseTickMetrics(await readLogSince(stdout, offset, 64 * 1024));
+    }
+    catch {
+        return { tps: null, mspt: null };
+    }
+}
+async function reportServerPerformance() {
+    if (metricCollectionRunning)
+        return;
+    metricCollectionRunning = true;
+    try {
+        if (!performanceClockTicks)
+            performanceClockTicks = Number((await runCapture('getconf', ['CLK_TCK'], DATA_DIR)).trim());
+        if (!Number.isFinite(performanceClockTicks) || performanceClockTicks <= 0)
+            throw new Error('Linux clock tick rate unavailable');
+        const fs = await statfs(DATA_DIR);
+        const diskTotalGb = Number(fs.blocks) * Number(fs.bsize) / 1073741824;
+        const diskUsedGb = (Number(fs.blocks) - Number(fs.bavail)) * Number(fs.bsize) / 1073741824;
+        const entries = await readdir(join(DATA_DIR, 'servers'), { withFileTypes: true, encoding: 'utf8' });
+        const metrics = [];
+        const active = new Set();
+        for (const entry of entries) {
+            if (!entry.isDirectory() || !validServerId(entry.name))
+                continue;
+            const id = entry.name;
+            try {
+                const pid = await minecraftProcessPid(id);
+                if (!pid) {
+                    performanceSamples.delete(id);
+                    continue;
+                }
+                active.add(id);
+                const [raw, status, meta, hostRaw, uptimeRaw] = await Promise.all([readFile(`/proc/${pid}/stat`, 'utf8'), readFile(`/proc/${pid}/status`, 'utf8'), readServerMeta(id), readFile('/proc/stat', 'utf8'), readFile('/proc/uptime', 'utf8')]);
+                const host = totalCpuTicks(hostRaw);
+                const sample = parseProcessStat(raw);
+                const previous = performanceSamples.get(id);
+                performanceSamples.set(id, { pid, start: sample.startTicks, cpu: sample.cpuTicks, host });
+                if (!previous || previous.pid !== pid || previous.start !== sample.startTicks || host <= previous.host)
+                    continue;
+                const rss = status.match(/^VmRSS:\s+(\d+)\s+kB/m);
+                if (!rss)
+                    continue;
+                const ticks = await queryTickMetrics(id, meta);
+                // CPU is the JVM share of total node capacity, consistent with the panel's 0-100 scale.
+                const cpuPercent = Math.max(0, Math.min(100, 100 * (sample.cpuTicks - previous.cpu) / (host - previous.host)));
+                const presence = await queryOnlinePlayers(id);
+                const online = presence.count ?? [...playerPresenceCache.entries()].filter(([key, row]) => key.startsWith(`${id}:`) && row.isOnline).length;
+                metrics.push({ serverId: id, cpuPercent: Number(cpuPercent.toFixed(2)), memoryUsedMb: Math.round(Number(rss[1]) / 1024), memoryTotalMb: Number(meta.memoryMb) || 0, diskUsedGb: Number(diskUsedGb.toFixed(2)), diskTotalGb: Number(diskTotalGb.toFixed(2)), uptimeSeconds: Math.max(0, Math.floor(Number(uptimeRaw.split(' ')[0]) - sample.startTicks / performanceClockTicks)), ...ticks, players: online });
+                if (metrics.length === 100) {
+                    await report({ type: 'server-metrics', metrics: metrics.splice(0) });
+                }
+            }
+            catch (error) {
+                agentEvent('warn', id, 'Sunucu performans ölçümü alınamadı', error);
+            }
+        }
+        for (const id of performanceSamples.keys())
+            if (!active.has(id))
+                performanceSamples.delete(id);
+        if (metrics.length)
+            await report({ type: 'server-metrics', metrics });
+    }
+    catch (error) {
+        agentEvent('warn', null, 'Performans ölçüm döngüsü başarısız', error);
+    }
+    finally {
+        metricCollectionRunning = false;
+    }
+}
 function serverDir(id) { if (!/^[0-9a-f-]{36}$/i.test(id))
     throw new Error('Invalid server id'); return join(DATA_DIR, 'servers', id); }
 function safePath(id, requested) { const root = serverDir(id); const normalized = requested.replaceAll('\\', '/'); if (normalized.includes('\0') || normalized.startsWith('/') || /^[A-Za-z]:/.test(normalized))
@@ -487,14 +601,24 @@ function parseVanillaInventory(raw) { const items = []; for (const part of split
         items.push({ itemId: id, itemName: id, amount });
 } return items; }
 function vanillaLossReasonMetadata(state, snapshotAgeMs, extra = {}) { return { sourceLoader: state.loader, trackingMode: 'death-snapshot', approximate: true, snapshotAgeMs, ...extra }; }
-function emitVanillaDeath(serverId, playerName, state, deathsDelta) { if (state.keepInventory)
-    return; const snapshot = state.inventories.get(playerName); if (!snapshot || Date.now() - snapshot.at > 8000 || !snapshot.items.length)
-    return; const pos = state.positions.get(playerName); const world = state.worlds.get(playerName); for (const stack of snapshot.items) {
-    itemQueue.push({ eventId: randomUUID(), serverId, playerName, itemId: stack.itemId, itemName: stack.itemName, amount: stack.amount, reason: 'death', world: world?.world ?? 'minecraft:overworld', x: Math.floor(pos?.x ?? 0), y: Math.floor(pos?.y ?? 0), z: Math.floor(pos?.z ?? 0), occurredAt: new Date().toISOString(), metadata: vanillaLossReasonMetadata(state, Date.now() - snapshot.at, { positionKnown: Boolean(pos), worldKnown: Boolean(world), deathsDelta }) });
+function emitVanillaDeath(serverId, playerName, state, deathsDelta, reason = 'death') { if (state.keepInventory)
+    return; const now = Date.now(); const last = state.lastDeaths.get(playerName) ?? 0; if (now - last < 3500)
+    return; const snapshot = state.inventories.get(playerName); if (!snapshot || now - snapshot.at > 15000 || !snapshot.items.length) {
+    agentEvent('warn', serverId, `Kayıp eşya snapshot bulunamadı · ${playerName} · yaş=${snapshot ? now - snapshot.at : -1}ms`);
+    return;
+} state.lastDeaths.set(playerName, now); const pos = state.positions.get(playerName); const world = state.worlds.get(playerName); for (const stack of snapshot.items) {
+    itemQueue.push({ eventId: randomUUID(), serverId, playerName, itemId: stack.itemId, itemName: stack.itemName, amount: stack.amount, reason, world: world?.world ?? 'minecraft:overworld', x: Math.floor(pos?.x ?? 0), y: Math.floor(pos?.y ?? 0), z: Math.floor(pos?.z ?? 0), occurredAt: new Date(now).toISOString(), metadata: vanillaLossReasonMetadata(state, now - snapshot.at, { positionKnown: Boolean(pos), worldKnown: Boolean(world), deathsDelta, detectedBy: reason === 'death' ? 'scoreboard-or-log' : 'death-log' }) });
 } if (itemQueue.length > 10000)
     itemQueue.splice(0, itemQueue.length - 10000); }
 function handleVanillaTrackerLine(serverId, line) { const state = vanillaTrackers.get(serverId); if (!state)
-    return false; const text = line.trim(); const rule = text.match(/Gamerule keepInventory is currently set to: (true|false)/i); if (rule) {
+    return false; const text = line.trim(); const clean = text.replace(/^.*?\]:\s*/, ''); const deathReason = (value) => /lava|swim in lava/i.test(value) ? 'lava' : /fire|flames|burned/i.test(value) ? 'fire' : /void|fell out of the world/i.test(value) ? 'void' : /blew up|explod|blown up/i.test(value) ? 'explosion' : /cactus|pricked/i.test(value) ? 'cactus' : 'death'; for (const name of state.inventories.keys()) {
+    if (!clean.startsWith(name + ' '))
+        continue;
+    if (/\b(?:was slain|was shot|was killed|died|fell|drowned|starved|suffocated|burned|burnt|went up in flames|tried to swim in lava|blew up|was blown up|hit the ground too hard|fell out of the world|was pricked to death|froze to death|was impaled|experienced kinetic energy|was squashed|discovered the floor was lava|walked into fire|went off with a bang)\b/i.test(clean)) {
+        emitVanillaDeath(serverId, name, state, 1, deathReason(clean));
+        break;
+    }
+} const rule = text.match(/Gamerule keepInventory is currently set to: (true|false)/i); if (rule) {
     state.keepInventory = rule[1].toLowerCase() === 'true';
     return true;
 } const score = text.match(/(?:\]:\s*)?([A-Za-z0-9_]{1,16}) has (-?\d+) \[blockctrl_deaths\]/i); if (score) {
@@ -517,9 +641,9 @@ function handleVanillaTrackerLine(serverId, line) { const state = vanillaTracker
 } return false; }
 function stopVanillaDeathTracker(serverId) { const state = vanillaTrackers.get(serverId); if (state)
     clearInterval(state.timer); vanillaTrackers.delete(serverId); }
-function startVanillaDeathTracker(serverId, loader = 'vanilla') { stopVanillaDeathTracker(serverId); const state = {}; state.scores = new Map(); state.inventories = new Map(); state.positions = new Map(); state.worlds = new Map(); state.keepInventory = false; state.ruleTick = 0; state.loader = loader; const sample = () => { if (!isServerRunningKnown(serverId))
-    return; const commands = []; if (state.ruleTick++ % 30 === 0)
-    commands.push('gamerule keepInventory'); commands.push('execute as @a run scoreboard players get @s blockctrl_deaths', 'execute as @a run data get entity @s Inventory', 'execute as @a at @s run data get entity @s Pos', 'execute as @a run data get entity @s Dimension'); void writeConsole(serverId, commands.join('\n')).catch(() => { }); }; void writeConsole(serverId, 'scoreboard objectives add blockctrl_deaths deathCount').catch(() => { }); state.timer = setInterval(sample, 1000); vanillaTrackers.set(serverId, state); setTimeout(sample, 750); }
+function startVanillaDeathTracker(serverId, loader = 'vanilla') { stopVanillaDeathTracker(serverId); const state = {}; state.scores = new Map(); state.inventories = new Map(); state.positions = new Map(); state.worlds = new Map(); state.lastDeaths = new Map(); state.keepInventory = false; state.ruleTick = 0; state.loader = loader; const sample = () => { if (!isServerRunningKnown(serverId))
+    return; const commands = []; if (state.ruleTick++ % 60 === 0)
+    commands.push('gamerule keepInventory'); commands.push('execute as @a run scoreboard players get @s blockctrl_deaths', 'execute as @a run data get entity @s Inventory', 'execute as @a at @s run data get entity @s Pos', 'execute as @a run data get entity @s Dimension'); void writeConsole(serverId, commands.join('\n')).catch(error => agentEvent('warn', serverId, 'Kayıp eşya snapshot örneklemesi başarısız', error)); }; void writeConsole(serverId, 'scoreboard objectives add blockctrl_deaths deathCount').catch(() => { }); state.timer = setInterval(sample, 500); vanillaTrackers.set(serverId, state); setTimeout(sample, 300); agentEvent('info', serverId, `Kayıp eşya death-snapshot tracker aktif · ${loader}`); }
 function stopLogTailer(serverId) { const state = logTailers.get(serverId); if (state)
     clearInterval(state.timer); logTailers.delete(serverId); }
 function playerPresenceFromLine(serverId, line) {
@@ -557,7 +681,8 @@ async function reportServerLogLine(serverId, stream, line, state) {
     if (players) {
         const names = String(players[3] ?? '').split(',').map(name => name.trim()).filter(name => /^[A-Za-z0-9_]{1,16}$/.test(name));
         await report({ type: 'server-status', serverId, status: 'running', pid: managedPids.get(serverId) ?? null, playerCount: Number(players[1]) });
-        await report({ type: 'player-list', serverId, names, playerCount: Number(players[1]), maxPlayers: Number(players[2]), observedAt: new Date().toISOString() });
+        if (names.length === Number(players[1]))
+            await report({ type: 'player-list', serverId, names, playerCount: Number(players[1]), maxPlayers: Number(players[2]), observedAt: new Date().toISOString() });
     }
 }
 async function readLogAppend(serverId, stream, state) { const file = join(serverDir(serverId), stream === 'stdout' ? '.blockctrl-stdout.log' : '.blockctrl-stderr.log'); const info = await stat(file).catch(() => null); if (!info?.isFile())
@@ -809,7 +934,7 @@ async function queryOnlinePlayers(id) {
         await writeConsole(id, 'list');
     }
     catch {
-        const names = [...playerPresenceCache.values()].filter(row => row.isOnline && row.at > Date.now() - 120_000).map(row => row.playerName);
+        const names = [...playerPresenceCache.entries()].filter(([key, row]) => key.startsWith(`${id}:`) && row.isOnline && row.at > Date.now() - 120_000).map(([, row]) => row.playerName);
         return { verified: names.length > 0, names, count: names.length, maxPlayers: configuredMax, source: names.length ? 'log-presence-fallback' : 'online-query-unavailable' };
     }
     const deadline = Date.now() + 2500;
@@ -820,10 +945,14 @@ async function queryOnlinePlayers(id) {
         const hit = matches.at(-1);
         if (hit) {
             const names = String(hit[3] ?? '').split(',').map(name => name.trim()).filter(name => /^[A-Za-z0-9_]{1,16}$/.test(name));
-            return { verified: true, names, count: Number(hit[1]), maxPlayers: Number(hit[2]) || configuredMax, source: 'minecraft-list' };
+            const count = Number(hit[1]);
+            if (names.length === count)
+                return { verified: true, names, count, maxPlayers: Number(hit[2]) || configuredMax, source: 'minecraft-list' };
+            const cached = [...playerPresenceCache.entries()].filter(([key, row]) => key.startsWith(`${id}:`) && row.isOnline).map(([, row]) => row.playerName);
+            return { verified: cached.length === count, names: cached.length === count ? cached : [], count, maxPlayers: Number(hit[2]) || configuredMax, source: cached.length === count ? 'log-presence-fallback' : 'minecraft-list-incomplete' };
         }
     }
-    const names = [...playerPresenceCache.values()].filter(row => row.isOnline && row.at > Date.now() - 120_000).map(row => row.playerName);
+    const names = [...playerPresenceCache.entries()].filter(([key, row]) => key.startsWith(`${id}:`) && row.isOnline && row.at > Date.now() - 120_000).map(([, row]) => row.playerName);
     return { verified: names.length > 0, names, count: names.length, maxPlayers: configuredMax, source: names.length ? 'log-presence-fallback' : 'online-query-timeout' };
 }
 async function playersStatus(id) {
@@ -1718,9 +1847,9 @@ async function requireStoppedForFiles(id) { if (await validatedManagedPid(id))
     throw new Error('Dosya sistemi değişiklikleri için Minecraft sunucusunu durdurun'); }
 async function requireMissingTarget(path) { if (await stat(path).catch(() => null))
     throw new Error('Hedef zaten mevcut; üzerine yazma engellendi'); }
-async function createServerFile(id, p) { await requireStoppedForFiles(id); const target = await writableTargetPath(id, p.path); await requireMissingTarget(target.abs); const content = String(p.content ?? ''); if (Buffer.byteLength(content, 'utf8') > 2 * 1024 * 1024)
-    throw new Error('Yeni dosya içeriği 2 MB sınırını aşıyor'); await writeFile(target.abs, content, 'utf8'); return { created: true, path: target.rel }; }
-async function createServerFolder(id, p) { await requireStoppedForFiles(id); const target = await writableTargetPath(id, p.path); await requireMissingTarget(target.abs); await mkdir(target.abs); return { created: true, path: target.rel, directory: true }; }
+async function createServerFile(id, p) { const target = await writableTargetPath(id, p.path); await requireMissingTarget(target.abs); const content = String(p.content ?? ''); if (Buffer.byteLength(content, 'utf8') > 2 * 1024 * 1024)
+    throw new Error('Yeni dosya içeriği 2 MB sınırını aşıyor'); await writeFile(target.abs, content, 'utf8'); return { created: true, path: target.rel, liveSafe: Boolean(await validatedManagedPid(id)) }; }
+async function createServerFolder(id, p) { const target = await writableTargetPath(id, p.path); await requireMissingTarget(target.abs); await mkdir(target.abs); return { created: true, path: target.rel, directory: true, liveSafe: Boolean(await validatedManagedPid(id)) }; }
 async function moveServerPath(id, p) { await requireStoppedForFiles(id); const source = await existingServerPath(id, p.path); const target = await writableTargetPath(id, p.newPath ?? p.destination); await requireMissingTarget(target.abs); if (source.info.isDirectory() && target.abs.startsWith(`${source.abs}${sep}`))
     throw new Error('Klasör kendi altına taşınamaz'); await rename(source.abs, target.abs); return { moved: true, from: source.rel, to: target.rel }; }
 async function copyServerPath(id, p) { await requireStoppedForFiles(id); const source = await existingServerPath(id, p.path); const target = await writableTargetPath(id, p.newPath ?? p.destination); await requireMissingTarget(target.abs); if (source.info.isDirectory() && target.abs.startsWith(`${source.abs}${sep}`))
@@ -1800,6 +1929,10 @@ async function execute(command) { const scopedId = command.serverId ?? null; if 
             throw new Error('Geçersiz SFTP oturum PID değeri');
         result = await sftpHelper('terminate-session', id, String(pid));
     }
+    else if (command.type === 'backup-list')
+        result = await listBackups(id);
+    else if (command.type === 'worlds-status')
+        result = await discoverWorlds(id);
     else if (command.type === 'file-inventory')
         result = await fileInventory(id);
     else if (command.type === 'bulk-download')
@@ -1858,13 +1991,20 @@ async function execute(command) { const scopedId = command.serverId ?? null; if 
     else if (command.type === 'upload-archive')
         result = await uploadArchive(id, p);
     else if (command.type === 'write-file') {
-        const target = safePath(id, String(p.path ?? ''));
-        if (!/\.(yml|yaml|json|properties|toml|ini|cfg|conf|txt)$/i.test(target) || String(p.content ?? '').length > 2000000)
-            throw new Error('Only small text files can be edited');
-        if (existsSync(target))
-            await rename(target, `${target}.bak-${Date.now()}`);
-        await writeFile(target, String(p.content ?? ''), 'utf8');
-        result = { saved: true, path: relative(serverDir(id), target), backupCreated: true };
+        const target = safePath(id, String(p.path ?? p.filename ?? ''));
+        if (p.pathname) {
+            await fetchPanelFile(String(p.pathname), target, id);
+            result = { saved: true, path: relative(serverDir(id), target).replaceAll('\\', '/'), binary: true };
+        }
+        else {
+            if (!/\.(yml|yaml|json|properties|toml|ini|cfg|conf|txt)$/i.test(target) || String(p.content ?? '').length > 2000000)
+                throw new Error('Only small text files can be edited');
+            if (existsSync(target))
+                await rename(target, `${target}.bak-${Date.now()}`);
+            await mkdir(dirname(target), { recursive: true });
+            await writeFile(target, String(p.content ?? ''), 'utf8');
+            result = { saved: true, path: relative(serverDir(id), target).replaceAll('\\', '/'), backupCreated: true };
+        }
     }
     else if (command.type === 'delete-file') {
         const target = safePath(id, String(p.path ?? ''));
@@ -1872,6 +2012,13 @@ async function execute(command) { const scopedId = command.serverId ?? null; if 
             throw new Error('Cannot delete server root');
         await rm(target, { recursive: true, force: true });
         result = { deleted: true };
+    }
+    else if (command.type === 'performance-apply' || command.type === 'performance-restore') {
+        if (isServerRunningKnown(id))
+            throw new Error('Performans ayarlarini uygulamak icin sunucuyu durdurun');
+        const propsPath = await safePath(id, 'server.properties');
+        const backupPath = join(DATA_DIR, 'performance-backups', id + '.json');
+        result = command.type === 'performance-apply' ? await applyPerformance(propsPath, backupPath, String(p.profile ?? '')) : await restorePerformance(propsPath, backupPath);
     }
     else if (command.type === 'set-properties') {
         if (isServerRunningKnown(id))
@@ -2838,7 +2985,8 @@ async function settingsStatus(id) {
     }
     catch { }
     const javaRuntime = await javaRuntimeStatus(id);
-    return { ready: true, running: isServerRunningKnown(id), properties, meta, javaRuntime, readAt: new Date().toISOString() };
+    const performance = await performanceStatus(await safePath(id, 'server.properties'), join(DATA_DIR, 'performance-backups', id + '.json')).catch(error => ({ version: 1, error: error instanceof Error ? error.message : 'Performans bilgisi alinamadi' }));
+    return { ready: true, running: isServerRunningKnown(id), properties, meta, javaRuntime, performance, readAt: new Date().toISOString() };
 }
 async function tailTextLines(path, limit = 240, maxBytes = 512 * 1024) {
     const info = await stat(path).catch(() => null);
@@ -2943,14 +3091,36 @@ async function consoleDiagnostics(serverId) {
     };
 }
 function runProcess(program, args, cwd) { return new Promise((resolveProcess, reject) => { const child = spawn(program, args, { cwd, stdio: 'pipe' }); let output = ''; child.stdout?.on('data', chunk => output += String(chunk)); child.stderr?.on('data', chunk => output += String(chunk)); child.on('error', reject); child.on('exit', code => code === 0 ? resolveProcess() : reject(new Error(`${program} exited ${code}: ${output.slice(-2000)}`))); }); }
-async function listBackups(id) { if (!validServerId(id))
-    throw new Error('Geçersiz serverId'); const root = resolve(DATA_DIR, 'backups'); const entries = await readdir(root, { withFileTypes: true, encoding: 'utf8' }).catch(() => []); const rows = []; for (const entry of entries) {
-    if (!entry.isFile() || !/^([0-9a-f-]{36})-.*\.tar\.gz$/i.test(entry.name))
-        continue;
-    const info = await stat(join(root, entry.name)).catch(() => null);
-    if (info)
-        rows.push({ path: entry.name, name: entry.name, sizeBytes: info.size, createdAt: info.birthtime.toISOString(), modifiedAt: info.mtime.toISOString(), source: 'node-disk', status: 'completed', type: entry.name.includes('-scheduled-') ? 'scheduled' : 'manual' });
-} rows.sort((a, b) => Date.parse(b.modifiedAt) - Date.parse(a.modifiedAt)); return { backups: rows, source: 'agent-backup-disk-scan', scannedAt: new Date().toISOString() }; }
+async function listBackups(id) {
+    if (!validServerId(id))
+        throw new Error('Geçersiz serverId');
+    const rows = [];
+    const globalRoot = resolve(DATA_DIR, 'backups');
+    for (const entry of await readdir(globalRoot, { withFileTypes: true, encoding: 'utf8' }).catch(() => [])) {
+        if (!entry.isFile() || !entry.name.startsWith(`${id}-`) || !(/\.(tar\.gz|tgz|zip|gz)$/i.test(entry.name)))
+            continue;
+        const full = join(globalRoot, entry.name);
+        const info = await stat(full).catch(() => null);
+        if (info)
+            rows.push({ path: entry.name, name: entry.name, sizeBytes: info.size, createdAt: info.birthtime.toISOString(), modifiedAt: info.mtime.toISOString(), source: 'node-backup-root', status: 'completed', type: entry.name.includes('-scheduled-') ? 'scheduled' : 'manual', restorable: true });
+    }
+    const serverRoot = serverDir(id);
+    for (const folder of ['backups', 'backup']) {
+        const dir = join(serverRoot, folder);
+        for (const entry of await readdir(dir, { withFileTypes: true, encoding: 'utf8' }).catch(() => [])) {
+            if (!entry.isFile() || !(/\.(tar\.gz|tgz|zip|gz)$/i.test(entry.name)))
+                continue;
+            const full = join(dir, entry.name);
+            const info = await stat(full).catch(() => null);
+            if (info)
+                rows.push({ path: `${folder}/${entry.name}`, name: entry.name, sizeBytes: info.size, createdAt: info.birthtime.toISOString(), modifiedAt: info.mtime.toISOString(), source: 'server-backup-folder', status: 'completed', type: 'external', restorable: false });
+        }
+    }
+    const seen = new Set();
+    const backups = rows.filter(row => { const key = String(row.path ?? row.name ?? ''); if (!key || seen.has(key))
+        return false; seen.add(key); return true; }).sort((a, b) => Date.parse(String(b.modifiedAt ?? b.createdAt ?? '')) - Date.parse(String(a.modifiedAt ?? a.createdAt ?? '')));
+    return { backups, source: 'agent-backup-disk-scan', scannedAt: new Date().toISOString() };
+}
 async function createBackup(id, label = 'manual', kind = 'full') { if (!validServerId(id))
     throw new Error('Geçersiz serverId'); if (isServerRunningKnown(id))
     throw new Error('Yedek için sunucuyu tamamen durdurun'); const source = serverDir(id); const root = resolve(DATA_DIR, 'backups'); await mkdir(root, { recursive: true }); const safeLabel = label.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 40) || 'manual'; const target = join(root, `${id}-${Date.now()}-${safeLabel}.tar.gz`); const entries = kind === 'world' ? ['world', 'world_nether', 'world_the_end'] : kind === 'config' ? ['server.properties', 'whitelist.json', 'ops.json', 'banned-players.json', 'banned-ips.json'] : kind === 'addons' ? ['mods', 'plugins'] : ['.']; await runProcess('tar', ['-czf', target, '--exclude=.blockctrl-pid', '-C', source, ...entries], DATA_DIR); const info = await stat(target); return { path: basename(target), name: basename(target), sizeBytes: info.size, createdAt: info.birthtime.toISOString(), modifiedAt: info.mtime.toISOString(), source: 'node-agent', status: 'completed', type: safeLabel === 'scheduled' ? 'scheduled' : 'manual' }; }
@@ -3418,6 +3588,22 @@ function startDownloadBridge() {
                 sendJson(res, 200, { ...inventory, world: world || null });
                 return;
             }
+            if (url.pathname === '/internal/content/create-file' && req.method === 'POST') {
+                const body = await readJsonRequest(req, 2_100_000);
+                const serverId = String(body.serverId ?? '');
+                if (!validServerId(serverId))
+                    throw new Error('Geçersiz serverId');
+                sendJson(res, 201, await createServerFile(serverId, body));
+                return;
+            }
+            if (url.pathname === '/internal/content/create-folder' && req.method === 'POST') {
+                const body = await readJsonRequest(req, 64 * 1024);
+                const serverId = String(body.serverId ?? '');
+                if (!validServerId(serverId))
+                    throw new Error('Geçersiz serverId');
+                sendJson(res, 201, await createServerFolder(serverId, body));
+                return;
+            }
             if (url.pathname === '/internal/content/read' && req.method === 'GET') {
                 const serverId = String(url.searchParams.get('serverId') ?? '');
                 const path = String(url.searchParams.get('path') ?? '');
@@ -3534,7 +3720,7 @@ async function flushItems() { if (!itemQueue.length)
 catch (error) {
     agentEvent('error', null, '[agent] item queue flush failed', error);
 } }
-async function loop() { await mkdir(join(DATA_DIR, 'servers'), { recursive: true }); startTrackerIngest(); startDownloadBridge(); await heartbeat(); setInterval(heartbeat, 15000); setInterval(flushItems, 5000); for (;;) {
+async function loop() { await mkdir(join(DATA_DIR, 'servers'), { recursive: true }); startTrackerIngest(); startDownloadBridge(); await heartbeat(); setInterval(heartbeat, 15000); void reportServerPerformance(); setInterval(() => void reportServerPerformance(), 15000); setInterval(flushItems, 5000); for (;;) {
     try {
         const { commands } = await api('GET');
         for (const command of commands) {
